@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+out/
+out-build/
+out-vscode/
+VSCode-win32-x64/
+.build/
+dist/
+
+# Logs
+*.log
+compile.log
+npm-debug.log*
+
+# Runtime
+.superpowers/
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.vscode/
+
+# Archives
+*.zip
+*.tar.gz
+*.7z
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temp
+tmp/
+temp/

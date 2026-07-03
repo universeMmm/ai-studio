@@ -1,0 +1,15 @@
+{
+	"extends": "../../../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "../../../../out/vs/platform/ai",
+		"rootDir": "../../.."
+	},
+	"include": [
+		"./**/*.ts"
+	],
+	"references": [
+		{ "path": "../../base/tsconfig.json" },
+		{ "path": "../../platform/tsconfig.json" },
+		{ "path": "../../editor/tsconfig.json" }
+	]
+}

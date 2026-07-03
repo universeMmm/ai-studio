@@ -1,0 +1,10 @@
+﻿{
+	"extends": "../../../extensions/tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "./browser",
+		"outDir": "../../../../../../out/vs/workbench/contrib/aiInlineCompletion"
+	},
+	"include": [
+		"browser/**/*.ts"
+	]
+}
