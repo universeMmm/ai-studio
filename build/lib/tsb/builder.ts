@@ -594,6 +594,11 @@ class LanguageServiceHost implements ts.LanguageServiceHost {
 		filename = normalize(filename);
 		let result = this._snapshots[filename];
 		if (!result && resolve) {
+			// agentHost 剥离：禁止从磁盘解析 agentHost 文件，阻断级联类型检查
+			// noAgentHost 文件（如 noAgentHostEmptyState.ts）不是 agentHost 实现，放行
+			if (/agentHost/i.test(filename) && !/noAgentHost/i.test(filename)) {
+				return undefined!;
+			}
 			try {
 				result = new VinylScriptSnapshot(new Vinyl({
 					path: filename,

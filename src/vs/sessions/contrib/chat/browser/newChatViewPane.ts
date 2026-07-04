@@ -53,7 +53,7 @@ class NewChatWidget extends Disposable {
 	private _activeEmptyState: NoAgentHostEmptyState | undefined;
 
 	// agentHost 剥离：IAgentHostFilterService 桩对象
-	private readonly agentHostFilterService: any;
+	private readonly agentHostFilterService = { onDidChange: Event.None, onDidChangeDiscovering: Event.None, hosts: [] as readonly any[], isDiscovering: false, rediscover: async () => {} };
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -62,8 +62,6 @@ class NewChatWidget extends Disposable {
 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@IAquariumService private readonly aquariumService: IAquariumService,
 	) {
-		// agentHost 剥离：IAgentHostFilterService 桩对象
-		this.agentHostFilterService = { onDidChange: Event.None, onDidChangeDiscovering: Event.None, hosts: [] as readonly any[], isDiscovering: false, rediscover: async () => {} };
 		super();
 		// On web (vscode.dev / insiders.vscode.dev), use {@link WebWorkspacePicker}
 		// which scopes recents to the active host and renders as a bottom

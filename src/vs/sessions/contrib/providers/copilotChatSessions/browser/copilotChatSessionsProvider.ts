@@ -48,7 +48,7 @@ import { IGitHubService } from '../../../github/browser/githubService.js';
 import { computePullRequestIcon, GitHubPullRequestState } from '../../../github/common/types.js';
 import { structuralEquals } from '../../../../../base/common/equals.js';
 // agentHost 剥离：本地桩代码
-const CopilotCLISessionType = { id: 'copilot-cli' } as const;
+const CopilotCLISessionType = { id: 'aiStudioCli', label: 'AI Studio CLI', icon: Codicon.copilot } as const;
 import { createChangesets } from './copilotChatSessionsChangesets.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 

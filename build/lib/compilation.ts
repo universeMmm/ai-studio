@@ -81,7 +81,7 @@ export function createCompile(src: string, { build, emitError, transpileOnly, pr
 		const output = input
 			.pipe(util.filter(f => {
 				const fp = f.path.replace(/\\/g, '/');
-				return !/agentHost/i.test(fp);
+				return (!/agentHost/i.test(fp) || /noAgentHost/i.test(fp)) && !/(\/|\\)test(\/|\\)/.test(fp);
 			}))
 			.pipe(util.$if(isUtf8Test, bom())) // this is required to preserve BOM in test files that loose it otherwise
 			.pipe(util.$if(!build && isRuntimeJs, util.appendOwnPathSourceURL()))

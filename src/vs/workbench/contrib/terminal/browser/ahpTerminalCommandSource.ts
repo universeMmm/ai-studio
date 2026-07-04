@@ -210,8 +210,8 @@ export class AhpTerminalCommandSource extends Disposable implements IAhpTerminal
 		pty: AgentHostPty,
 	) {
 		this._terminalInstance = terminalInstance;
-		this._register(pty.onCommandExecuted(e => this._handleCommandExecuted(e)));
-		this._register(pty.onCommandFinished(e => this._handleCommandFinished(e)));
+		this._register(pty.onCommandExecuted((e: IAgentHostPtyCommandExecutedEvent) => this._handleCommandExecuted(e)));
+		this._register(pty.onCommandFinished((e: IAgentHostPtyCommandFinishedEvent) => this._handleCommandFinished(e)));
 		// Track streaming data so we can append to the executing command's output.
 		// Skip for replayed commands (storedOutput already populated from snapshot).
 		this._register(terminalInstance.onWillData(data => {

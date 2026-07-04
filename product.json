@@ -102,6 +102,10 @@
 			"default": {
 				"id": "ai-studio",
 				"name": "AI Studio"
+			},
+			"enterprise": {
+				"id": "",
+				"name": ""
 			}
 		},
 		"providerExtensionId": "",

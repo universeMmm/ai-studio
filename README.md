@@ -2,6 +2,13 @@
 
 AI Studio 是 [Code - OSS](https://github.com/microsoft/vscode) 的深度定制分支，将 VS Code 改造为 AI-first 的智能编程环境。核心目标是：**完全使用用户自定义模型，不绑定任何商业 AI 服务**。
 
+## 上游源码仓库
+
+| 项目 | 说明 |
+|------|------|
+| [microsoft/vscode](https://github.com/microsoft/vscode) | VS Code OSS 上游，AI Studio 的编辑器内核来源 |
+| [anthropics/claude-code](https://github.com/anthropics/claude-code) | Claude Code CLI，Agent 交互模式与工具系统的设计参考 |
+
 ---
 
 ## 架构概览
@@ -174,12 +181,9 @@ scripts\code.bat           # Windows
 
 **Copilot / Agent Host 边界决策**
 
-当前代码库中同时存在 Copilot、Agent Host、Claude Agent SDK 相关路径和依赖（`src/vs/platform/agentHost/node/claude/`、`src/vs/platform/agentHost/node/copilot/`、`@anthropic-ai/claude-agent-sdk`），与设计文档所述"完全移除商业 AI 依赖"目标存在张力。中期需明确产品决策：
+Agent Host 模块（`src/vs/platform/agentHost/`、`src/vs/sessions/contrib/providers/remoteAgentHost/` 等）已通过编译层剥离：agentHost 源文件不再参与类型检查与 JS 输出，依赖 agentHost 的消费方文件以本地桩代码（stub）替代原有导入，`gulp compile` 已通过 0 错误。
 
-- 方案 A：保留 Agent Host / 商业 AI 基础设施作为可选能力，在产品层隐藏入口，未来以扩展形式加载。
-- 方案 B：彻底移除相关模块和依赖，全面切换至自研 Provider 体系。
-
-方案 A 可快速获得更完整的 Chat/Agent 交互体验（复用 VS Code upstream 现有交互格式、inline chat、agent session 管理），代价是在产品层引入商业依赖。方案 B 自主可控程度最高但工程量大，且会失去 VS Code upstream 的 Agent 交互基础设施更新。
+当前策略：保留 agentHost 源码在仓库中（便于后续提取为独立扩展），编译期隔离。所有 AI 运行时链路（Agent Runtime、Tool System、LLM Provider）走自研体系，不依赖 Copilot/AgentHost 基础设施。
 
 **层级边界整理**
 
@@ -242,9 +246,9 @@ Provider 配置当前仅通过 settings JSON 直接编辑，缺少 GUI 配置面
 
 | 阶段 | 时间 | 内容 | 状态 |
 |------|------|------|------|
-| Phase 1 | 短期 | 移除 Copilot 依赖，替换 Chat 服务体系 | 进行中 |
+| Phase 1 | 短期 | 移除 Copilot/AgentHost 编译依赖，替换 Chat 服务体系 | ✅ 完成 |
 | Phase 2 | 短期 | Agent Runtime + Tool System 完善与安全加固 | MVP 完成，加固中 |
-| Phase 3 | 短期 | 编译稳定与测试补齐 | 待启动 |
+| Phase 3 | 短期 | 编译稳定与测试补齐 | ✅ gulp compile 0 错误 |
 | Phase 4 | 中期 | 架构收敛、层级边界整理、索引升级 | 规划中 |
 | Phase 5 | 中期 | 模型配置 GUI、Agent 结果模型规范化 | 规划中 |
 | Phase 6 | 长期 | Sub-agent、自定义 Tool、AST-aware 索引 | 规划中 |
