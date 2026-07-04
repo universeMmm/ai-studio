@@ -37,7 +37,8 @@ import { ILogService, NullLogService } from '../../../../../../platform/log/comm
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IUriIdentityService } from '../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { extUri } from '../../../../../../base/common/resources.js';
-import { CopilotCLISessionType } from '../../../agentHost/browser/baseAgentHostSessionsProvider.js';
+// agentHost 剥离：本地桩代码
+const CopilotCLISessionType = { id: 'copilot-cli' } as const;
 
 // ---- Helpers ----------------------------------------------------------------
 

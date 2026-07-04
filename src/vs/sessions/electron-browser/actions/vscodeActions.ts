@@ -11,8 +11,12 @@ import { URI } from '../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../nls.js';
 import { Action2 } from '../../../platform/actions/common/actions.js';
-import { AGENT_HOST_SCHEME, fromAgentHostUri } from '../../../platform/agentHost/common/agentHostUri.js';
-import { IRemoteAgentHostService } from '../../../platform/agentHost/common/remoteAgentHostService.js';
+import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
+
+// agentHost 剥离：本地桩代码替换原 agentHost 模块引用
+const AGENT_HOST_SCHEME = 'agentHost';
+const fromAgentHostUri = (uri: URI) => uri;
+const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
 import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
 import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 import { KeybindingWeight } from '../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -65,7 +69,7 @@ export class OpenSessionInVSCodeAction extends Action2 {
 		return nativeHostService.openWindow([{ folderUri }], { forceNewWindow: true });
 	}
 
-	private getFolderUriToOpen(sessionsManagementService: ISessionsManagementService, sessionsProvidersService: ISessionsProvidersService, remoteAgentHostService: IRemoteAgentHostService): URI | undefined {
+	private getFolderUriToOpen(sessionsManagementService: ISessionsManagementService, sessionsProvidersService: ISessionsProvidersService, remoteAgentHostService: unknown): URI | undefined {
 		const activeSession = sessionsManagementService.activeSession.get();
 		if (!activeSession) {
 			return undefined;

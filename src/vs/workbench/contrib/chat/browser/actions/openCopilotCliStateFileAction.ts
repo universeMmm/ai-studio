@@ -7,10 +7,16 @@ import { URI } from '../../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { Categories } from '../../../../../platform/action/common/actionCommonCategories.js';
 import { Action2 } from '../../../../../platform/actions/common/actions.js';
-import { agentHostAuthority } from '../../../../../platform/agentHost/common/agentHostUri.js';
-import { IRemoteAgentHostService } from '../../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
+
+// agentHost 剥离：本地桩代码替换原 agentHost 模块引用
+const agentHostAuthority = (addr: string) => addr;
+interface IRemoteAgentHostConnectionStub { readonly address: string }
+export const IRemoteAgentHostService = createDecorator<{
+	readonly connections: readonly IRemoteAgentHostConnectionStub[];
+}>('IRemoteAgentHostService');
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';

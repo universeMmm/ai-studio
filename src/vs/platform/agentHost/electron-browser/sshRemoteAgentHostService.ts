@@ -3,9 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
-import { ISSHRemoteAgentHostService } from '../common/sshRemoteAgentHost.js';
-import { ISSHRelayClientFactory, SSHRelayClientFactory, SSHRemoteAgentHostService } from './sshRemoteAgentHostServiceImpl.js';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-registerSingleton(ISSHRelayClientFactory, SSHRelayClientFactory, InstantiationType.Delayed);
-registerSingleton(ISSHRemoteAgentHostService, SSHRemoteAgentHostService, InstantiationType.Delayed);
+
+export {};

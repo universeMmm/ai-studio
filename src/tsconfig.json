@@ -35,6 +35,10 @@
 	],
 	"exclude": [
 		"vs/workbench/contrib/webview/browser/pre/service-worker.js",
-		"vs/platform/agentHost/**"
+		"vs/server/test/node/serverAgentHostManager.test.ts",
+		"vs/platform/agentHost/**",
+		"vs/**/*agentHost*/**",
+		"vs/**/*agentHost*.ts",
+		"vs/**/*agentHost*.js"
 	]
 }

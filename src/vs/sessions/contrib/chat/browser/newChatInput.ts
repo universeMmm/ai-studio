@@ -46,7 +46,15 @@ import { Menus } from '../../../browser/menus.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { SlashCommandHandler } from './slashCommands.js';
 import { VariableCompletionHandler } from './variableCompletions.js';
-import { AgentHostInputCompletionHandler } from './agentHostInputCompletions.js';
+// agentHost 剥离：本地桩代码
+import { Disposable as _AhicDisposable } from '../../../../base/common/lifecycle.js';
+class AgentHostInputCompletionHandler extends _AhicDisposable {
+	constructor(
+		_editor: unknown,
+		_contextAttachments: unknown,
+	) { super(); }
+	acceptCompletion(_entry: unknown, _insertText: string): void {}
+}
 import { IChatModelInputState } from '../../../../workbench/contrib/chat/common/model/chatModel.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';

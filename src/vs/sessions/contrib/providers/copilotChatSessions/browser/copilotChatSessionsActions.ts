@@ -39,7 +39,8 @@ import { CopilotPermissionPickerDelegate, PermissionPicker } from './permissionP
 import { SessionType } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { INewChatModelPickerService } from '../../../chat/browser/newChatModelPicker.js';
 import { reportNewChatPickerClosed } from '../../../chat/browser/newChatPickerTelemetry.js';
-import { CopilotCLISessionType } from '../../agentHost/browser/baseAgentHostSessionsProvider.js';
+// agentHost 剥离：本地桩代码
+const CopilotCLISessionType = { id: 'copilot-cli' } as const;
 
 const IsActiveSessionCopilotCLI = ContextKeyExpr.equals(ActiveSessionTypeContext.key, CopilotCLISessionType.id);
 const IsActiveSessionCopilotCloud = ContextKeyExpr.equals(ActiveSessionTypeContext.key, CopilotCloudSessionType.id);

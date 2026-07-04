@@ -10,7 +10,7 @@ import { localize } from '../../../../../../../nls.js';
 import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../../../platform/keybinding/common/keybinding.js';
-import { ConfirmationOptionKind, ConfirmationOption } from '../../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ConfirmationOptionKind, ConfirmationOption } from '../../../../common/confirmationTypes.js';
 import { ChatContextKeys } from '../../../../common/actions/chatContextKeys.js';
 import { ConfirmedReason, IChatToolInvocation, ToolConfirmKind } from '../../../../common/chatService/chatService.js';
 import { ILanguageModelToolsService } from '../../../../common/tools/languageModelToolsService.js';
@@ -158,7 +158,7 @@ export abstract class AbstractToolConfirmationSubPart extends BaseChatToolInvoca
 		}
 
 		const makeAction = (option: ConfirmationOption): IChatConfirmationButton<(() => void)> => ({
-			label: option.label,
+			label: option.label ?? '',
 			data: () => {
 				this.confirmWith(toolInvocation, { type: ToolConfirmKind.UserAction, selectedButton: option.id, selectedButtonKind: option.kind });
 			},

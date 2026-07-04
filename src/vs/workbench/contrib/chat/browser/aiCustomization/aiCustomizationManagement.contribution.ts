@@ -30,7 +30,8 @@ import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../../browser/e
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { EditorExtensions, IEditorFactoryRegistry, IEditorSerializer } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
-import { SYNCED_CUSTOMIZATION_SCHEME } from '../../../../services/agentHost/common/agentHostFileSystemService.js';
+// agentHost 剥离：本地桩代码
+const SYNCED_CUSTOMIZATION_SCHEME = 'synced-customization';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IWorkbenchExtensionManagementService } from '../../../../services/extensionManagement/common/extensionManagement.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';

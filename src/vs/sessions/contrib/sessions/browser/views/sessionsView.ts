@@ -26,7 +26,9 @@ import { localize } from '../../../../../nls.js';
 import { SessionsList, SessionsGrouping, SessionsSorting } from './sessionsList.js';
 import { SessionStatus } from '../../../../services/sessions/common/session.js';
 import { AICustomizationShortcutsWidget } from '../aiCustomizationShortcutsWidget.js';
-import { AgentHostShortcutsWidget } from '../agentHostShortcutsWidget.js';
+// agentHost 剥离：本地桩代码
+import { Disposable as _AgentHostDisposable } from '../../../../../base/common/lifecycle.js';
+class AgentHostShortcutsWidget extends _AgentHostDisposable { readonly _widgetBrand: undefined; constructor(_container: HTMLElement, _options: any) { super(); } }
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';

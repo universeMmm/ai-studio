@@ -3,19 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// Re-exports the protocol reducers and adds VS Code-specific helpers.
-// The actual reducer logic lives in the auto-generated protocol layer.
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-// Re-export reducers from the protocol layer
-export { rootReducer, sessionReducer, changesetReducer, softAssertNever, isClientDispatchable } from './protocol/reducers.js';
 
-import type { ICompletedToolCall, ToolCallState } from './sessionState.js';
-
-/**
- * Extracts the VS Code-specific `toolKind` hint from a tool call's `_meta`
- * bag. This is not part of the protocol and is injected by the agent adapter
- * (e.g. `copilotEventMapper`).
- */
-export function getToolKind(tc: ToolCallState | ICompletedToolCall): 'terminal' | 'subagent' | 'search' | undefined {
-	return tc._meta?.toolKind as 'terminal' | 'subagent' | 'search' | undefined;
+export function getToolKind(..._args: any[]): any {
+	throw new Error('agentHost stub: getToolKind is not available');
 }
+
+export const rootReducer: any = undefined as any;
+
+export const sessionReducer: any = undefined as any;
+
+export const changesetReducer: any = undefined as any;
+
+export const softAssertNever: any = undefined as any;
+
+export const isClientDispatchable: any = undefined as any;

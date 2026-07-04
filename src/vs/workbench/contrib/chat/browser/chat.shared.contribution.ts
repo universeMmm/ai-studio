@@ -7,9 +7,9 @@ import { Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { autorun, observableFromEvent } from '../../../../base/common/observable.js';
-import { isMacintosh, isWeb } from '../../../../base/common/platform.js';
+import { isMacintosh } from '../../../../base/common/platform.js';
 import { PolicyCategory } from '../../../../base/common/policy.js';
-import { AgentHostAhpJsonlLoggingSettingId, AgentHostClaudeAgentSdkPathSettingId, AgentHostCustomTerminalToolEnabledSettingId, AgentHostEnabledSettingId, AgentHostIpcLoggingSettingId, AgentHostOTelCaptureContentSettingId, AgentHostOTelDbSpanExporterEnabledSettingId, AgentHostOTelEnabledSettingId, AgentHostOTelExporterTypeSettingId, AgentHostOTelOtlpEndpointSettingId, AgentHostOTelOutfileSettingId } from '../../../../platform/agentHost/common/agentService.js';
+
 import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../../../platform/networkFilter/common/networkFilterService.js';
 import { AgentNetworkDomainSettingId } from '../../../../platform/networkFilter/common/settings.js';
 import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../platform/sandbox/common/settings.js';
@@ -153,7 +153,7 @@ import { ChatCodeBlockContextProviderService } from './codeBlockContextProviderS
 import { ChatDynamicVariableModel } from './attachments/chatDynamicVariables.js';
 import { ChatImplicitContextContribution } from './attachments/chatImplicitContext.js';
 import './widget/input/editor/chatInputCompletions.js';
-import './widget/input/editor/agentHostInputCompletions.js';
+
 import './widget/input/editor/chatInputEditorContrib.js';
 import './widget/input/editor/chatInputEditorHover.js';
 import { LanguageModelToolsConfirmationService } from './tools/languageModelToolsConfirmationService.js';
@@ -194,7 +194,7 @@ import { ExploreAgentDefaultModel } from './exploreAgentDefaultModel.js';
 import { PlanAgentDefaultModel } from './planAgentDefaultModel.js';
 import { UtilityModelContribution, UtilitySmallModelContribution } from './utilityModelContribution.js';
 import { ChatImageCarouselService, IChatImageCarouselService } from './chatImageCarouselService.js';
-import { browserChatToolReferenceNames } from '../../browserView/common/browserChatToolReferenceNames.js';
+
 
 CommandsRegistry.registerCommand('_chat.notifyQuestionCarouselAnswer', (accessor: ServicesAccessor, resolveId: string, answers?: import('../common/chatService/chatService.js').IChatQuestionAnswers) => {
 	accessor.get(IChatService).notifyQuestionCarouselAnswer('', resolveId, answers);
@@ -983,86 +983,8 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.newSession.defaultMode', "The default mode for new chat sessions. When empty, the chat view's default mode is used."),
 			default: '',
 		},
-		[AgentHostEnabledSettingId]: {
-			type: 'boolean',
-			description: nls.localize('chat.agentHost.enabled', "When enabled, some agents run in a separate agent host process."),
-			default: !isWeb && product.quality !== 'stable',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostClaudeAgentSdkPathSettingId]: {
-			type: 'string',
-			description: nls.localize('chat.agentHost.claudeAgent.path', "Experimental, for local testing only. Absolute path to a locally-installed `@anthropic-ai/claude-agent-sdk` package. When set, the Claude agent provider is registered inside the agent host and the SDK is loaded from this path. Requires `#chat.agentHost.enabled#`. The agent host process must be restarted for changes to take effect. This setting will be removed once the SDK is delivered through the Extension Marketplace."),
-			default: '',
-			tags: ['experimental', 'advanced'],
-			included: product.quality !== 'stable',
-		},
-		[AgentHostIpcLoggingSettingId]: {
-			type: 'boolean',
-			description: nls.localize('chat.agentHost.ipcLogging', "When enabled, logs all IPC traffic for each agent host to a dedicated output channel."),
-			default: product.quality !== 'stable',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostAhpJsonlLoggingSettingId]: {
-			type: 'boolean',
-			description: nls.localize('chat.agentHost.ahpJsonlLogging', "When enabled, logs all AHP transport messages for agent host connections to JSONL files under the window's log directory."),
-			default: product.quality !== 'stable',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostCustomTerminalToolEnabledSettingId]: {
-			type: 'boolean',
-			description: nls.localize('chat.agentHost.customTerminalTool.enabled', "When enabled, AI Studio SDK sessions use the Agent Host terminal tool override instead of the SDK's default terminal behavior."),
-			default: true,
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelEnabledSettingId]: {
-			type: 'boolean',
-			markdownDescription: nls.localize('chat.agentHost.otel.enabled', "When enabled, the agent host emits OpenTelemetry traces from the AI Studio SDK. Requires `#chat.agentHost.enabled#`. Either configure `#chat.agentHost.otel.otlpEndpoint#` to ship traces to an external collector or enable `#chat.agentHost.otel.dbSpanExporter.enabled#` to capture them locally."),
-			default: false,
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelExporterTypeSettingId]: {
-			type: 'string',
-			enum: ['otlp-http', 'otlp-grpc', 'console', 'file'],
-			markdownDescription: nls.localize('chat.agentHost.otel.exporterType', "Exporter backend used by the AI Studio SDK when `#chat.agentHost.otel.enabled#` is on. `otlp-grpc` is downgraded to `otlp-http` transparently in the CLI runtime."),
-			default: 'otlp-http',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelOtlpEndpointSettingId]: {
-			type: 'string',
-			markdownDescription: nls.localize('chat.agentHost.otel.otlpEndpoint', "OTLP endpoint URL when exporter type is `otlp-http` or `otlp-grpc`. Sets `OTEL_EXPORTER_OTLP_ENDPOINT` inside the agent host process."),
-			default: '',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelCaptureContentSettingId]: {
-			type: 'boolean',
-			markdownDescription: nls.localize('chat.agentHost.otel.captureContent', "When enabled, includes prompt and response content in OTel span attributes. Sets `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. Privacy-sensitive: do not enable in environments that ship spans to shared sinks."),
-			default: false,
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelOutfileSettingId]: {
-			type: 'string',
-			markdownDescription: nls.localize('chat.agentHost.otel.outfile', "Output path for span JSON lines when exporter type is `file`. Sets `AI_STUDIO_OTEL_FILE_EXPORTER_PATH`."),
-			default: '',
-			tags: ['experimental', 'advanced'],
-		},
-		[AgentHostOTelDbSpanExporterEnabledSettingId]: {
-			type: 'boolean',
-			markdownDescription: nls.localize('chat.agentHost.otel.dbSpanExporter.enabled', "When enabled, the agent host persists every emitted OTel span to a local SQLite database. Spans can be inspected via the `Export Agent Host Traces Database` command. Compatible with external exporters: spans are written to SQLite *and* forwarded to the user-configured sink."),
-			default: false,
-			tags: ['experimental', 'advanced'],
-		},
-		[ChatConfiguration.AgentHostClientTools]: {
-			type: 'array',
-			items: { type: 'string' },
-			description: nls.localize('chat.agentHost.clientTools', "Tool reference names to expose as client-provided tools in agent host sessions."),
-			default: [
-				'runTask', 'getTaskOutput', 'problems', 'runTests',
-				// These are always present in the {@link ChatConfiguration.AgentHostClientTools} default but
-				// out of these, only the tools that are actually registered/enabled are seen by the agent.
-				...browserChatToolReferenceNames,
-			],
-			tags: ['experimental', 'advanced'],
-		},
+
+
 		[ChatConfiguration.ToolConfirmationCarousel]: {
 			type: 'boolean',
 			description: nls.localize('chat.tools.confirmationCarousel', "When enabled, multiple tool confirmations are batched into a carousel above the input."),

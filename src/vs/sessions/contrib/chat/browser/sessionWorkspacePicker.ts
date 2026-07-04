@@ -18,8 +18,17 @@ import { IActionWidgetService } from '../../../../platform/actionWidget/browser/
 import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
 import { ITabDescriptor, TabbedActionListWidget } from '../../../../platform/actionWidget/browser/tabbedActionListWidget.js';
 import { IMenuService, MenuItemAction } from '../../../../platform/actions/common/actions.js';
-import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { TUNNEL_ADDRESS_PREFIX } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+
+// agentHost 剥离：本地桩代码替换原 agentHost 模块引用
+const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
+const RemoteAgentHostConnectionStatus = {
+	isConnected: (_s: unknown) => false,
+	isDisconnected: (_s: unknown) => false,
+	isIncompatible: (_s: unknown) => false,
+};
+const RemoteAgentHostsEnabledSettingId = 'chat.agentHost.remoteAgentHostsEnabled';
+const TUNNEL_ADDRESS_PREFIX = 'tunnel+';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
@@ -30,11 +39,20 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { ISessionWorkspace, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL, SESSION_WORKSPACE_GROUP_REMOTE } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { IAgentHostSessionsProvider, isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
-import { SessionWorkspacePickerGroupContext } from '../../../common/contextkeys.js';
-// eslint-disable-next-line local/code-import-patterns -- TODO: move remote host options out of providers
-import { getStatusHover, getStatusLabel, removeRemoteHost, showRemoteHostOptions } from '../../providers/remoteAgentHost/browser/remoteHostOptions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+
+// agentHost 剥离：本地桩代码替换原 agentHost 模块引用
+interface IAgentHostSessionsProvider {
+	readonly connectionStatus?: { get: () => unknown; read: (r: unknown) => unknown };
+	readonly remoteAddress?: string;
+	readonly label: string;
+}
+function isAgentHostProvider(_p: unknown): _p is any { return false; }
+function getStatusLabel(_s: unknown): string { return ''; }
+function getStatusHover(_s: unknown, _addr?: string): string | undefined { return undefined; }
+async function removeRemoteHost(_p: unknown, _svc: unknown): Promise<void> { }
+function showRemoteHostOptions(_accessor: unknown, _provider: unknown): void { }
+import { SessionWorkspacePickerGroupContext } from '../../../common/contextkeys.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { reportNewChatPickerClosed } from './newChatPickerTelemetry.js';
@@ -181,7 +199,7 @@ export class WorkspacePicker extends Disposable {
 		@IStorageService private readonly storageService: IStorageService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService protected readonly sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
+		@IRemoteAgentHostService private readonly remoteAgentHostService: unknown,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
@@ -731,7 +749,7 @@ export class WorkspacePicker extends Disposable {
 			const { workspace, providerId } = recentWorkspaces[i];
 			const isOwnRecent = i < ownRecentCount;
 			const provider = allProviders.find(p => p.id === providerId);
-			const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
+			const connectionStatus = provider && isAgentHostProvider(provider) ? (provider as any).connectionStatus?.get() : undefined;
 			const isDisconnected = RemoteAgentHostConnectionStatus.isDisconnected(connectionStatus) || RemoteAgentHostConnectionStatus.isIncompatible(connectionStatus);
 			const folderUri = workspace.folders[0]?.root;
 			if (!folderUri) {
@@ -765,7 +783,7 @@ export class WorkspacePicker extends Disposable {
 		// merging is no longer meaningful.
 		allBrowseActions.forEach((action, index) => {
 			const provider = allProviders.find(p => p.id === action.providerId);
-			const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
+			const connectionStatus = provider && isAgentHostProvider(provider) ? (provider as any).connectionStatus?.get() : undefined;
 			const isUnavailable = !!connectionStatus && !RemoteAgentHostConnectionStatus.isConnected(connectionStatus);
 			items.push({
 				kind: ActionListItemKind.Action,
@@ -875,10 +893,10 @@ export class WorkspacePicker extends Disposable {
 	 */
 	protected _isProviderUnavailable(providerId: string): boolean {
 		const provider = this.sessionsProvidersService.getProvider(providerId);
-		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
+		if (!provider || !isAgentHostProvider(provider) || !(provider as any).connectionStatus) {
 			return false;
 		}
-		return !RemoteAgentHostConnectionStatus.isConnected(provider.connectionStatus.get());
+		return !RemoteAgentHostConnectionStatus.isConnected((provider as any).connectionStatus.get());
 	}
 
 	protected _isSelectedFolder(folderUri: URI | undefined): boolean {
@@ -966,10 +984,10 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private _watchForConnectionFailure(resolved: IResolvedFolderWorkspace): void {
 		const provider = this.sessionsProvidersService.getProvider(resolved.providerId);
-		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
+		if (!provider || !isAgentHostProvider(provider) || !(provider as any).connectionStatus) {
 			return;
 		}
-		const connStatus = provider.connectionStatus;
+		const connStatus = (provider as any).connectionStatus;
 		if (RemoteAgentHostConnectionStatus.isConnected(connStatus.get())) {
 			return;
 		}

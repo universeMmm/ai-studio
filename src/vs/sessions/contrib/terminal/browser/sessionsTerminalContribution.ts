@@ -10,16 +10,25 @@ import { URI } from '../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { AGENT_HOST_SCHEME, fromAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
+// agentHost 剥离：本地桩代码
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+// agentHost 剥离：本地桩代码
+const AGENT_HOST_SCHEME = 'vscode-agent-host';
+const fromAgentHostUri = (uri: URI): URI => uri.with({ scheme: 'file' });
+const isAgentHostProvider = (_provider: unknown): boolean => false;
+const LOCAL_AGENT_HOST_PROVIDER_ID = 'local-agent-host';
+class AgentHostSessionTaskRunner {
+	readonly id = 'agentHost';
+	readonly priority = 0;
+	canRun(_session: ISession): boolean { return false; }
+	async runTask(): Promise<void> {}
+}
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkbenchContribution, getWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
-import { IAgentHostTerminalService } from '../../../../workbench/contrib/terminal/browser/agentHostTerminalService.js';
 import { ITerminalInstance, ITerminalService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { IPathService } from '../../../../workbench/services/path/common/pathService.js';
 import { Menus } from '../../../browser/menus.js';
-import { isAgentHostProvider, LOCAL_AGENT_HOST_PROVIDER_ID } from '../../../common/agentHostSessionsProvider.js';
 import { SessionsWelcomeVisibleContext, IsPhoneLayoutContext } from '../../../common/contextkeys.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISession } from '../../../services/sessions/common/session.js';
@@ -31,8 +40,8 @@ import { logSessionsInteraction } from '../../../common/sessionsTelemetry.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { ITerminalProfileService, TERMINAL_VIEW_ID } from '../../../../workbench/contrib/terminal/common/terminal.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../workbench/services/layout/browser/layoutService.js';
+
 import { ISessionTaskRunnerRegistry } from '../../chat/browser/sessionTaskRunner.js';
-import { AgentHostSessionTaskRunner } from './agentHostSessionTaskRunner.js';
 
 const SessionsTerminalViewVisibleContext = new RawContextKey<boolean>('sessionsTerminalViewVisible', false);
 
@@ -81,11 +90,19 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 
 	private _activeKey: string | undefined;
 
+	// agentHost 剥离：桩对象替代 IAgentHostTerminalService 注入
+	private readonly _agentHostTerminalService = {
+		profiles: { read: (_reader: IReader) => [] as any[] },
+		getProfileForConnection: (_address: string) => undefined,
+		setDefaultCwd: (_cwd?: URI) => {},
+		createTerminalForEntry: (_address: string, _opts: { cwd: URI }) => undefined,
+	};
+
 	constructor(
 		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
 		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
-		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
+		// agentHost 剥离：IAgentHostTerminalService 未注册，使用桩对象
 		@ILogService private readonly _logService: ILogService,
 		@IPathService private readonly _pathService: IPathService,
 		@ITerminalProfileService private readonly _terminalProfileService: ITerminalProfileService,
@@ -105,8 +122,8 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 				return;
 			}
 
-			const profiles = this._agentHostTerminalService.profiles.read(reader);
-			return profiles.find(p => p.address === address) ?? this._agentHostTerminalService.getProfileForConnection(address);
+			const profiles = (this._agentHostTerminalService as any).profiles.read(reader);
+			return profiles.find((p: { address: string }) => p.address === address) ?? (this._agentHostTerminalService as any).getProfileForConnection(address);
 		});
 
 		this._register(autorun(reader => {
@@ -124,11 +141,11 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 		this._register(autorun(reader => {
 			const session = this._sessionsManagementService.activeSession.read(reader);
 			if (session?.loading.read(reader)) {
-				this._agentHostTerminalService.setDefaultCwd(undefined);
+				(this._agentHostTerminalService as any).setDefaultCwd(undefined);
 				return;
 			}
 			const info = getSessionTerminalInfo(session, reader);
-			this._agentHostTerminalService.setDefaultCwd(info?.cwd);
+			(this._agentHostTerminalService as any).setDefaultCwd(info?.cwd);
 		}));
 
 		// Track whether the terminal view is visible so the titlebar toggle
@@ -247,7 +264,7 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 	private async _createTerminalForSession(cwd: URI, session: ISession | undefined): Promise<ITerminalInstance> {
 		const address = session && this._getSessionAgentHostAddress(session);
 		if (address) {
-			const instance = await this._agentHostTerminalService.createTerminalForEntry(address, { cwd });
+			const instance = await (this._agentHostTerminalService as any).createTerminalForEntry(address, { cwd });
 			if (instance) {
 				return instance;
 			}
@@ -267,7 +284,7 @@ export class SessionsTerminalContribution extends Disposable implements IWorkben
 		if (!provider || !isAgentHostProvider(provider)) {
 			return undefined;
 		}
-		return provider.remoteAddress ?? '__local__';
+		return (provider as any).remoteAddress ?? '__local__';
 	}
 
 	private async _onActiveSessionChanged(session: ISession | undefined): Promise<void> {

@@ -6,7 +6,7 @@
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { ConfirmationOptionKind } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ConfirmationOptionKind } from '../../confirmationTypes.js';
 import { IChatModifiedFilesConfirmationData, IChatTerminalToolInvocationData } from '../../chatService/chatService.js';
 import { CountTokensCallback, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, ToolDataSource, ToolInvocationPresentation, ToolProgress } from '../languageModelToolsService.js';
 

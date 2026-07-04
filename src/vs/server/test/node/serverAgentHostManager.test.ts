@@ -126,7 +126,6 @@ suite('ServerAgentHostManager', () => {
 
 	function createManager(): ServerAgentHostManager {
 		return ds.add(new ServerAgentHostManager(
-			starter,
 			new NullLogService(),
 			ds.add(new NullLoggerService()),
 			lifetimeService,

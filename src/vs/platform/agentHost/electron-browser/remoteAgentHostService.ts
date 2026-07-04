@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
-import { IRemoteAgentHostService } from '../common/remoteAgentHostService.js';
-import { RemoteAgentHostService } from '../browser/remoteAgentHostServiceImpl.js';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-registerSingleton(IRemoteAgentHostService, RemoteAgentHostService, InstantiationType.Delayed);
+
+export {};

@@ -3,69 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type Anthropic from '@anthropic-ai/sdk';
-import type * as http from 'http';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-/**
- * Anthropic-error helpers shared by the proxy. Two shapes:
- *
- * - **Proxy-authored errors**: synthesized by the proxy when no upstream
- *   response exists (auth failure, bad route, malformed body, model
- *   parse failure, `count_tokens`). Sent as a JSON body or an SSE error
- *   frame.
- * - **CAPI errors** (passthrough): an `AgentHostApiError` already carries
- *   the upstream `Anthropic.ErrorResponse`. The proxy re-emits it
- *   verbatim — see `claudeProxyService.ts` for that branch.
- */
 
-/**
- * Build a synthetic Anthropic error envelope. `request_id` is `null`
- * because the proxy authored this error itself (no upstream request was
- * made, or the upstream request didn't supply one).
- */
-export function buildErrorEnvelope(type: Anthropic.ErrorType, message: string): Anthropic.ErrorResponse {
-	return {
-		type: 'error',
-		error: { type, message },
-		request_id: null,
-	};
+export function buildErrorEnvelope(..._args: any[]): any {
+	throw new Error('agentHost stub: buildErrorEnvelope is not available');
 }
 
-/**
- * Send a proxy-authored JSON error response. Caller must NOT have
- * written headers or body yet.
- */
-export function writeJsonError(
-	res: http.ServerResponse,
-	status: number,
-	type: Anthropic.ErrorType,
-	message: string,
-): void {
-	res.writeHead(status, { 'Content-Type': 'application/json' });
-	res.end(JSON.stringify(buildErrorEnvelope(type, message)));
+export function writeJsonError(..._args: any[]): any {
+	throw new Error('agentHost stub: writeJsonError is not available');
 }
 
-/**
- * Send an upstream {@link Anthropic.ErrorResponse} verbatim with the
- * supplied HTTP status. Used by the CAPI passthrough branch in
- * `claudeProxyService` so any extra fields on the upstream envelope
- * (e.g. `request_id`) propagate to the SDK unchanged.
- */
-export function writeUpstreamJsonError(
-	res: http.ServerResponse,
-	status: number,
-	envelope: Anthropic.ErrorResponse,
-): void {
-	res.writeHead(status, { 'Content-Type': 'application/json' });
-	res.end(JSON.stringify(envelope));
+export function writeUpstreamJsonError(..._args: any[]): any {
+	throw new Error('agentHost stub: writeUpstreamJsonError is not available');
 }
 
-/**
- * Encode a single SSE frame for an Anthropic streaming error. Used after
- * `writeHead(200)` has already been called (so we can no longer change
- * the HTTP status). Caller should `res.end()` after writing this frame
- * — the Anthropic SDK treats `event: error` as terminal.
- */
-export function formatSseErrorFrame(envelope: Anthropic.ErrorResponse): string {
-	return `event: error\ndata: ${JSON.stringify(envelope)}\n\n`;
+export function formatSseErrorFrame(..._args: any[]): any {
+	throw new Error('agentHost stub: formatSseErrorFrame is not available');
 }

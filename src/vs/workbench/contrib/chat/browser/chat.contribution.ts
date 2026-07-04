@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ExportAgentHostDebugLogsAction } from './actions/exportAgentHostDebugLogsAction.js';
+// agentHost 剥离：ExportAgentHostDebugLogsAction 已移除
 import { ForkConversationAction } from './actions/chatForkActions.js';
 
 registerAction2(ForkConversationAction);
-registerAction2(ExportAgentHostDebugLogsAction);
+// agentHost 剥离：ExportAgentHostDebugLogsAction 注册已移除

@@ -5,7 +5,8 @@
 
 import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-import { ITunnelHostInfo } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
+// agentHost 剥离：本地桩代码
+type ITunnelHostInfo = any;
 
 export const ITunnelHostService = createDecorator<ITunnelHostService>('tunnelHostService');
 

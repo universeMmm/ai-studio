@@ -13,14 +13,19 @@ import { ISharedProcessService } from '../../../../platform/ipc/electron-browser
 import { ILogger, ILoggerService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { localize } from '../../../../nls.js';
-import {
-	ITunnelAgentHostHostingService,
-	TUNNEL_HOST_CHANNEL,
-	TUNNEL_HOST_LOG_ID,
-	type ITunnelHostInfo,
-	type TunnelHostStatus,
-} from '../../../../platform/agentHost/common/tunnelAgentHost.js';
-import { IAgentHostService } from '../../../../platform/agentHost/common/agentService.js';
+// agentHost 剥离：本地桩代码
+const TUNNEL_HOST_CHANNEL = 'tunnelHost';
+const TUNNEL_HOST_LOG_ID = 'tunnelHost';
+type TunnelHostStatus = { active: boolean; info?: any };
+interface ITunnelAgentHostHostingService {
+	onDidChangeStatus: Event<TunnelHostStatus>;
+	getStatus(): Promise<TunnelHostStatus>;
+	startHosting(_token: string, _provider: string, _socketInfo: any): Promise<any>;
+	stopHosting(): Promise<void>;
+}
+type ITunnelHostInfo = any;
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+const IAgentHostService = createDecorator<Record<string, never>>('IAgentHostService');
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ITunnelHostService } from '../common/tunnelHost.js';
 
@@ -47,7 +52,7 @@ export class TunnelHostService extends Disposable implements ITunnelHostService 
 		@ISharedProcessService sharedProcessService: ISharedProcessService,
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@IProductService private readonly _productService: IProductService,
-		@IAgentHostService private readonly _agentHostService: IAgentHostService,
+		@IAgentHostService private readonly _agentHostService: unknown,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ILoggerService loggerService: ILoggerService,
 		@IEnvironmentService environmentService: IEnvironmentService,
@@ -73,7 +78,7 @@ export class TunnelHostService extends Disposable implements ITunnelHostService 
 		}));
 
 		// Restore status on construction
-		this._mainService.getStatus().then(status => {
+		this._mainService.getStatus().then((status: { active: boolean; info?: ITunnelHostInfo }) => {
 			this._isSharing = status.active;
 			this._sharingInfo = status.active ? status.info : undefined;
 			if (status.active) {
@@ -107,7 +112,7 @@ export class TunnelHostService extends Disposable implements ITunnelHostService 
 
 			this._logger.info(`Starting tunnel hosting...`);
 
-			const socketInfo = await this._agentHostService.startWebSocketServer();
+			const socketInfo = await (this._agentHostService as any).startWebSocketServer();
 			const info = await this._mainService.startHosting(auth.token, auth.provider, socketInfo);
 			this._isSharing = true;
 			this._sharingInfo = info;

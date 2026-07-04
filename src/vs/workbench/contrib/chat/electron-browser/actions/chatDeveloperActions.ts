@@ -10,12 +10,11 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { INativeHostService } from '../../../../../platform/native/common/native.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatService } from '../../common/chatService/chatService.js';
-import { DebugAgentHostInDevToolsAction } from './debugAgentHostAction.js';
-import './exportAgentHostDebugLogsService.js';
+// agentHost 剥离：debugAgentHostAction 和 exportAgentHostDebugLogsService 已移除
 
 export function registerChatDeveloperActions() {
 	registerAction2(OpenChatStorageFolderAction);
-	registerAction2(DebugAgentHostInDevToolsAction);
+	// agentHost 剥离：DebugAgentHostInDevToolsAction 注册已移除
 }
 
 class OpenChatStorageFolderAction extends Action2 {

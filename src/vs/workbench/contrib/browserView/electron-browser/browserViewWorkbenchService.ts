@@ -23,7 +23,7 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../platform/context
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
 import { ChatConfiguration } from '../../chat/common/constants.js';
-import { AgentHostEnabledSettingId } from '../../../../platform/agentHost/common/agentService.js';
+
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { focusBorder } from '../../../../platform/theme/common/colors/baseColors.js';
 import { buttonForeground, buttonBackground } from '../../../../platform/theme/common/colors/inputColors.js';
@@ -62,15 +62,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		ChatContextKeys.enabled,
 		ContextKeyExpr.has(`config.${ChatConfiguration.AgentEnabled}`),
 		ContextKeyExpr.has(`config.workbench.browser.enableChatTools`),
-		// If we're in Sessions Window, we require some additional conditions.
-		ContextKeyExpr.or(
-			IsSessionsWindowContext.negate(),
-			ContextKeyExpr.and(
-				IsSessionsWindowContext,
-				ContextKeyExpr.has(`config.${AgentHostEnabledSettingId}`),
-				ContextKeyExpr.has(`config.${AgentHostChatToolsEnabledSettingId}`),
-			),
-		),
+		IsSessionsWindowContext.negate(),
 	)!;
 
 	private _isSharingAvailable: boolean = false;

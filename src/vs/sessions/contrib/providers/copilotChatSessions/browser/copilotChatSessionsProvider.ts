@@ -41,12 +41,14 @@ import { localize } from '../../../../../nls.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
-import { SessionConfigKey } from '../../../../../platform/agentHost/common/sessionConfigKeys.js';
+// agentHost 剥离：本地桩代码
+const SessionConfigKey = { Isolation: 'session.isolation', Branch: 'session.branch' } as const;
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IGitHubService } from '../../../github/browser/githubService.js';
 import { computePullRequestIcon, GitHubPullRequestState } from '../../../github/common/types.js';
 import { structuralEquals } from '../../../../../base/common/equals.js';
-import { CopilotCLISessionType } from '../../agentHost/browser/baseAgentHostSessionsProvider.js';
+// agentHost 剥离：本地桩代码
+const CopilotCLISessionType = { id: 'copilot-cli' } as const;
 import { createChangesets } from './copilotChatSessionsChangesets.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 

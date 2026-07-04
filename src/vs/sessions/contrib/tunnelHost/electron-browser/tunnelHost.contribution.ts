@@ -19,7 +19,8 @@ import { IOutputService } from '../../../../workbench/services/output/common/out
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ITunnelHostService } from '../common/tunnelHost.js';
-import { TUNNEL_HOST_LOG_ID } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
+// agentHost 剥离：本地桩代码
+const TUNNEL_HOST_LOG_ID = 'tunnelHost';
 import { CONFIGURATION_KEY_MICROSOFT_AUTH, SHOW_TUNNEL_HOST_OUTPUT_ID, TunnelHostService } from './tunnelHostService.js';
 import { ToggleRemoteConnectionsActionViewItem } from './toggleRemoteConnectionsActionViewItem.js';
 
@@ -30,7 +31,7 @@ const TOGGLE_SHARING_ID = 'sessions.tunnelHost.toggleSharing';
 const CATEGORY = localize2('tunnelHost.category', 'Remote Connections');
 
 // Register the renderer-side service
-registerSingleton(ITunnelHostService, TunnelHostService, InstantiationType.Delayed);
+registerSingleton(ITunnelHostService, TunnelHostService as any, InstantiationType.Delayed);
 
 /**
  * Contribution that manages the tunnel host sharing context key

@@ -3,117 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { localize } from '../../../../nls.js';
-import { AgentSession } from '../../common/agentService.js';
-import { CompletionItem, CompletionItemKind, CompletionsParams } from '../../common/state/protocol/commands.js';
-import { MessageAttachmentKind } from '../../common/state/protocol/state.js';
-import { CompletionTriggerCharacter, IAgentHostCompletionItemProvider } from '../agentHostCompletions.js';
-import { extractLeadingSlashToken } from '../agentHostSlashCompletion.js';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-/**
- * Slash-command name and the token we surface to the user / round-trip on
- * the {@link MessageAttachmentKind.Simple} attachment's `_meta`.
- */
-export type AgentHostSlashCommandName = 'plan' | 'compact';
 
-const COMMANDS: readonly AgentHostSlashCommandName[] = ['plan', 'compact'];
-function getCommandDescription(command: AgentHostSlashCommandName): string {
-	switch (command) {
-		case 'plan': return localize('aiStudioSlashCommand.plan.description', "Create an implementation plan before coding");
-		case 'compact': return localize('aiStudioSlashCommand.compact.description', "Free up context by compacting the conversation history");
-	}
-}
-/**
- * Lookup hook used by {@link CopilotSlashCommandCompletionProvider} to
- * decide whether history-dependent commands (e.g. `/compact`) make sense
- * for a given session. Sessions that haven't been materialized yet — i.e.
- * the user hasn't sent a first message — have no history.
- */
-export interface IAgentHostSlashCommandSessionInfo {
-	/** `sessionId` is the raw id (URI path without the leading slash). */
-	hasHistory(sessionId: string): boolean;
+export type IAgentHostSlashCommandSessionInfo = any;
+
+export type IParsedLeadingSlashCommand = any;
+
+export type AgentHostSlashCommandName = any;
+
+export class AgentHostSlashCommandCompletionProvider {
+	// STUB: agentHost 已剥离
 }
 
-/**
- * Result of {@link parseLeadingSlashCommand}.
- */
-export interface IParsedLeadingSlashCommand {
-	readonly command: AgentHostSlashCommandName;
-	/** Trimmed text following the command (empty if none). */
-	readonly rest: string;
-}
-
-/**
- * Parses a Copilot CLI slash command at the very start of `prompt`.
- *
- * The command must be `/plan` or `/compact`, followed either by end-of-input
- * or by at least one whitespace character. `/compact-hello`, `/plans`, or a
- * leading-space `/compact` all return `undefined`. Match is case-sensitive.
- */
-export function parseLeadingSlashCommand(prompt: string): IParsedLeadingSlashCommand | undefined {
-	const match = /^\/(plan|compact)(?:$|\s+([\s\S]*))/.exec(prompt);
-	if (!match) {
-		return undefined;
-	}
-	return {
-		command: match[1] as AgentHostSlashCommandName,
-		rest: (match[2] ?? '').trim(),
-	};
-}
-
-/**
- * Completion provider for Copilot CLI slash commands. Only fires for
- * sessions whose URI scheme is `copilotcli` and only when the input begins
- * with `/`.
- *
- * The returned items carry a {@link MessageAttachmentKind.Simple}
- * attachment, which the workbench bridge maps into command/skill completion
- * attachments. Command dispatch happens text-side in
- * `AgentHostAgentSession.send` via {@link parseLeadingSlashCommand}, so the
- * feature works whether the user picks the item or types it manually.
- */
-export class AgentHostSlashCommandCompletionProvider implements IAgentHostCompletionItemProvider {
-	readonly kinds: ReadonlySet<CompletionItemKind> = new Set([CompletionItemKind.UserMessage]);
-	readonly triggerCharacters = [CompletionTriggerCharacter.Slash] as const;
-
-	constructor(private readonly copilotcliId: string, private readonly _sessionInfo?: IAgentHostSlashCommandSessionInfo) { }
-
-	async provideCompletionItems(params: CompletionsParams, _token: CancellationToken): Promise<readonly CompletionItem[]> {
-		if (AgentSession.provider(params.channel) !== this.copilotcliId) {
-			return [];
-		}
-		const leading = extractLeadingSlashToken(params.text, params.offset);
-		if (!leading) {
-			return [];
-		}
-
-		// Raw session id is the URI path without the leading slash.
-		const sessionId = AgentSession.id(params.channel);
-		const hasHistory = this._sessionInfo?.hasHistory(sessionId) ?? true;
-
-		// `/abc` → typed = 'abc'; empty after just '/' → typed = ''.
-		const typed = leading.typed;
-		const items: CompletionItem[] = [];
-		for (const command of COMMANDS) {
-			if (typed.length > 0 && !command.startsWith(typed)) {
-				continue;
-			}
-			// `/compact` only makes sense once the session has prior turns to compact.
-			if (command === 'compact' && !hasHistory) {
-				continue;
-			}
-			items.push({
-				insertText: command === 'plan' ? '/' + command + ' ' : '/' + command,
-				rangeStart: 0,
-				rangeEnd: leading.rangeEnd,
-				attachment: {
-					type: MessageAttachmentKind.Simple,
-					label: '/' + command,
-					_meta: { command, description: getCommandDescription(command) },
-				},
-			});
-		}
-		return items;
-	}
+export function parseLeadingSlashCommand(..._args: any[]): any {
+	throw new Error('agentHost stub: parseLeadingSlashCommand is not available');
 }

@@ -19,7 +19,8 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { localize } from '../../../../nls.js';
-import { AGENT_HOST_SCHEME } from '../../../../platform/agentHost/common/agentHostUri.js';
+// agentHost 剥离：本地桩代码
+const AGENT_HOST_SCHEME = 'vscode-agent-host';
 
 /**
  * Agent Sessions override of IAICustomizationWorkspaceService.

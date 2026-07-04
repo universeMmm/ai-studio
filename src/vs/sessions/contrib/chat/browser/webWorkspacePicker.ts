@@ -8,7 +8,10 @@ import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
-import { IRemoteAgentHostService } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+
+// agentHost 剥离：本地桩代码
+const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -19,7 +22,8 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { IAgentHostFilterService } from '../../../services/agentHostFilter/common/agentHostFilter.js';
+import { Event } from '../../../../base/common/event.js';
+// agentHost 剥离：IAgentHostFilterService 桩对象
 import { IWorkspacePickerItem, WorkspacePicker } from './sessionWorkspacePicker.js';
 import { showMobileWorkspacePickerSheet, shouldUseMobileWorkspacePickerSheet } from './mobile/mobileWorkspacePickerSheet.js';
 import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
@@ -49,7 +53,7 @@ export class WebWorkspacePicker extends WorkspacePicker {
 		@IStorageService storageService: IStorageService,
 		@IUriIdentityService uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService remoteAgentHostService: IRemoteAgentHostService,
+		@IRemoteAgentHostService remoteAgentHostService: unknown,
 		@IConfigurationService configurationService: IConfigurationService,
 		@ICommandService commandService: ICommandService,
 		@IWorkspacesService workspacesService: IWorkspacesService,
@@ -58,7 +62,8 @@ export class WebWorkspacePicker extends WorkspacePicker {
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IFileDialogService fileDialogService: IFileDialogService,
 		@ITelemetryService telemetryService: ITelemetryService,
-		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
+		// agentHost 剥离：IAgentHostFilterService 已剥离，使用桩对象
+		private readonly _agentHostFilterService = { onDidChange: Event.None, selectedProviderId: undefined as string | undefined },
 		@IWorkbenchLayoutService private readonly _layoutService: IWorkbenchLayoutService,
 	) {
 		super(

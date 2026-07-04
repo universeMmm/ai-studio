@@ -3,12 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { posix as pathPosix, win32 as pathWin32 } from '../../../base/common/path.js';
-import * as platform from '../../../base/common/platform.js';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-export function isZsh(shell: string): boolean {
-	if (platform.OS === platform.OperatingSystem.Windows) {
-		return /^zsh(?:\.exe)?$/i.test(pathWin32.basename(shell));
-	}
-	return /^zsh$/.test(pathPosix.basename(shell));
+
+export function isZsh(..._args: any[]): any {
+	throw new Error('agentHost stub: isZsh is not available');
 }

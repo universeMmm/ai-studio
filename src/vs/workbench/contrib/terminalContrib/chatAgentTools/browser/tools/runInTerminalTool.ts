@@ -18,7 +18,7 @@ import { OperatingSystem, OS } from '../../../../../../base/common/platform.js';
 import { count } from '../../../../../../base/common/strings.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
-import { ConfirmationOptionKind } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ConfirmationOptionKind } from '../../../../../contrib/chat/common/confirmationTypes.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IInstantiationService, type ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';

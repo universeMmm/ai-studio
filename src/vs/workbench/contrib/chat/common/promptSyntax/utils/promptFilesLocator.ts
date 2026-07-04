@@ -27,7 +27,8 @@ import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 import { equalsIgnoreCase } from '../../../../../../base/common/strings.js';
 import { IWorkspaceTrustManagementService } from '../../../../../../platform/workspace/common/workspaceTrust.js';
-import { AGENT_HOST_SCHEME } from '../../../../../../platform/agentHost/common/agentHostUri.js';
+// agentHost 剥离：本地桩代码
+const AGENT_HOST_SCHEME = 'vscode-agent-host';
 
 /**
  * Maximum recursion depth when traversing subdirectories for instruction files.

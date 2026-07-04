@@ -7,7 +7,9 @@ import { joinPath } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { AgentHostOTelDbSpanExporterEnabledSettingId, AgentHostOTelSpansDbSubPath } from '../../../../../platform/agentHost/common/agentService.js';
+// agentHost 剥离：本地桩代码
+const AgentHostOTelDbSpanExporterEnabledSettingId = 'chat.agentHost.otel.dbSpanExporter.enabled';
+const AgentHostOTelSpansDbSubPath = 'agent-host/otel/agent-host-traces.db';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';

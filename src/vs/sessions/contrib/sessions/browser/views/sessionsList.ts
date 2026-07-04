@@ -46,7 +46,7 @@ import { ISessionsManagementService } from '../../../../services/sessions/common
 import { IAgentSessionsService } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { ISessionsListModelService } from './sessionsListModelService.js';
-import { IAgentHostFilterService } from '../../../../services/agentHostFilter/common/agentHostFilter.js';
+// agentHost 剥离：IAgentHostFilterService 桩对象
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { buildSessionHoverContent } from '../sessionHoverContent.js';
 
@@ -803,6 +803,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 	private readonly _onDidChangeFindOpenState = this._register(new Emitter<boolean>());
 	readonly onDidChangeFindOpenState: Event<boolean> = this._onDidChangeFindOpenState.event;
 
+	// agentHost 剥离：IAgentHostFilterService 桩对象
+	private readonly _agentHostFilterService = { onDidChange: Event.None, selectedProviderId: undefined as string | undefined };
+
 	get element(): HTMLElement { return this.listContainer; }
 
 	constructor(
@@ -810,7 +813,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 		private readonly options: ISessionsListControlOptions,
 		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
 		@ISessionsListModelService private readonly _sessionsListModelService: ISessionsListModelService,
-		@IAgentHostFilterService private readonly _agentHostFilterService: IAgentHostFilterService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IStorageService private readonly storageService: IStorageService,

@@ -6,6 +6,7 @@
 import './media/chatWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Event } from '../../../../base/common/event.js';
 import { derived } from '../../../../base/common/observable.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -30,7 +31,7 @@ import { IPreferredSessionType } from './sessionTypePicker.js';
 import { NewChatInputWidget } from './newChatInput.js';
 import { NoAgentHostEmptyState } from './noAgentHostEmptyState.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
-import { IAgentHostFilterService } from '../../../services/agentHostFilter/common/agentHostFilter.js';
+// agentHost 剥离：IAgentHostFilterService 桩对象（Event 已在上方导入）
 
 // #region --- New Chat Widget ---
 
@@ -51,21 +52,25 @@ class NewChatWidget extends Disposable {
 	 */
 	private _activeEmptyState: NoAgentHostEmptyState | undefined;
 
+	// agentHost 剥离：IAgentHostFilterService 桩对象
+	private readonly agentHostFilterService: any;
+
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@IAquariumService private readonly aquariumService: IAquariumService,
-		@IAgentHostFilterService private readonly agentHostFilterService: IAgentHostFilterService,
 	) {
+		// agentHost 剥离：IAgentHostFilterService 桩对象
+		this.agentHostFilterService = { onDidChange: Event.None, onDidChangeDiscovering: Event.None, hosts: [] as readonly any[], isDiscovering: false, rediscover: async () => {} };
 		super();
 		// On web (vscode.dev / insiders.vscode.dev), use {@link WebWorkspacePicker}
 		// which scopes recents to the active host and renders as a bottom
 		// sheet on phone-layout viewports. On Electron desktop, the regular
 		// {@link WorkspacePicker} is fine — phones never run there.
 		const PickerCtor = isWeb ? WebWorkspacePicker : WorkspacePicker;
-		this._workspacePicker = this._register(this.instantiationService.createInstance(PickerCtor));
+		this._workspacePicker = this._register(this.instantiationService.createInstance(PickerCtor as any));
 		this._register(this._pendingSessionTypeWait);
 
 		const canSendRequest = derived(reader => {

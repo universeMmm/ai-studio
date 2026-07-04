@@ -5,8 +5,13 @@
 
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
-import { agentHostAuthority, toAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
-import { IRemoteAgentHostConnectionInfo } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+// agentHost 剥离：本地桩代码
+const agentHostAuthority = (addr: string) => `agent-host-${addr}`;
+const toAgentHostUri = (uri: URI, authority: string): URI => URI.from({ scheme: 'vscode-agent-host', authority, path: uri.path });
+interface IRemoteAgentHostConnectionInfo {
+	readonly address: string;
+	readonly defaultDirectory?: string;
+}
 
 // Scheme conventions for `aiStudioCli` chat sessions:
 // - Local AH:  `agent-host-aiStudioCli:/<id>`         (LOCAL_RESOURCE_SCHEME_PREFIX + provider)

@@ -3,31 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createDecorator } from '../../instantiation/common/instantiation.js';
+// STUB — agentHost 已剥离，此文件为占位桩模块
 
-export interface IDiffCountResult {
-	added: number;
-	removed: number;
-}
 
-export const IDiffComputeService = createDecorator<IDiffComputeService>('diffComputeService');
+export type IDiffCountResult = any;
 
-/** Default timeout for diff computation in milliseconds. */
-export const DEFAULT_DIFF_TIMEOUT_MS = 5000;
+export type IDiffComputeService = any;
 
-/**
- * Service that computes line diff counts (added/removed) between two
- * text strings. Implementations may offload computation to a worker
- * thread to avoid blocking the main thread.
- */
-export interface IDiffComputeService {
-	readonly _serviceBrand: undefined;
-
-	/**
-	 * Computes line-level diff counts between two text strings.
-	 * @param original - The original text.
-	 * @param modified - The modified text to compare against the original.
-	 * @param timeoutMs - Maximum time in milliseconds before aborting. Defaults to {@link DEFAULT_DIFF_TIMEOUT_MS}.
-	 */
-	computeDiffCounts(original: string, modified: string, timeoutMs?: number): Promise<IDiffCountResult>;
-}
+export const DEFAULT_DIFF_TIMEOUT_MS: any = undefined as any;

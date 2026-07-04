@@ -20,7 +20,8 @@ import { SessionStatus } from '../../../../../services/sessions/common/session.j
 import { IActiveSession, ISessionsManagementService } from '../../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvider } from '../../../../../services/sessions/common/sessionsProvider.js';
 import { getAvailableModels, modelPickerStorageKey, SessionModelPicker, shouldShowSessionManageModelsAction } from '../../browser/copilotChatSessionsActions.js';
-import { CopilotCLISessionType } from '../../../agentHost/browser/baseAgentHostSessionsProvider.js';
+// agentHost 剥离：本地桩代码
+const CopilotCLISessionType = { id: 'copilot-cli' } as const;
 import { ClaudeCodeSessionType, COPILOT_PROVIDER_ID } from '../../browser/copilotChatSessionsProvider.js';
 import { INewChatModelPickerService, NewChatModelPickerService } from '../../../../chat/browser/newChatModelPicker.js';
 import { SessionType } from '../../../../../../workbench/contrib/chat/common/chatSessionsService.js';

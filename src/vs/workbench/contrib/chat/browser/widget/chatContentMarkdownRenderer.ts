@@ -15,7 +15,8 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import product from '../../../../../platform/product/common/product.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { AGENT_HOST_SCHEME } from '../../../../../platform/agentHost/common/agentHostUri.js';
+// agentHost 剥离：本地桩代码
+const AGENT_HOST_SCHEME = 'vscode-agent-host';
 
 const _remoteImageDisallowed = () => false;
 

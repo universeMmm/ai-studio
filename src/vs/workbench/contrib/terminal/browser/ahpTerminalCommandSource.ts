@@ -10,7 +10,26 @@ import type { IMarker } from '@xterm/xterm';
 import { TerminalCapability, type ITerminalCommand, type IMarkProperties } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import type { ITerminalOutputMatch, ITerminalOutputMatcher } from '../../../../platform/terminal/common/terminal.js';
 import type { IAhpTerminalCommandSource, ITerminalInstance } from './terminal.js';
-import { AhpCommandMarkKind, getAhpCommandMarkId, type AgentHostPty, type IAgentHostPtyCommandExecutedEvent, type IAgentHostPtyCommandFinishedEvent } from './agentHostPty.js';
+// agentHost 剥离：本地桩代码
+const enum AhpCommandMarkKind {
+	Executed = 's',
+	End = 'e'
+}
+function getAhpCommandMarkId(commandId: string, kind: AhpCommandMarkKind): string {
+	return `ahp-${commandId}-${kind}`;
+}
+interface IAgentHostPtyCommandExecutedEvent {
+	readonly commandId: string;
+	readonly commandLine: string;
+	readonly timestamp: number;
+	readonly storedOutput?: string;
+}
+interface IAgentHostPtyCommandFinishedEvent {
+	readonly commandId: string;
+	readonly exitCode?: number;
+	readonly durationMs?: number;
+}
+type AgentHostPty = any;
 
 /**
  * An implementation of {@link ITerminalCommand} backed by AHP protocol data

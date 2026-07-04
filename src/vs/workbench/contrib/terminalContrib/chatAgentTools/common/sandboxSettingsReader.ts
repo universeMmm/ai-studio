@@ -7,7 +7,8 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 import { AgentSandboxEnabledValue, AgentSandboxSettingId } from '../../../../../platform/sandbox/common/settings.js';
-import { sandboxSettingIdToAgentHostKey } from '../../../../../platform/agentHost/common/sandboxConfigSchema.js';
+// agentHost 剥离：空映射替代原 agentHost sandbox 配置
+const sandboxSettingIdToAgentHostKey: Record<string, string> = {};
 
 /** Setting IDs that affect the engine's sandbox configuration (modern + deprecated). */
 export const SANDBOX_SETTING_KEYS: readonly string[] = [
