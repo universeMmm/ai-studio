@@ -8,6 +8,7 @@ import { URI } from '../../../base/common/uri.js';
 import { IHeaders } from '../../../base/parts/request/common/request.js';
 import { VSBufferReadableStream } from '../../../base/common/buffer.js';
 import { IUserDataSyncMachine } from './userDataSyncMachines.js';
+import { IUserDataSyncAccount, IUserDataSyncAccountService } from './userDataSyncAccount.js';
 import {
 	IUserDataSyncService,
 	IUserDataAutoSyncService,
@@ -178,4 +179,19 @@ export class NullUserDataSyncResourceProviderService implements IUserDataSyncRes
 	async getLocalSyncedMachines(_location?: URI): Promise<IUserDataSyncMachine[]> { return []; }
 	async resolveContent(_resource: URI): Promise<string | null> { return null; }
 	resolveUserDataSyncResource(_syncResourceHandle: ISyncResourceHandle): IUserDataSyncResource | undefined { return undefined; }
+}
+
+// ---------------------------------------------------------------------------
+// IUserDataSyncAccountService — no account
+// ---------------------------------------------------------------------------
+
+export class NullUserDataSyncAccountService implements IUserDataSyncAccountService {
+
+	declare _serviceBrand: undefined;
+
+	readonly onTokenFailed: Event<boolean> = Event.None;
+	readonly account: IUserDataSyncAccount | undefined = undefined;
+	readonly onDidChangeAccount: Event<IUserDataSyncAccount | undefined> = Event.None;
+
+	async updateAccount(_account: IUserDataSyncAccount | undefined): Promise<void> { }
 }

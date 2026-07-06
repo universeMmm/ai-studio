@@ -172,6 +172,9 @@ import { IOpenerService } from '../platform/opener/common/opener.js';
 import { ExtensionStorageService, IExtensionStorageService } from '../platform/extensionManagement/common/extensionStorage.js';
 // import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
 // import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
+import { IUserDataSyncAccountService } from '../platform/userDataSync/common/userDataSyncAccount.js';
+import { NullUserDataSyncAccountService, NullUserDataSyncEnablementService } from '../platform/userDataSync/common/nullUserDataSyncService.js';
+import { IUserDataSyncEnablementService } from '../platform/userDataSync/common/userDataSync.js';
 import { AllowedExtensionsService } from '../platform/extensionManagement/common/allowedExtensionsService.js';
 import { IAllowedMcpServersService, IMcpGalleryService } from '../platform/mcp/common/mcpManagement.js';
 import { McpGalleryService } from '../platform/mcp/common/mcpGalleryService.js';
@@ -181,6 +184,8 @@ import { WebWorkerService } from '../platform/webWorker/browser/webWorkerService
 
 // AI Studio: userDataSync log service disabled
 // registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
+registerSingleton(IUserDataSyncAccountService, NullUserDataSyncAccountService, InstantiationType.Delayed);
+registerSingleton(IUserDataSyncEnablementService, NullUserDataSyncEnablementService, InstantiationType.Delayed);
 registerSingleton(IAllowedExtensionsService, AllowedExtensionsService, InstantiationType.Delayed);
 // AI Studio: ignored extensions management disabled
 // registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);

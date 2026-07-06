@@ -102,9 +102,10 @@ export class GlobalCompositeBar extends Disposable {
 			preventLoopNavigation: true
 		}));
 
-		if (this.accountsVisibilityPreference) {
-			this.globalActivityActionBar.push(this.accountAction, { index: GlobalCompositeBar.ACCOUNTS_ACTION_INDEX });
-		}
+		// AI Studio: Accounts icon removed from activity bar
+		// if (this.accountsVisibilityPreference) {
+		// 	this.globalActivityActionBar.push(this.accountAction, { index: GlobalCompositeBar.ACCOUNTS_ACTION_INDEX });
+		// }
 
 		this.globalActivityActionBar.push(this.globalActivityAction);
 
@@ -132,7 +133,8 @@ export class GlobalCompositeBar extends Disposable {
 	}
 
 	getContextMenuActions(): IAction[] {
-		return [toAction({ id: 'toggleAccountsVisibility', label: localize('accounts', "Accounts"), checked: this.accountsVisibilityPreference, run: () => this.accountsVisibilityPreference = !this.accountsVisibilityPreference })];
+		// AI Studio: Accounts toggle removed
+		return [];
 	}
 
 	private toggleAccountsActivity() {

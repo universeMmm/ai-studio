@@ -20,8 +20,7 @@ import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { INativeHostService } from '../../../../../platform/native/common/native.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { Schemas } from '../../../../../base/common/network.js';
-import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 import { TitleBarLeadingActionsGroup } from '../../../../browser/parts/titlebar/titlebarActions.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
@@ -32,7 +31,7 @@ export class OpenWorkspaceInAgentsWindowAction extends Action2 {
 	constructor() {
 		super({
 			id: OPEN_WORKSPACE_IN_AGENTS_WINDOW_COMMAND_ID,
-			title: localize2('openWorkspaceInAgentsWindow', "Open in Agents"),
+			title: localize2('openModelConfiguration', "模型配置"),
 			category: CHAT_CATEGORY,
 			precondition: OPEN_AGENTS_WINDOW_PRECONDITION,
 			f1: true,
@@ -51,10 +50,8 @@ export class OpenWorkspaceInAgentsWindowAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor) {
-		const nativeHostService = accessor.get(INativeHostService);
-		const workspaceContextService = accessor.get(IWorkspaceContextService);
-		const folderUri = workspaceContextService.getWorkspace().folders[0]?.uri;
-		await nativeHostService.openAgentsWindow({ folderUri: folderUri?.scheme === Schemas.file ? folderUri : undefined });
+		const commandService = accessor.get(ICommandService);
+		await commandService.executeCommand('chat.modelConfiguration.open');
 	}
 }
 
@@ -107,7 +104,7 @@ class OpenWorkspaceInAgentsTitleBarWidget extends BaseActionViewItem {
 		container.setAttribute('role', 'button');
 
 		const label = this.action.label;
-		const hoverText = localize('openInAgentsHover', "Open in Agents Window");
+		const hoverText = localize('openModelConfigHover', "模型配置");
 		container.setAttribute('aria-label', hoverText);
 		this._register(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), container, hoverText));
 

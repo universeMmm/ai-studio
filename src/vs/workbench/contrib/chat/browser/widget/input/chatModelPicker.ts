@@ -28,7 +28,7 @@ import { IOpenerService } from '../../../../../../platform/opener/common/opener.
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
-import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
+const MODEL_CONFIGURATION_OPEN_COMMAND_ID = 'chat.modelConfiguration.open';
 import { IModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
 import { ChatEntitlement, IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
@@ -356,7 +356,7 @@ function createManageModelsAction(commandService: ICommandService): IActionWidge
 		class: ThemeIcon.asClassName(Codicon.gear),
 		tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
 		label: localize('chat.manageModels', "Manage Models..."),
-		run: () => { commandService.executeCommand(MANAGE_CHAT_COMMAND_ID); }
+		run: () => { commandService.executeCommand(MODEL_CONFIGURATION_OPEN_COMMAND_ID); }
 	};
 }
 
