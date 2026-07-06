@@ -101,10 +101,12 @@ import './services/extensionRecommendations/common/extensionIgnoredRecommendatio
 import './services/extensionRecommendations/common/workspaceExtensionsConfig.js';
 import './services/extensionManagement/common/extensionFeaturesManagemetService.js';
 import './services/notification/common/notificationService.js';
-import './services/userDataSync/common/userDataSyncUtil.js';
+// AI Studio: userDataSync disabled
+// import './services/userDataSync/common/userDataSyncUtil.js';
 import './services/userDataProfile/browser/userDataProfileImportExportService.js';
 import './services/userDataProfile/browser/userDataProfileManagement.js';
-import './services/userDataProfile/common/remoteUserDataProfiles.js';
+// AI Studio: remote profiles disabled (requires auth)
+// import './services/userDataProfile/common/remoteUserDataProfiles.js';
 import './services/remote/common/remoteExplorerService.js';
 import './services/remote/common/remoteExtensionsScanner.js';
 import './services/terminal/common/embedderTerminalService.js';
@@ -115,16 +117,18 @@ import './services/filesConfiguration/common/filesConfigurationService.js';
 import './services/views/browser/viewDescriptorService.js';
 import './services/views/browser/viewsService.js';
 import './services/quickinput/browser/quickInputService.js';
-import './services/userDataSync/browser/userDataSyncWorkbenchService.js';
-import './services/authentication/browser/authenticationService.js';
-import './services/authentication/browser/authenticationExtensionsService.js';
-import './services/authentication/browser/authenticationUsageService.js';
-import './services/authentication/browser/authenticationAccessService.js';
-import './services/authentication/browser/authenticationMcpUsageService.js';
-import './services/authentication/browser/authenticationMcpAccessService.js';
-import './services/authentication/browser/authenticationMcpService.js';
-import './services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
-import './services/authentication/browser/authenticationQueryService.js';
+// AI Studio: userDataSync disabled — using null implementation
+import './services/userDataSync/browser/nullUserDataSyncWorkbenchService.js';
+// AI Studio: authentication services disabled
+// import './services/authentication/browser/authenticationService.js';
+// import './services/authentication/browser/authenticationExtensionsService.js';
+// import './services/authentication/browser/authenticationUsageService.js';
+// import './services/authentication/browser/authenticationAccessService.js';
+// import './services/authentication/browser/authenticationMcpUsageService.js';
+// import './services/authentication/browser/authenticationMcpAccessService.js';
+// import './services/authentication/browser/authenticationMcpService.js';
+// import './services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
+// import './services/authentication/browser/authenticationQueryService.js';
 import '../platform/hover/browser/hoverService.js';
 import '../platform/userInteraction/browser/userInteractionServiceImpl.js';
 import './services/assignment/common/assignmentService.js';
@@ -163,10 +167,11 @@ import { IDownloadService } from '../platform/download/common/download.js';
 import { DownloadService } from '../platform/download/common/downloadService.js';
 import { OpenerService } from '../editor/browser/services/openerService.js';
 import { IOpenerService } from '../platform/opener/common/opener.js';
-import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
+// AI Studio: userDataSync platform services disabled
+// import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
 import { ExtensionStorageService, IExtensionStorageService } from '../platform/extensionManagement/common/extensionStorage.js';
-import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
-import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
+// import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
+// import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
 import { AllowedExtensionsService } from '../platform/extensionManagement/common/allowedExtensionsService.js';
 import { IAllowedMcpServersService, IMcpGalleryService } from '../platform/mcp/common/mcpManagement.js';
 import { McpGalleryService } from '../platform/mcp/common/mcpGalleryService.js';
@@ -174,9 +179,11 @@ import { AllowedMcpServersService } from '../platform/mcp/common/allowedMcpServe
 import { IWebWorkerService } from '../platform/webWorker/browser/webWorkerService.js';
 import { WebWorkerService } from '../platform/webWorker/browser/webWorkerServiceImpl.js';
 
-registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
+// AI Studio: userDataSync log service disabled
+// registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
 registerSingleton(IAllowedExtensionsService, AllowedExtensionsService, InstantiationType.Delayed);
-registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
+// AI Studio: ignored extensions management disabled
+// registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
 registerSingleton(IGlobalExtensionEnablementService, GlobalExtensionEnablementService, InstantiationType.Delayed);
 registerSingleton(IExtensionStorageService, ExtensionStorageService, InstantiationType.Delayed);
 registerSingleton(IContextViewService, ContextViewService, InstantiationType.Delayed);
@@ -196,11 +203,11 @@ registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, Instantia
 
 //#region --- workbench contributions
 
-// Default Account
-import './services/accounts/browser/defaultAccount.js';
+// AI Studio: Default Account disabled (no authentication)
+// import './services/accounts/browser/defaultAccount.js';
 
-// Account Policy Gate
-import './services/policies/browser/accountPolicyGate.contribution.js';
+// AI Studio: Account Policy Gate disabled
+// import './services/policies/browser/accountPolicyGate.contribution.js';
 
 // Telemetry
 import './contrib/telemetry/browser/telemetry.contribution.js';
@@ -412,7 +419,8 @@ import './contrib/languageStatus/browser/languageStatus.contribution.js';
 // import './contrib/authentication/browser/authentication.contribution.js';
 
 // User Data Sync
-import './contrib/userDataSync/browser/userDataSync.contribution.js';
+// AI Studio: User Data Sync disabled
+// import './contrib/userDataSync/browser/userDataSync.contribution.js';
 
 // User Data Profiles
 import './contrib/userDataProfile/browser/userDataProfile.contribution.js';

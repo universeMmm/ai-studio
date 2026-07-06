@@ -895,7 +895,7 @@ export class ChatEntitlementRequests extends Disposable {
 				state = { entitlement: ChatEntitlement.Unresolved };
 			}
 		} else {
-			state = { entitlement: ChatEntitlement.Unknown };
+			state = { entitlement: ChatEntitlement.Pro };
 		}
 		if (state) {
 			this.update(state);

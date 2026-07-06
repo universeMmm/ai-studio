@@ -304,7 +304,8 @@ export function fromGithub({ name, version, repo, sha256, metadata }: IExtension
  */
 const nativeExtensions = [
 	'git',
-	'microsoft-authentication',
+	// AI Studio: microsoft-authentication removed
+	// 'microsoft-authentication',
 ];
 
 const excludedExtensions = [

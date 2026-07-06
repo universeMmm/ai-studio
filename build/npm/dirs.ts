@@ -24,7 +24,8 @@ export const dirs = [
 	'extensions/git',
 	'extensions/git-base',
 	'extensions/github',
-	'extensions/github-authentication',
+	// AI Studio: auth extension removed
+	// 'extensions/github-authentication',
 	'extensions/grunt',
 	'extensions/gulp',
 	'extensions/html-language-features',
@@ -38,7 +39,8 @@ export const dirs = [
 	'extensions/media-preview',
 	'extensions/merge-conflict',
 	'extensions/mermaid-markdown-features',
-	'extensions/microsoft-authentication',
+	// AI Studio: auth extension removed
+	// 'extensions/microsoft-authentication',
 	'extensions/notebook-renderers',
 	'extensions/npm',
 	'extensions/php-language-features',

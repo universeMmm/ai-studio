@@ -59,8 +59,9 @@ import { IConfigurationService } from '../../platform/configuration/common/confi
 import { applyZoom } from '../../platform/window/electron-browser/window.js';
 import { mainWindow } from '../../base/browser/window.js';
 import { IDefaultAccountService } from '../../platform/defaultAccount/common/defaultAccount.js';
-import { DefaultAccountService } from '../../workbench/services/accounts/browser/defaultAccount.js';
-import { AccountPolicyService, IAccountPolicyGateService } from '../../workbench/services/policies/common/accountPolicyService.js';
+import { NullDefaultAccountService } from '../../workbench/services/accounts/browser/nullDefaultAccountService.js';
+import { IAccountPolicyGateService } from '../../workbench/services/policies/common/accountPolicyService.js';
+import { NullAccountPolicyService } from '../../workbench/services/policies/common/nullAccountPolicyService.js';
 import { MultiplexPolicyService } from '../../workbench/services/policies/common/multiplexPolicyService.js';
 import { Workbench as AgenticWorkbench } from '../browser/workbench.js';
 import { NativeMenubarControl } from '../../workbench/electron-browser/parts/titlebar/menubarControl.js';
@@ -210,19 +211,16 @@ export class SessionsMain extends Disposable {
 			logService.trace('workbench#open(): with configuration', safeStringify({ ...this.configuration, nls: undefined /* exclude large property */ }));
 		}
 
-		// Default Account
-		const defaultAccountService = this._register(new DefaultAccountService(productService));
+		// Default Account (null — no authentication)
+		const defaultAccountService = this._register(new NullDefaultAccountService());
 		serviceCollection.set(IDefaultAccountService, defaultAccountService);
 
 		// Policies
-		let policyService: IPolicyService;
 		const policyChannel = this.configuration.policiesData ? this._register(new PolicyChannelClient(this.configuration.policiesData, mainProcessService.getChannel('policy'))) : undefined;
-		const accountPolicy = this._register(new AccountPolicyService(logService, defaultAccountService, policyChannel));
-		if (policyChannel) {
-			policyService = this._register(new MultiplexPolicyService([policyChannel, accountPolicy], logService));
-		} else {
-			policyService = accountPolicy;
-		}
+		const accountPolicy = this._register(new NullAccountPolicyService(logService));
+		const policyService: IPolicyService = policyChannel
+			? this._register(new MultiplexPolicyService([policyChannel, accountPolicy], logService))
+			: accountPolicy;
 		serviceCollection.set(IPolicyService, policyService);
 		serviceCollection.set(IAccountPolicyGateService, accountPolicy);
 

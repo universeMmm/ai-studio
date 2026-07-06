@@ -97,8 +97,9 @@ import { TunnelSource } from '../services/remote/common/tunnelModel.js';
 import { mainWindow } from '../../base/browser/window.js';
 import { INotificationService, Severity } from '../../platform/notification/common/notification.js';
 import { IDefaultAccountService } from '../../platform/defaultAccount/common/defaultAccount.js';
-import { DefaultAccountService } from '../services/accounts/browser/defaultAccount.js';
-import { AccountPolicyService, IAccountPolicyGateService } from '../services/policies/common/accountPolicyService.js';
+import { NullDefaultAccountService } from '../services/accounts/browser/nullDefaultAccountService.js';
+import { IAccountPolicyGateService } from '../services/policies/common/accountPolicyService.js';
+import { NullAccountPolicyService } from '../services/policies/common/nullAccountPolicyService.js';
 
 export interface IBrowserMainWorkbench {
 	startup(): IInstantiationService;
@@ -359,12 +360,12 @@ export class BrowserMain extends Disposable {
 		serviceCollection.set(IRemoteAgentService, remoteAgentService);
 		this._register(RemoteFileSystemProviderClient.register(remoteAgentService, fileService, logService));
 
-		// Default Account
-		const defaultAccountService = this._register(new DefaultAccountService(productService));
+		// Default Account (null — no authentication)
+		const defaultAccountService = this._register(new NullDefaultAccountService());
 		serviceCollection.set(IDefaultAccountService, defaultAccountService);
 
 		// Policies
-		const policyService = new AccountPolicyService(logService, defaultAccountService);
+		const policyService = new NullAccountPolicyService(logService);
 		serviceCollection.set(IPolicyService, policyService);
 		serviceCollection.set(IAccountPolicyGateService, policyService);
 

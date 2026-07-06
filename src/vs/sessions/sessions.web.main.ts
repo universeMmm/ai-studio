@@ -80,13 +80,9 @@ import { IExtensionTipsService } from '../platform/extensionManagement/common/ex
 import { ExtensionTipsService } from '../platform/extensionManagement/common/extensionTipsService.js';
 import { IWorkbenchExtensionManagementService } from '../workbench/services/extensionManagement/common/extensionManagement.js';
 import { ExtensionManagementService } from '../workbench/services/extensionManagement/common/extensionManagementService.js';
-import { UserDataSyncMachinesService, IUserDataSyncMachinesService } from '../platform/userDataSync/common/userDataSyncMachines.js';
+// AI Studio: userDataSync disabled — using null implementations
 import { IUserDataSyncStoreService, IUserDataSyncService, IUserDataAutoSyncService, IUserDataSyncLocalStoreService, IUserDataSyncResourceProviderService } from '../platform/userDataSync/common/userDataSync.js';
-import { UserDataSyncStoreService } from '../platform/userDataSync/common/userDataSyncStoreService.js';
-import { UserDataSyncLocalStoreService } from '../platform/userDataSync/common/userDataSyncLocalStoreService.js';
-import { UserDataSyncService } from '../platform/userDataSync/common/userDataSyncService.js';
-import { IUserDataSyncAccountService, UserDataSyncAccountService } from '../platform/userDataSync/common/userDataSyncAccount.js';
-import { UserDataAutoSyncService } from '../platform/userDataSync/common/userDataAutoSyncService.js';
+import { NullUserDataSyncStoreService, NullUserDataSyncService, NullUserDataAutoSyncService, NullUserDataSyncLocalStoreService, NullUserDataSyncResourceProviderService } from '../platform/userDataSync/common/nullUserDataSyncService.js';
 import { AccessibilityService } from '../platform/accessibility/browser/accessibilityService.js';
 import { ICustomEndpointTelemetryService } from '../platform/telemetry/common/telemetry.js';
 import { NullEndpointTelemetryService } from '../platform/telemetry/common/telemetryUtils.js';
@@ -98,18 +94,20 @@ import { WebLanguagePacksService } from '../platform/languagePacks/browser/langu
 import { IWebContentExtractorService, NullWebContentExtractorService, ISharedWebContentExtractorService, NullSharedWebContentExtractorService } from '../platform/webContentExtractor/common/webContentExtractor.js';
 import { IMcpGalleryManifestService } from '../platform/mcp/common/mcpGalleryManifest.js';
 import { WorkbenchMcpGalleryManifestService } from '../workbench/services/mcp/browser/mcpGalleryManifestService.js';
-import { UserDataSyncResourceProviderService } from '../platform/userDataSync/common/userDataSyncResourceProvider.js';
+// AI Studio: userDataSync resource provider disabled — using null
+// import { UserDataSyncResourceProviderService } from '../platform/userDataSync/common/userDataSyncResourceProvider.js';
 
 registerSingleton(IWorkbenchExtensionManagementService, ExtensionManagementService, InstantiationType.Delayed);
 registerSingleton(IAccessibilityService, AccessibilityService, InstantiationType.Delayed);
 registerSingleton(IContextMenuService, ContextMenuService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncStoreService, UserDataSyncStoreService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncMachinesService, UserDataSyncMachinesService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncLocalStoreService, UserDataSyncLocalStoreService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncAccountService, UserDataSyncAccountService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncService, UserDataSyncService, InstantiationType.Delayed);
-registerSingleton(IUserDataSyncResourceProviderService, UserDataSyncResourceProviderService, InstantiationType.Delayed);
-registerSingleton(IUserDataAutoSyncService, UserDataAutoSyncService, InstantiationType.Eager);
+// AI Studio: all userDataSync services disabled — using null implementations
+registerSingleton(IUserDataSyncStoreService, NullUserDataSyncStoreService, InstantiationType.Delayed);
+// registerSingleton(IUserDataSyncMachinesService, NullUserDataSyncMachinesService, InstantiationType.Delayed);
+registerSingleton(IUserDataSyncLocalStoreService, NullUserDataSyncLocalStoreService, InstantiationType.Delayed);
+// registerSingleton(IUserDataSyncAccountService, NullUserDataSyncAccountService, InstantiationType.Delayed);
+registerSingleton(IUserDataSyncService, NullUserDataSyncService, InstantiationType.Delayed);
+registerSingleton(IUserDataSyncResourceProviderService, NullUserDataSyncResourceProviderService, InstantiationType.Delayed);
+registerSingleton(IUserDataAutoSyncService, NullUserDataAutoSyncService, InstantiationType.Delayed);
 registerSingleton(IExtensionTipsService, ExtensionTipsService, InstantiationType.Delayed);
 registerSingleton(ITimerService, TimerService, InstantiationType.Delayed);
 registerSingleton(ICustomEndpointTelemetryService, NullEndpointTelemetryService, InstantiationType.Delayed);

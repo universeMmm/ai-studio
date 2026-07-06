@@ -99,10 +99,12 @@ import '../workbench/services/extensionRecommendations/common/extensionIgnoredRe
 import '../workbench/services/extensionRecommendations/common/workspaceExtensionsConfig.js';
 import '../workbench/services/extensionManagement/common/extensionFeaturesManagemetService.js';
 import '../workbench/services/notification/common/notificationService.js';
-import '../workbench/services/userDataSync/common/userDataSyncUtil.js';
+// AI Studio: userDataSync disabled
+// import '../workbench/services/userDataSync/common/userDataSyncUtil.js';
 import '../workbench/services/userDataProfile/browser/userDataProfileImportExportService.js';
 import '../workbench/services/userDataProfile/browser/userDataProfileManagement.js';
-import '../workbench/services/userDataProfile/common/remoteUserDataProfiles.js';
+// AI Studio: remote profiles disabled (requires auth)
+// import '../workbench/services/userDataProfile/common/remoteUserDataProfiles.js';
 import '../workbench/services/remote/common/remoteExplorerService.js';
 import '../workbench/services/remote/common/remoteExtensionsScanner.js';
 import '../workbench/services/terminal/common/embedderTerminalService.js';
@@ -113,16 +115,18 @@ import '../workbench/services/filesConfiguration/common/filesConfigurationServic
 import '../workbench/services/views/browser/viewDescriptorService.js';
 import '../workbench/services/views/browser/viewsService.js';
 import '../workbench/services/quickinput/browser/quickInputService.js';
-import '../workbench/services/userDataSync/browser/userDataSyncWorkbenchService.js';
-import '../workbench/services/authentication/browser/authenticationService.js';
-import '../workbench/services/authentication/browser/authenticationExtensionsService.js';
-import '../workbench/services/authentication/browser/authenticationUsageService.js';
-import '../workbench/services/authentication/browser/authenticationAccessService.js';
-import '../workbench/services/authentication/browser/authenticationMcpUsageService.js';
-import '../workbench/services/authentication/browser/authenticationMcpAccessService.js';
-import '../workbench/services/authentication/browser/authenticationMcpService.js';
-import '../workbench/services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
-import '../workbench/services/authentication/browser/authenticationQueryService.js';
+// AI Studio: userDataSync disabled — using null implementation
+import '../workbench/services/userDataSync/browser/nullUserDataSyncWorkbenchService.js';
+// AI Studio: authentication services disabled
+// import '../workbench/services/authentication/browser/authenticationService.js';
+// import '../workbench/services/authentication/browser/authenticationExtensionsService.js';
+// import '../workbench/services/authentication/browser/authenticationUsageService.js';
+// import '../workbench/services/authentication/browser/authenticationAccessService.js';
+// import '../workbench/services/authentication/browser/authenticationMcpUsageService.js';
+// import '../workbench/services/authentication/browser/authenticationMcpAccessService.js';
+// import '../workbench/services/authentication/browser/authenticationMcpService.js';
+// import '../workbench/services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
+// import '../workbench/services/authentication/browser/authenticationQueryService.js';
 import '../platform/hover/browser/hoverService.js';
 import '../platform/userInteraction/browser/userInteractionServiceImpl.js';
 import '../workbench/services/assignment/common/assignmentService.js';
@@ -159,10 +163,11 @@ import { IDownloadService } from '../platform/download/common/download.js';
 import { DownloadService } from '../platform/download/common/downloadService.js';
 import { OpenerService } from '../editor/browser/services/openerService.js';
 import { IOpenerService } from '../platform/opener/common/opener.js';
-import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
+// AI Studio: userDataSync platform services disabled
+// import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
 import { ExtensionStorageService, IExtensionStorageService } from '../platform/extensionManagement/common/extensionStorage.js';
-import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
-import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
+// import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
+// import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
 import { AllowedExtensionsService } from '../platform/extensionManagement/common/allowedExtensionsService.js';
 import { IAllowedMcpServersService, IMcpGalleryService } from '../platform/mcp/common/mcpManagement.js';
 import { McpGalleryService } from '../platform/mcp/common/mcpGalleryService.js';
@@ -171,9 +176,11 @@ import { IWebWorkerService } from '../platform/webWorker/browser/webWorkerServic
 import { WebWorkerService } from '../platform/webWorker/browser/webWorkerServiceImpl.js';
 import { ISessionsSetUpService, SessionsSetUpService } from './browser/sessionsSetUpService.js';
 
-registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
+// AI Studio: userDataSync log service disabled
+// registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
 registerSingleton(IAllowedExtensionsService, AllowedExtensionsService, InstantiationType.Delayed);
-registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
+// AI Studio: ignored extensions management disabled
+// registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
 registerSingleton(IGlobalExtensionEnablementService, GlobalExtensionEnablementService, InstantiationType.Delayed);
 registerSingleton(IExtensionStorageService, ExtensionStorageService, InstantiationType.Delayed);
 registerSingleton(IContextViewService, ContextViewService, InstantiationType.Delayed);
@@ -195,7 +202,8 @@ registerSingleton(ISessionsSetUpService, SessionsSetUpService, InstantiationType
 //#region --- workbench contributions
 
 // Default Account
-import '../workbench/services/accounts/browser/defaultAccount.js';
+// AI Studio: Default Account disabled (no authentication)
+// import '../workbench/services/accounts/browser/defaultAccount.js';
 
 // Telemetry
 import '../workbench/contrib/telemetry/browser/telemetry.contribution.js';
@@ -382,7 +390,8 @@ import '../workbench/contrib/codeEditor/browser/outline/documentSymbolsOutline.j
 import '../workbench/contrib/languageDetection/browser/languageDetection.contribution.js';
 
 // Authentication
-import '../workbench/contrib/authentication/browser/authentication.contribution.js';
+// AI Studio: Authentication contrib disabled
+// import '../workbench/contrib/authentication/browser/authentication.contribution.js';
 
 // User Data Profiles
 import '../workbench/contrib/userDataProfile/browser/userDataProfile.contribution.js';
@@ -444,7 +453,8 @@ import './browser/parts/editorParts.js';
 import './browser/parts/menubar.contribution.js';
 import './browser/layoutActions.js';
 
-import './contrib/accountMenu/browser/account.contribution.js';
+// AI Studio: Account Menu disabled (no authentication)
+// import './contrib/accountMenu/browser/account.contribution.js';
 import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';
 import './contrib/chat/browser/customizationsDebugLog.contribution.js';
@@ -468,7 +478,8 @@ import './contrib/terminal/browser/sessionsTerminalContribution.js';
 import './contrib/chatDebug/browser/chatDebug.contribution.js';
 import './contrib/workspace/browser/workspace.contribution.js';
 import './contrib/aquarium/browser/aquarium.contribution.js';
-import './contrib/policyBlocked/browser/policyBlocked.contribution.js';
+// AI Studio: Policy Blocked disabled (no auth policies)
+// import './contrib/policyBlocked/browser/policyBlocked.contribution.js';
 
 import './services/sessions/browser/sessionsManagementService.js';
 //#endregion
