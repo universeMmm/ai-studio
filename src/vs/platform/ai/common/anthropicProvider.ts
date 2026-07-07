@@ -1,5 +1,5 @@
-﻿/*---------------------------------------------------------------------------------------------
- *  AI Studio 鈥?Anthropic Provider
+/*---------------------------------------------------------------------------------------------
+ *  AI Studio — Anthropic Provider
  *  Uses native fetch() to call Anthropic Messages API.
  *--------------------------------------------------------------------------------------------*/
 
@@ -46,13 +46,18 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 			if (options.thinking && this._baseUrl.includes('deepseek')) { body.reasoning_effort = 'high'; }
 			if (tools.length) body.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
 
-			const res = await fetch(this._baseUrl + '/v1/messages', {
+			const url = this._baseUrl + '/v1/messages';
+			this.logService.info('[Anthropic] POST ' + url + ' model=' + this.modelId);
+
+			const res = await fetch(url, {
 				method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01', ...(options.cacheSystemPrompt !== false ? { 'anthropic-beta': 'prompt-caching-2024-07-31' } : {}) }, body: JSON.stringify(body), signal,
 			});
 			if (!res.ok) { const t = await res.text(); throw new Error('Anthropic ' + res.status + ': ' + t.slice(0, 500)); }
 
 			const reader = res.body!.getReader(); const decoder = new TextDecoder();
 			let buf = '', toolUseId = '', toolName = '', toolInput = '';
+			let eventCount = 0;
+			const MAX_EVENT_LOG = 5;
 
 			while (true) {
 				const { done, value } = await reader.read();
@@ -69,12 +74,26 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 					if (!data) continue;
 					try {
 						const e = JSON.parse(data);
+						if (eventCount < MAX_EVENT_LOG) {
+							this.logService.info('[Anthropic] SSE event:', JSON.stringify(e).slice(0, 300));
+						}
+						eventCount++;
 						switch (e.type) {
+							case 'message_start': break; // stream metadata — ignore
 							case 'content_block_start': if (e.content_block?.type === 'tool_use') { toolUseId = e.content_block.id; toolName = e.content_block.name; toolInput = ''; } break;
 							case 'content_block_delta': if (e.delta?.type === 'text_delta') callbacks.onToken(e.delta.text); else if (e.delta?.type === 'input_json_delta') toolInput += e.delta.partial_json; break;
 							case 'content_block_stop': if (toolUseId) { try { callbacks.onToolUse(toolName, JSON.parse(toolInput), toolUseId); } catch { callbacks.onToolUse(toolName, {}, toolUseId); } toolUseId = ''; toolName = ''; toolInput = ''; } break;
-							case 'message_stop': callbacks.onDone('end_turn'); return;
+							case 'message_delta': {
+								if (e.usage) {
+									callbacks.onUsage?.({ inputTokens: e.usage.input_tokens, outputTokens: e.usage.output_tokens });
+								}
+								break;
+							}
+							case 'message_stop': this.logService.info('[Anthropic] SSE stream complete — ' + eventCount + ' events, ' + (toolUseId ? 'tool use' : 'text response')); callbacks.onDone('end_turn'); return;
 							case 'error': callbacks.onError(new Error(e.error?.message || 'Unknown')); return;
+							case 'ping': break; // keepalive
+							default:
+								this.logService.warn('[Anthropic] Unknown SSE event type:', e.type);
 						}
 					} catch {
 						// JSON spans chunk boundary — re-append for next chunk
@@ -82,6 +101,7 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 					}
 				}
 			}
+			this.logService.info('[Anthropic] SSE stream ended (EOF) — ' + eventCount + ' events');
 			callbacks.onDone('end_turn');
 		} catch (err: any) { if (err?.name !== 'AbortError') { this.logService.error('[Anthropic]', err); callbacks.onError(err); } }
 	}
@@ -166,4 +186,3 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 		return result;
 	}
 }
-

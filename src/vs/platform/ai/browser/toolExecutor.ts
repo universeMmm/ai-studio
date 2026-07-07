@@ -210,6 +210,7 @@ export class ToolExecutor {
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		private readonly abortSignal?: AbortSignal,
 	) { }
 
 	/**
@@ -217,6 +218,7 @@ export class ToolExecutor {
 	 * private method and returns the tool's string result.
 	 */
 	async execute(toolName: string, input: Record<string, unknown>): Promise<string> {
+		if (this.abortSignal?.aborted) { return "Tool execution cancelled"; }
 		try {
 			switch (toolName) {
 				case BuiltInToolName.ReadFile:        return await this._readFile(input);
@@ -314,7 +316,7 @@ export class ToolExecutor {
 		const newLines = content.split("\n");
 		const hunk: DiffHunk = {
 			id: "hunk_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			filePath: input.path as string,
+			filePath: fp,
 			originalStartLine: 1, originalEndLine: origLines.length || 1,
 			modifiedStartLine: 1, modifiedEndLine: newLines.length || 1,
 			originalText: originalContent, modifiedText: content, status: "applied",
@@ -352,7 +354,7 @@ export class ToolExecutor {
 		const newLines = newStr.split("\n");
 		const hunk: DiffHunk = {
 			id: "hunk_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			filePath: input.path as string,
+			filePath: fp,
 			originalStartLine: origStart, originalEndLine: origEnd,
 			modifiedStartLine: origStart, modifiedEndLine: origStart + newLines.length - 1,
 			originalText: oldStr, modifiedText: newStr, status: "applied",
@@ -507,7 +509,7 @@ export class ToolExecutor {
 			if (vscodeWin?.ipcRenderer?.invoke) {
 				const result = await vscodeWin.ipcRenderer.invoke(
 					'vscode:ai-studio:exec',
-					{ command, args, cwd, timeout: timeoutMs }
+					{ command, args, cwd, timeout: timeoutMs, signal: this.abortSignal }
 				);
 				if (result && typeof result === 'object') {
 					return {
@@ -540,7 +542,7 @@ export class ToolExecutor {
 			if (vscodeWin?.ipcRenderer?.invoke) {
 				const result = await vscodeWin.ipcRenderer.invoke(
 					'vscode:ai-studio:exec',
-					{ shell: true, command: cmd, cwd, timeout: timeoutMs }
+					{ shell: true, command: cmd, cwd, timeout: timeoutMs, signal: this.abortSignal }
 				);
 				if (result && typeof result === 'object') {
 					return {

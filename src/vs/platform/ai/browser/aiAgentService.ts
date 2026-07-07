@@ -52,8 +52,11 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 	private _steps: AgentStep[] = [];
 	private _stepCounter = 0;
 	private _abortController: AbortController | null = null;
+	private _toolAbortController: AbortController | null = null;
+	private _toolExecutor: ToolExecutor | null = null;
 	private _plan: AgentPlan | null = null;
 	private _memory: ConversationMemory = new ConversationMemory();
+	private _lastUsage: { inputTokens: number; outputTokens: number } | null = null;
 
 	private readonly _onDidChangeStatus = this._register(new Emitter<AgentStatus>());
 	readonly onDidChangeStatus = this._onDidChangeStatus.event;
@@ -91,7 +94,20 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		this._setStatus("running");
 		const cfgMaxSteps = this.configurationService.getValue<number>('ai.agent.maxSteps');
 		if (cfgMaxSteps && cfgMaxSteps > 0) { this.maxSteps = cfgMaxSteps; }
-		const root = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || '.';
+		// 0.7: Multi-root workspace — use first folder; fallback to ~/.ai-studio/global/
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		let root: string;
+		if (folders.length > 0) {
+			root = folders[0].uri.fsPath;
+		} else {
+			const home = process.env.HOME || process.env.USERPROFILE || '.';
+			root = (home + '/.ai-studio/global').replace(/\\/g, '/');
+		}
+		this.logService.info("[AIAgentService] Workspace root: " + root);
+
+		// 0.2: Create tool-level abort controller for this run
+		this._toolAbortController = new AbortController();
+
 		const memoryStore = new MemoryStore(root, this.fileService, this.logService);
 		const prevTurns = await memoryStore.loadLastSession();
 		if (prevTurns.length) {
@@ -99,6 +115,14 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 				this._memory.addTurn(t.userMessage, t.assistantMessage);
 			}
 		}
+
+		// 0.3: Reuse a single ToolExecutor for the entire agent run
+		this._toolExecutor = new ToolExecutor(
+			this.fileService, this.logService, this.diffStore,
+			this.indexService, this.markerService, this.workspaceContextService,
+			this.configurationService, this._toolAbortController.signal,
+		);
+
 		this._addStep("thought", instruction);
 
 		const messages = await this.contextService.buildContext({
@@ -132,6 +156,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			thinking: false, cacheSystemPrompt: true, maxContextTokens: 180000,
 		};
 
+		try {
 		// Generate execution plan before starting the tool loop
 		await this._generatePlan(instruction, messages, options);
 
@@ -171,6 +196,10 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 				// Emit the model's text response so it shows in the chat
 				if (result.text && result.text.trim()) {
 					this._addStep("thought", result.text.trim());
+				} else {
+					// Empty response — show an actionable error message
+					this.logService.warn('[AIAgentService] Empty response from model — check apiType, endpoint, and model ID.');
+					this._addStep("thought", "**收到空响应** — 请检查模型配置：API 类型、端点 URL、模型 ID 和 API Key 是否正确？当前模型: " + (this.aiModelService.currentModelId || '(未设置)') + "，API 类型: " + this.aiModelService.currentProviderId);
 				}
 				this._memory.addTurn(instruction, result.text || "Task completed.");
 				break;
@@ -184,12 +213,30 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 				this._addStep("tool_use", "Calling " + result.toolName!, result.toolName!, result.toolInput);
 
 				const prevGroupCount = this.diffStore.groups.length;
-				const executor = new ToolExecutor(
-					this.fileService, this.logService, this.diffStore,
-					this.indexService, this.markerService, this.workspaceContextService,
-					this.configurationService,
-				);
+				const executor = this._toolExecutor!;
+				const isEditing = result.toolName === "edit_file" || result.toolName === "write_file";
+				const filePath = isEditing ? (result.toolInput?.path as string) : undefined;
+
+				// 0.4: Snapshot before editing tools
+				if (isEditing && filePath) {
+					await executor.createSnapshot([filePath]);
+				}
+
 				const toolResult = await executor.execute(result.toolName!, result.toolInput!);
+
+				// 0.4: Commit or rollback based on result
+				if (isEditing) {
+					if (toolResult.startsWith("Error")) {
+						await executor.rollbackAll();
+					} else {
+						executor.commitSnapshot();
+						// 0.6: Update index after file modification
+						if (filePath) {
+							await this.indexService?.indexFile(filePath);
+						}
+					}
+				}
+
 				let displayResult = toolResult;
 				if (toolResult.length > 2000) {
 					const spillDir = root + '/.ai-studio/tool-outputs';
@@ -262,12 +309,20 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			this._setStatus("stopped");
 		}
 		try { await memoryStore.saveSession(this._memory.turns); } catch { /* best-effort */ }
+		} finally {
+			// 0.3: Clean up per-run resources
+			this._toolExecutor = null;
+			this._toolAbortController = null;
+		}
 	}
 
 	stop(): void {
 		this._setStatus("stopped");
 		this._abortController?.abort();
 		this._abortController = null;
+		// 0.2: Propagate cancellation to in-flight tool executions
+		this._toolAbortController?.abort();
+		this._toolAbortController = null;
 	}
 
 	clearHistory(): void { this._steps = []; this._stepCounter = 0; this._memory.clear(); this._plan = null; }
@@ -306,9 +361,13 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 						}
 					}
 				},
+				onUsage: (usage) => {
+					this._lastUsage = usage;
+					this.logService.info(`[AIAgentService] Token usage: in=${usage.inputTokens}, out=${usage.outputTokens}`);
+				},
 			};
-			this._abortController?.abort();
-				this._abortController = this.aiModelService.streamChat(messages, tools, options, cb);
+			// 0.1: Caller ensures serial execution (plan awaited before main loop) — no abort needed
+			this._abortController = this.aiModelService.streamChat(messages, tools, options, cb);
 		});
 	}
 

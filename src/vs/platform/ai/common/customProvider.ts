@@ -62,6 +62,9 @@ export class CustomProvider extends Disposable implements IAIProvider {
 					if (data === '[DONE]') { callbacks.onDone('end_turn'); return; }
 					try {
 						const json = JSON.parse(data);
+						if (json.usage) {
+							callbacks.onUsage?.({ inputTokens: json.usage.prompt_tokens, outputTokens: json.usage.completion_tokens });
+						}
 						const delta = json.choices?.[0]?.delta;
 						if (delta?.content) callbacks.onToken(delta.content);
 						if (delta?.tool_calls) {

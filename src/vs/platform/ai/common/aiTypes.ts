@@ -81,6 +81,7 @@ export interface AIStreamCallbacks {
 	onToolResult(toolCallId: string, result: string, isError: boolean): void;
 	onError(error: Error): void;
 	onDone(stopReason: StopReason): void;
+	onUsage?(usage: { inputTokens: number; outputTokens: number }): void;
 }
 
 /**
