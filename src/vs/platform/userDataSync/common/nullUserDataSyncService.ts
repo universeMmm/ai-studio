@@ -7,8 +7,11 @@ import { Event } from '../../../base/common/event.js';
 import { URI } from '../../../base/common/uri.js';
 import { IHeaders } from '../../../base/parts/request/common/request.js';
 import { VSBufferReadableStream } from '../../../base/common/buffer.js';
+import { ILocalExtension } from '../../extensionManagement/common/extensionManagement.js';
+import { NullLogService } from '../../log/common/log.js';
 import { IUserDataSyncMachine } from './userDataSyncMachines.js';
 import { IUserDataSyncAccount, IUserDataSyncAccountService } from './userDataSyncAccount.js';
+import { IIgnoredExtensionsManagementService } from './ignoredExtensions.js';
 import {
 	IUserDataSyncService,
 	IUserDataAutoSyncService,
@@ -16,6 +19,7 @@ import {
 	IUserDataSyncStoreService,
 	IUserDataSyncLocalStoreService,
 	IUserDataSyncResourceProviderService,
+	IUserDataSyncLogService,
 	SyncResource,
 	SyncStatus,
 	IUserDataSyncResourceConflicts,
@@ -194,4 +198,27 @@ export class NullUserDataSyncAccountService implements IUserDataSyncAccountServi
 	readonly onDidChangeAccount: Event<IUserDataSyncAccount | undefined> = Event.None;
 
 	async updateAccount(_account: IUserDataSyncAccount | undefined): Promise<void> { }
+}
+
+// ---------------------------------------------------------------------------
+// IUserDataSyncLogService — no sync logging
+// ---------------------------------------------------------------------------
+
+export class NullUserDataSyncLogService extends NullLogService implements IUserDataSyncLogService {
+	declare _serviceBrand: undefined;
+}
+
+// ---------------------------------------------------------------------------
+// IIgnoredExtensionsManagementService — no extensions to ignore
+// ---------------------------------------------------------------------------
+
+export class NullIgnoredExtensionsManagementService implements IIgnoredExtensionsManagementService {
+
+	declare _serviceBrand: undefined;
+
+	getIgnoredExtensions(_installed: ILocalExtension[]): string[] { return []; }
+	hasToNeverSyncExtension(_extensionId: string): boolean { return false; }
+	hasToAlwaysSyncExtension(_extensionId: string): boolean { return false; }
+	async updateIgnoredExtensions(_ignoredExtensionId: string, _ignore: boolean): Promise<void> { }
+	async updateSynchronizedExtensions(_ignoredExtensionId: string, _sync: boolean): Promise<void> { }
 }

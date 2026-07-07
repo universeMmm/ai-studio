@@ -2824,6 +2824,7 @@ export class ChatModel extends Disposable implements IChatModel {
 				requestId: request.id,
 				codeBlockInfos: undefined,
 			});
+			this._onDidChange.fire({ kind: 'addResponse', response: request.response });
 		}
 
 		if (request.response.isComplete) {
@@ -2874,6 +2875,7 @@ export class ChatModel extends Disposable implements IChatModel {
 				requestId: request.id,
 				codeBlockInfos: undefined,
 			});
+			this._onDidChange.fire({ kind: 'addResponse', response: request.response });
 		}
 
 		request.response.setResult(result);

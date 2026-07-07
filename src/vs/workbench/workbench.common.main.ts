@@ -167,14 +167,14 @@ import { IDownloadService } from '../platform/download/common/download.js';
 import { DownloadService } from '../platform/download/common/downloadService.js';
 import { OpenerService } from '../editor/browser/services/openerService.js';
 import { IOpenerService } from '../platform/opener/common/opener.js';
-// AI Studio: userDataSync platform services disabled
-// import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
+// AI Studio: userDataSync platform services disabled — using NULL implementations
+import { IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
 import { ExtensionStorageService, IExtensionStorageService } from '../platform/extensionManagement/common/extensionStorage.js';
 // import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
 // import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
 import { IUserDataSyncAccountService } from '../platform/userDataSync/common/userDataSyncAccount.js';
-import { NullUserDataSyncAccountService, NullUserDataSyncEnablementService } from '../platform/userDataSync/common/nullUserDataSyncService.js';
-import { IUserDataSyncEnablementService } from '../platform/userDataSync/common/userDataSync.js';
+import { NullUserDataSyncAccountService, NullUserDataAutoSyncService, NullUserDataSyncEnablementService, NullUserDataSyncLogService, NullIgnoredExtensionsManagementService } from '../platform/userDataSync/common/nullUserDataSyncService.js';
+import { IUserDataAutoSyncService, IUserDataSyncEnablementService, IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
 import { AllowedExtensionsService } from '../platform/extensionManagement/common/allowedExtensionsService.js';
 import { IAllowedMcpServersService, IMcpGalleryService } from '../platform/mcp/common/mcpManagement.js';
 import { McpGalleryService } from '../platform/mcp/common/mcpGalleryService.js';
@@ -182,13 +182,14 @@ import { AllowedMcpServersService } from '../platform/mcp/common/allowedMcpServe
 import { IWebWorkerService } from '../platform/webWorker/browser/webWorkerService.js';
 import { WebWorkerService } from '../platform/webWorker/browser/webWorkerServiceImpl.js';
 
-// AI Studio: userDataSync log service disabled
-// registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
+// AI Studio: userDataSync log service disabled — using NULL implementation
+registerSingleton(IUserDataSyncLogService, NullUserDataSyncLogService, InstantiationType.Delayed);
 registerSingleton(IUserDataSyncAccountService, NullUserDataSyncAccountService, InstantiationType.Delayed);
 registerSingleton(IUserDataSyncEnablementService, NullUserDataSyncEnablementService, InstantiationType.Delayed);
+registerSingleton(IUserDataAutoSyncService, NullUserDataAutoSyncService, InstantiationType.Delayed);
 registerSingleton(IAllowedExtensionsService, AllowedExtensionsService, InstantiationType.Delayed);
-// AI Studio: ignored extensions management disabled
-// registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
+// AI Studio: ignored extensions management disabled — using NULL implementation
+registerSingleton(IIgnoredExtensionsManagementService, NullIgnoredExtensionsManagementService, InstantiationType.Delayed);
 registerSingleton(IGlobalExtensionEnablementService, GlobalExtensionEnablementService, InstantiationType.Delayed);
 registerSingleton(IExtensionStorageService, ExtensionStorageService, InstantiationType.Delayed);
 registerSingleton(IContextViewService, ContextViewService, InstantiationType.Delayed);

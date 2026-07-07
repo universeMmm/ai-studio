@@ -15,6 +15,10 @@ import { IActiveCodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { URI } from '../../../../base/common/uri.js';
 import { KeybindingsRegistry } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { localize2 } from '../../../../nls.js';
 
 registerSingleton(IDiffStore, DiffStore, InstantiationType.Delayed);
 
@@ -46,6 +50,44 @@ CommandsRegistry.registerCommand({ id: 'aiDiff.jumpToNextFile', metadata: { desc
 	const hunks = ds.getAppliedHunksForFile(files[idx]);
 	await es.openEditor({ resource: URI.file(files[idx]), options: { selection: hunks[0] ? { startLineNumber: hunks[0].modifiedStartLine, startColumn: 1, endLineNumber: hunks[0].modifiedStartLine, endColumn: 1 } : undefined } });
 }});
+
+// Rollback button in the chat input toolbar
+class RollbackChangesAction extends Action2 {
+	static readonly ID = 'aiDiff.rollbackChangesFromToolbar';
+
+	constructor() {
+		super({
+			id: RollbackChangesAction.ID,
+			title: localize2('aiDiff.rollbackChanges', "Rollback AI Changes"),
+			icon: Codicon.discard,
+			category: 'AI Studio',
+			f1: false,
+			menu: [
+				{
+					id: MenuId.ChatInput,
+					group: 'navigation',
+					order: 50,
+				},
+				{
+					id: MenuId.ChatMultiDiffContext,
+					group: 'navigation',
+					order: 1,
+				}
+			]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const diffStore = accessor.get(IDiffStore);
+		const instantiationService = accessor.get(IInstantiationService);
+		const groups = diffStore.groups;
+		if (groups.length) {
+			const controller = instantiationService.createInstance(DiffApplyController);
+			await controller.rejectAll(groups[groups.length - 1].id);
+		}
+	}
+}
+registerAction2(RollbackChangesAction);
 
 KeybindingsRegistry.registerKeybindingRule({ id: 'aiDiff.rejectAll', primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Backspace, weight: 200 });
 KeybindingsRegistry.registerKeybindingRule({ id: 'aiDiff.rejectHunk', primary: KeyMod.Alt | KeyCode.KeyR, weight: 200 });

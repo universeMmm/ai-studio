@@ -1087,6 +1087,7 @@ export class ChatService extends Disposable implements IChatService {
 		const token = source.token;
 		const sendRequestInternal = async () => {
 			const progressCallback = (progress: IChatProgress[]) => {
+				console.log('[ChatServiceImpl] progressCallback called, items=%d, cancelled=%s', progress.length, token.isCancellationRequested);
 				if (token.isCancellationRequested) {
 					return;
 				}
@@ -1102,12 +1103,15 @@ export class ChatService extends Disposable implements IChatService {
 
 					if (progressItem.kind === 'markdownContent') {
 						this.trace('sendRequest', `Provider returned progress for session ${model.sessionResource}, ${progressItem.content.value.length} chars`);
+						console.log('[ChatServiceImpl] progressCallback markdownContent, chars=%d, hasRequest=%s', progressItem.content.value.length, !!request);
 					} else {
 						this.trace('sendRequest', `Provider returned progress: ${JSON.stringify(progressItem)}`);
 					}
 
 					if (request) {
 						model.acceptResponseProgress(request, progressItem, !isLast);
+					} else {
+						console.log('[ChatServiceImpl] progressCallback: request is null, dropping progress!');
 					}
 				}
 				completeResponseCreated();

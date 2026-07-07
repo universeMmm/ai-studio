@@ -30,7 +30,7 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 		localize('modelConfigurationEditor', "Model Configuration Editor")
 	),
 	[
-		new SyncDescriptor(ModelConfigurationEditorInput as unknown as { new(): ModelConfigurationEditorInput })
+		new SyncDescriptor(ModelConfigurationEditorInput)
 	]
 );
 
@@ -110,9 +110,13 @@ class CustomModelProviderContribution extends Disposable implements IWorkbenchCo
 		@ILanguageModelsConfigurationService languageModelsConfigurationService: ILanguageModelsConfigurationService,
 	) {
 		super();
-		const provider = new CustomModelProvider(languageModelsConfigurationService);
-		this._register(provider);
-		this._register(registerCustomModelProvider(languageModelsService, provider));
+		try {
+			const provider = new CustomModelProvider(languageModelsConfigurationService);
+			this._register(provider);
+			this._register(registerCustomModelProvider(languageModelsService, provider));
+		} catch (err) {
+			// Non-fatal: editor still works even if provider registration fails
+		}
 	}
 }
 

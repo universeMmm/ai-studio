@@ -3,6 +3,7 @@
  *  Shows green/red line decorations in the editor for applied/rejected hunks.
  *--------------------------------------------------------------------------------------------*/
 
+import './diffDecorator.css';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IDiffStore } from './diffStore.js';
 import type { DiffHunk } from '../common/diffTypes.js';

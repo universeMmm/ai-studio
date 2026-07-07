@@ -55,6 +55,7 @@ import { MenuWorkbenchButtonBar } from '../../../../../../platform/actions/brows
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { MenuId, MenuItemAction } from '../../../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { IAIKeychainService } from '../../../../../../platform/ai/browser/credentialService.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { registerAndCreateHistoryNavigationContext } from '../../../../../../platform/history/browser/contextScopedHistoryWidget.js';
@@ -86,7 +87,8 @@ import { IChatFollowup, IChatPlanReview, IChatQuestionCarousel, IChatToolInvocat
 import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, localChatSessionType, SessionType } from '../../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
 import { IChatEditingSession, IModifiedFileEntry, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
-import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
+import { AI_STUDIO_VENDOR_ID, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
+import { ILanguageModelsConfigurationService } from '../../../common/languageModelsConfiguration.js';
 import { IChatModelInputState, IChatRequestModeInfo, IInputModel, logChangesToStateModel } from '../../../common/model/chatModel.js';
 import { filterModelsForSession, findDefaultModel, hasModelsTargetingSession, isModelValidForSession, mergeModelsWithCache, resolveModelFromSyncState, shouldResetModelToDefault, shouldResetOnModelListChange, shouldRestoreLateArrivingModel, shouldRestorePersistedModel } from './chatModelSelectionLogic.js';
 import { getChatSessionType, LocalChatSessionUri } from '../../../common/model/chatUri.js';
@@ -545,6 +547,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
+		@ILanguageModelsConfigurationService private readonly languageModelsConfigurationService: ILanguageModelsConfigurationService,
+		@IAIKeychainService private readonly keychainService: IAIKeychainService,
 		@ILogService private readonly logService: ILogService,
 		@IFileService private readonly fileService: IFileService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -1262,6 +1266,28 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// Store as global user preference (session-specific state is in the model's inputModel)
 		this.storageService.store(this.getSelectedModelStorageKey(), model.identifier, StorageScope.APPLICATION, StorageTarget.USER);
 		this.storageService.store(this.getSelectedModelIsDefaultStorageKey(), !!model.metadata.isDefaultForLocation[this.location], StorageScope.APPLICATION, StorageTarget.USER);
+
+		// Sync ai-studio vendor model configuration to ai.* settings so the agent host can use it
+		if (model.metadata.vendor === AI_STUDIO_VENDOR_ID) {
+			const groups = this.languageModelsConfigurationService.getLanguageModelsProviderGroups();
+			const group = groups.find(g => g.vendor === AI_STUDIO_VENDOR_ID && g.name === model.metadata.name);
+			if (group) {
+				const settings = group.settings?.[group.name];
+				if (settings) {
+					this.configurationService.updateValue('ai.modelId', settings['modelId'] ?? '');
+					this.configurationService.updateValue('ai.modelName', model.metadata.name ?? '');
+					this.configurationService.updateValue('ai.apiType', settings['apiType'] ?? 'openai');
+					if (settings['apiKey']) {
+						const apiKey = settings['apiKey'] as string;
+						this.configurationService.updateValue('ai.apiKey', apiKey);
+						this.keychainService.setApiKey(apiKey);
+					}
+					if (settings['endpoint']) {
+						this.configurationService.updateValue('ai.apiBase', settings['endpoint']);
+					}
+				}
+			}
+		}
 
 		// Sync to model
 		this._syncInputStateToModel();

@@ -28,7 +28,7 @@ export const aiConfigurationNode: IConfigurationNode = {
 		},
 		"ai.modelId": {
 			type: "string",
-			default: "claude-sonnet-4-6",
+			default: "",
 			description: "Model identifier. A single model is shared across all features (Chat, Agent, inline completion).",
 		},
 		"ai.apiKey": {

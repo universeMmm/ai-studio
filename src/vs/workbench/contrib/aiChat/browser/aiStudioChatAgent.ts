@@ -23,6 +23,9 @@ import type { IChatProgress } from "../../../../workbench/contrib/chat/common/ch
 import { ChatModeKind, ChatAgentLocation } from "../../../../workbench/contrib/chat/common/constants.js";
 import { ThemeIcon } from "../../../../base/common/themables.js";
 import { MarkdownString } from "../../../../base/common/htmlContent.js";
+import { ILogService } from "../../../../platform/log/common/log.js";
+import { IDiffStore } from "../../aiDiffApply/browser/diffStore.js";
+import { URI } from "../../../../base/common/uri.js";
 
 const AI_STUDIO_AGENT_ID = "ai-studio.chat";
 
@@ -32,6 +35,8 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
+		@ILogService private readonly logService: ILogService,
+		@IDiffStore private readonly diffStore: IDiffStore,
 	) { super(); this._registerAgent(); }
 
 	private _registerAgent(): void {
@@ -41,7 +46,7 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 			isDefault: true, isCore: true,
 			extensionId: new ExtensionIdentifier("ai-studio"), extensionVersion: "1.0.0",
 			extensionPublisherId: "ai-studio", extensionDisplayName: "AI Studio", publisherDisplayName: "AI Studio",
-			metadata: { themeIcon: ThemeIcon.fromId("robot"), sampleRequest: "Help me write a function", isSticky: true },
+			metadata: { themeIcon: ThemeIcon.fromId("robot"), sampleRequest: "Help me write a function", isSticky: false },
 			slashCommands: [], locations: [ChatAgentLocation.Chat, ChatAgentLocation.EditorInline, ChatAgentLocation.Terminal],
 			modes: [ChatModeKind.Agent, ChatModeKind.Ask, ChatModeKind.Edit],
 			disambiguation: [{ category: "ai_studio", description: "AI Studio coding assistant", examples: ["write a function", "fix this bug", "explain this code"] }],
@@ -62,18 +67,24 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 			const agentService = this.instantiationService.invokeFunction(
 				a => a.get(IAIAgentService));
 
+			this.logService.info('[AIStudioChatAgent] _invoke called, message:', request.message.slice(0, 100));
+
 			// Convert agent steps into chat progress as they arrive.
 			// Skip the initial echo (step whose content matches the user's message).
 			let firstThought = true;
 			const stepListener = agentService.onDidAddStep((step: AgentStep) => {
+				this.logService.info('[AIStudioChatAgent] onDidAddStep type=' + step.type + ' content=' + step.content.slice(0, 80));
 				switch (step.type) {
 					case "thought":
 						if (firstThought && step.content === request.message) {
+							this.logService.info('[AIStudioChatAgent] Skipping first thought (echo of user message)');
 							firstThought = false;
 							return;
 						}
 						firstThought = false;
+						this.logService.info('[AIStudioChatAgent] Calling progress() with markdownContent, length=' + step.content.length);
 						progress([{ content: new MarkdownString(step.content), kind: "markdownContent" }]);
+						this.logService.info('[AIStudioChatAgent] progress() returned');
 						break;
 					case "plan":
 						progress([{ content: new MarkdownString(step.content), kind: "markdownContent" }]);
@@ -82,7 +93,12 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 						progress([{ kind: "progressMessage", content: new MarkdownString("Tool: **" + (step.toolName || "?") + "**") }]);
 						break;
 					case "tool_result":
-						progress([{ kind: "progressMessage", content: new MarkdownString(step.content.slice(0, 500)) }]);
+						// Diff content should persist as markdown in the chat response
+						if (step.content.startsWith("### Edited:") || step.content.includes("```diff")) {
+							progress([{ kind: "markdownContent", content: new MarkdownString(step.content) }]);
+						} else {
+							progress([{ kind: "progressMessage", content: new MarkdownString(step.content.slice(0, 500)) }]);
+						}
 						break;
 					case "error":
 						progress([{ kind: "progressMessage", content: new MarkdownString("**Error:** " + step.content) }]);
@@ -107,24 +123,41 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 
 			try {
 				await agentService.run(request.message);
+				this.logService.info('[AIStudioChatAgent] agentService.run() completed');
+
+				// Build multiDiffData from the diffStore to show an interactive file change list
+				const appliedHunks = this.diffStore.getAllAppliedHunks();
+				if (appliedHunks.length > 0) {
+					const fileMap = new Map<string, { added: number; removed: number }>();
+					for (const h of appliedHunks) {
+						const entry = fileMap.get(h.filePath) || { added: 0, removed: 0 };
+						if (h.originalText) entry.removed += h.originalText.split('\n').length;
+						if (h.modifiedText) entry.added += h.modifiedText.split('\n').length;
+						fileMap.set(h.filePath, entry);
+					}
+
+					const resources = Array.from(fileMap.entries()).map(([filePath, stats]) => ({
+						modifiedUri: URI.file(filePath),
+						goToFileUri: URI.file(filePath),
+						added: stats.added,
+						removed: stats.removed,
+					}));
+
+					progress([{
+						kind: "multiDiffData",
+						multiDiffData: {
+							title: `Changed ${fileMap.size} file(s)`,
+							resources,
+						},
+						collapsed: false,
+					} as any]);
+				}
 			} finally {
 				stepListener.dispose();
 				planListener.dispose();
 				cancelListener.dispose();
 			}
 
-			// Only emit execution summary when tools were actually used
-			const steps = agentService.steps;
-			const toolSteps = steps.filter(s => s.type === "tool_use" || s.type === "tool_result");
-			if (toolSteps.length > 0) {
-				let summary = "## Execution Summary\n| # | Type | Action |\n|---|---|---|\n";
-				for (const s of steps) {
-					if (s.type === "thought" && s.content === request.message) continue;
-					const typeIcon = s.type === "tool_use" ? "$(tools)" : s.type === "tool_result" ? "$(output)" : s.type === "error" ? "$(error)" : "$(comment)";
-					summary += "| " + s.stepNumber + " | " + typeIcon + " " + s.type + " | " + s.content.substring(0, 80).replace(/\n/g, ' ') + " |\n";
-				}
-				progress([{ content: new MarkdownString(summary), kind: "markdownContent" }]);
-			}
 			return {};
 		} catch (err: any) {
 			progress([{ kind: "progressMessage", content: new MarkdownString("**AI Studio Error:** " + (err?.message || String(err))) }]);

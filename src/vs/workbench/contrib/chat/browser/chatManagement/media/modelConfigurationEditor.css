@@ -1,8 +1,8 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  AI Studio — Model Configuration Editor
  *--------------------------------------------------------------------------------------------*/
 
+/* ===== Layout ===== */
 .model-configuration-editor {
 	display: flex;
 	height: 100%;
@@ -10,62 +10,77 @@
 	color: var(--vscode-editor-foreground);
 }
 
-/* ---- Left panel: model list ---- */
-
+/* ===== Left Panel: Model List ===== */
 .model-configuration-list {
-	width: 240px;
-	min-width: 180px;
-	border-right: 1px solid var(--vscode-panel-border);
+	width: 260px;
+	min-width: 200px;
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	background-color: var(--vscode-sideBar-background);
+	border-right: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
 }
 
+/* -- Header -- */
 .model-configuration-list-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 12px 12px 8px;
+	padding: 20px 16px 12px;
+	flex-shrink: 0;
 }
 
 .model-configuration-list-title {
 	margin: 0;
 	font-size: 13px;
 	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+	color: var(--vscode-sideBarTitle-foreground);
 }
 
 .model-configuration-add-btn {
+	width: 28px;
+	height: 28px;
 	background: var(--vscode-button-background);
 	color: var(--vscode-button-foreground);
 	border: none;
-	border-radius: 3px;
-	width: 24px;
-	height: 24px;
-	font-size: 16px;
-	line-height: 1;
+	border-radius: 6px;
+	font-size: 18px;
+	line-height: 28px;
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	transition: background 0.15s, transform 0.1s;
 }
 
 .model-configuration-add-btn:hover {
 	background: var(--vscode-button-hoverBackground);
+	transform: scale(1.05);
 }
 
+.model-configuration-add-btn:active {
+	transform: scale(0.97);
+}
+
+/* -- Item List -- */
 .model-configuration-list-items {
 	flex: 1;
 	overflow-y: auto;
-	padding: 0 8px 8px;
+	padding: 4px 10px 12px;
 }
 
 .model-configuration-list-item {
 	display: flex;
 	align-items: center;
-	padding: 8px 10px;
-	border-radius: 4px;
+	padding: 10px 12px;
+	border-radius: 8px;
 	cursor: pointer;
-	gap: 6px;
+	gap: 10px;
+	margin-bottom: 2px;
+	transition: background-color 0.12s;
+	position: relative;
 }
 
 .model-configuration-list-item:hover {
@@ -77,12 +92,53 @@
 	color: var(--vscode-list-activeSelectionForeground);
 }
 
-.model-configuration-list-item-name {
+.model-configuration-list-item.selected::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 24px;
+	background-color: var(--vscode-focusBorder);
+	border-radius: 0 2px 2px 0;
+}
+
+/* -- Item Icon -- */
+.model-configuration-list-item-icon {
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 16px;
+	flex-shrink: 0;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+
+.model-configuration-list-item.selected .model-configuration-list-item-icon {
+	background: var(--vscode-focusBorder);
+	color: #fff;
+}
+
+/* -- Item Text -- */
+.model-configuration-list-item-info {
 	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.model-configuration-list-item-name {
 	font-size: 13px;
+	font-weight: 500;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	line-height: 1.3;
 }
 
 .model-configuration-list-item-model {
@@ -91,23 +147,30 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	max-width: 80px;
 }
 
 .model-configuration-list-item.selected .model-configuration-list-item-model {
 	color: var(--vscode-list-activeSelectionForeground);
-	opacity: 0.7;
+	opacity: 0.65;
 }
 
+/* -- Delete Button -- */
 .model-configuration-list-item-delete {
+	width: 24px;
+	height: 24px;
 	background: none;
 	border: none;
+	border-radius: 5px;
 	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
-	font-size: 16px;
-	padding: 0 2px;
+	font-size: 15px;
+	padding: 0;
 	opacity: 0;
-	transition: opacity 0.1s;
+	transition: opacity 0.12s, background-color 0.12s, color 0.12s;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
 .model-configuration-list-item:hover .model-configuration-list-item-delete {
@@ -115,82 +178,206 @@
 }
 
 .model-configuration-list-item-delete:hover {
-	color: var(--vscode-errorForeground);
+	background-color: var(--vscode-inputValidation-errorBackground);
+	color: var(--vscode-inputValidation-errorForeground);
 }
 
+/* -- Empty State -- */
 .model-configuration-list-empty {
-	padding: 16px 10px;
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 20px;
+	gap: 8px;
 	text-align: center;
 }
 
-/* ---- Right panel: config form ---- */
+.model-configuration-list-empty-icon {
+	font-size: 36px;
+	opacity: 0.25;
+	margin-bottom: 4px;
+}
 
+.model-configuration-list-empty-text {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+}
+
+/* ===== Right Panel: Form ===== */
 .model-configuration-form {
 	flex: 1;
-	padding: 20px 28px;
 	overflow-y: auto;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
 }
 
-.model-configuration-form-title {
-	margin: 0 0 20px;
-	font-size: 15px;
-	font-weight: 600;
-}
-
+/* -- Empty State (no selection) -- */
 .model-configuration-form-empty {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	height: 100%;
 	color: var(--vscode-descriptionForeground);
-	font-size: 13px;
+	gap: 8px;
+	padding: 40px;
+	text-align: center;
 }
 
-.model-configuration-form-fields {
-	max-width: 420px;
+.model-configuration-form-empty-icon {
+	font-size: 48px;
+	opacity: 0.15;
 }
 
+.model-configuration-form-empty-text {
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.model-configuration-form-empty-sub {
+	font-size: 12px;
+	opacity: 0.7;
+}
+
+/* -- Form Header -- */
+.model-configuration-form-header {
+	padding: 20px 32px 0;
+	flex-shrink: 0;
+}
+
+.model-configuration-form-title {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 700;
+	line-height: 1.3;
+}
+
+.model-configuration-form-subtitle {
+	margin: 4px 0 0;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	font-weight: 400;
+}
+
+/* -- Form Body -- */
+.model-configuration-form-body {
+	padding: 24px 32px 32px;
+	flex: 1;
+	overflow-y: auto;
+}
+
+.model-configuration-form-section {
+	margin-bottom: 24px;
+}
+
+.model-configuration-form-section-title {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 10px;
+}
+
+/* -- Form Fields -- */
 .model-configuration-form-field {
-	margin-bottom: 16px;
+	margin-bottom: 18px;
 }
 
 .model-configuration-form-field label {
 	display: block;
 	font-size: 12px;
 	font-weight: 500;
-	margin-bottom: 5px;
+	margin-bottom: 6px;
 	color: var(--vscode-inputLabel-foreground, var(--vscode-editor-foreground));
 }
 
-.model-configuration-form-field input {
+.model-configuration-form-field input,
+.model-configuration-form-field select {
 	width: 100%;
-	padding: 6px 8px;
+	max-width: 480px;
+	padding: 8px 12px;
 	font-size: 13px;
+	font-family: inherit;
 	background-color: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
-	border: 1px solid var(--vscode-input-border);
-	border-radius: 3px;
+	border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+	border-radius: 6px;
 	box-sizing: border-box;
+	transition: border-color 0.15s, box-shadow 0.15s;
+	outline: none;
 }
 
-.model-configuration-form-field input:focus {
-	outline: none;
+.model-configuration-form-field select {
+	cursor: pointer;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+	padding-right: 32px;
+}
+
+.model-configuration-form-field input:focus,
+.model-configuration-form-field select:focus {
 	border-color: var(--vscode-focusBorder);
+	box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(0, 122, 204, 0.3));
+}
+
+.model-configuration-form-field input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+	opacity: 0.6;
+}
+
+/* -- Provider Info -- */
+.model-configuration-provider-hint {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.model-configuration-provider-hint .codicon {
+	font-size: 12px;
+}
+
+/* -- Save Button -- */
+.model-configuration-form-actions {
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-panel-border);
+	margin-top: 8px;
+	padding: 20px 0 0;
 }
 
 .model-configuration-save-btn {
-	margin-top: 8px;
-	padding: 6px 18px;
+	padding: 9px 24px;
 	background: var(--vscode-button-background);
 	color: var(--vscode-button-foreground);
 	border: none;
-	border-radius: 3px;
+	border-radius: 6px;
 	font-size: 13px;
+	font-weight: 600;
+	font-family: inherit;
 	cursor: pointer;
+	transition: background 0.15s, transform 0.1s;
 }
 
 .model-configuration-save-btn:hover {
 	background: var(--vscode-button-hoverBackground);
+}
+
+.model-configuration-save-btn:active {
+	transform: scale(0.98);
+}
+
+/* -- Inline hint text -- */
+.model-configuration-field-hint {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-top: 4px;
+	line-height: 1.4;
 }

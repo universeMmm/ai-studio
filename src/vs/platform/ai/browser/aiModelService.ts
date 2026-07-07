@@ -105,10 +105,15 @@ export class AIModelService extends Disposable implements IAIModelService {
 		const apiType = this.configurationService.getValue<string>('ai.apiType') ?? 'openai';
 		const apiKey = await this.keychainService.getApiKey() ?? '';
 		const apiBase = this.configurationService.getValue<string>('ai.apiBase') ?? '';
-		const modelId = this.configurationService.getValue<string>('ai.modelId') ?? 'claude-sonnet-4-6';
+		const modelId = this.configurationService.getValue<string>('ai.modelId') ?? '';
 
 		if (!apiKey) {
 			this.logService.warn('[AIModelService] No AI API key configured — store one with AI Studio credentials or set ai.apiKey as a fallback.');
+			return;
+		}
+
+		if (!modelId) {
+			this.logService.warn('[AIModelService] No model ID configured — select a model or set ai.modelId in Settings.');
 			return;
 		}
 
