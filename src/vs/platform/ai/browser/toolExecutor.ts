@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
  *  AI Studio - Tool Executor
- *  Runtime implementation of the 8 built-in tools. All subprocess calls are
+ *  Runtime implementation of the 11 built-in tools. All subprocess calls are
  *  async (spawn-based) to avoid blocking the Electron render thread.
  *  run_command includes a safe-command whitelist to prevent automatic
  *  execution of potentially destructive shell commands.

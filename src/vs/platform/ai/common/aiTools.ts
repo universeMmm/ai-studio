@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
  *  AI Studio — Built-in Tool Definitions
- *  Describes the 8 tools available to the AI agent.
+ *  Describes the 11 tools available to the AI agent.
  *--------------------------------------------------------------------------------------------*/
 
 import { BuiltInToolName, type AITool } from './aiTypes.js';
