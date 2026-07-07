@@ -118,5 +118,29 @@ export function getBuiltInTools(): AITool[] {
 				required: [],
 			},
 		},
+		{
+			name: BuiltInToolName.WebFetch,
+			description: 'Fetches content from a URL and processes it. Takes a URL and a prompt describing what to extract. Returns the model\'s response about the page content.',
+			input_schema: {
+				type: 'object',
+				properties: {
+					url: { type: 'string', description: 'The URL to fetch content from.' },
+					prompt: { type: 'string', description: 'What information to extract from the page.' },
+				},
+				required: ['url', 'prompt'],
+			},
+		},
+		{
+			name: BuiltInToolName.WebSearch,
+			description: 'Searches the web using a search engine. Returns top results with titles, URLs, and snippets. Use for up-to-date information beyond your knowledge cutoff.',
+			input_schema: {
+				type: 'object',
+				properties: {
+					query: { type: 'string', description: 'The search query.' },
+					num_results: { type: 'number', description: 'Number of results to return (max 10, default 5).' },
+				},
+				required: ['query'],
+			},
+		},
 	];
 }

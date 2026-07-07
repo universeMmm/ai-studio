@@ -11,7 +11,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from "../../../base/common/uri.js";
-import { VSBuffer } from "../../../base/common/buffer.js";
+import { VSBuffer, encodeBase64 } from "../../../base/common/buffer.js";
 import { IFileService } from "../../../platform/files/common/files.js";
 import { ILogService } from "../../../platform/log/common/log.js";
 import { IConfigurationService } from "../../../platform/configuration/common/configuration.js";
@@ -121,12 +121,17 @@ const SENSITIVE_FILE_PATTERNS = [
 
 const BINARY_EXTENSIONS = new Set([
 	'.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.zip',
-	'.tar', '.gz', '.bz2', '.xz', '.7z', '.rar', '.png', '.jpg',
-	'.jpeg', '.gif', '.bmp', '.ico', '.mp3', '.mp4', '.avi',
-	'.mov', '.wmv', '.flv', '.pdf', '.doc', '.docx', '.xls',
+	'.tar', '.gz', '.bz2', '.xz', '.7z', '.rar', '.mp3', '.mp4',
+	'.avi', '.mov', '.wmv', '.flv', '.doc', '.docx', '.xls',
 	'.xlsx', '.ppt', '.pptx', '.wasm', '.o', '.obj', '.class',
 	'.pyc', '.pyo', '.woff', '.woff2', '.ttf', '.eot', '.otf',
 ]);
+
+const IMAGE_EXTENSIONS = new Set([
+	'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
+]);
+
+const PDF_EXTENSION = '.pdf';
 
 function isSensitiveFile(filePath: string): boolean {
 	return SENSITIVE_FILE_PATTERNS.some(p => p.test(filePath));
@@ -135,6 +140,32 @@ function isSensitiveFile(filePath: string): boolean {
 function isBinaryFile(filePath: string): boolean {
 	const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
 	return BINARY_EXTENSIONS.has(ext);
+}
+
+function isImageFile(filePath: string): boolean {
+	const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+	return IMAGE_EXTENSIONS.has(ext);
+}
+
+function isPdfFile(filePath: string): boolean {
+	const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+	return ext === PDF_EXTENSION;
+}
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+	'.png': 'image/png',
+	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.gif': 'image/gif',
+	'.bmp': 'image/bmp',
+	'.ico': 'image/x-icon',
+	'.webp': 'image/webp',
+	'.svg': 'image/svg+xml',
+};
+
+function getImageMimeType(filePath: string): string {
+	const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+	return IMAGE_MIME_TYPES[ext] || 'application/octet-stream';
 }
 
 const DANGEROUS_SHELL_PATTERNS = [
@@ -230,6 +261,8 @@ export class ToolExecutor {
 				case BuiltInToolName.ListDirectory:   return await this._listDirectory(input);
 				case BuiltInToolName.ReadLints:       return await this._readLints(input);
 				case BuiltInToolName.SearchPattern:  return await this._searchPattern(input);
+				case BuiltInToolName.WebFetch:       return await this._webFetch(input);
+				case BuiltInToolName.WebSearch:      return await this._webSearch(input);
 				default:                              return "Error: unknown tool \"" + toolName + "\"";
 			}
 		} catch (err) {
@@ -293,8 +326,26 @@ export class ToolExecutor {
 
 	private async _readFile(input: Record<string, unknown>): Promise<string> {
 		const fp = this._resolvePath(input.path as string);
-		if (isBinaryFile(fp)) { return "Error: cannot read binary file: " + (input.path as string); }
 		if (isSensitiveFile(fp)) { return "Error: cannot read sensitive file: " + (input.path as string); }
+
+		// Handle image files — read as binary, base64-encode, return structured result
+		if (isImageFile(fp)) {
+			const content = await this.fileService.readFile(URI.file(fp));
+			const mimeType = getImageMimeType(fp);
+			const base64Data = encodeBase64(content.value);
+			const size = content.value.byteLength;
+			const preview = base64Data.slice(0, 100);
+			return `[IMAGE: ${input.path} | ${mimeType} | ${size} bytes | base64 data: ${preview}...]`;
+		}
+
+		// Handle PDF files — read as binary, indicate limited text extraction capability
+		if (isPdfFile(fp)) {
+			const content = await this.fileService.readFile(URI.file(fp));
+			const size = content.value.byteLength;
+			return `[PDF: ${input.path} | ${size} bytes | PDF text extraction requires the main-process PDF handler]`;
+		}
+
+		if (isBinaryFile(fp)) { return "Error: cannot read binary file: " + (input.path as string); }
 		const offset = (input.offset as number) || 0;
 		const limit = (input.limit as number) || undefined;
 		const content = await this.fileService.readFile(URI.file(fp));
@@ -489,6 +540,83 @@ export class ToolExecutor {
 			const s = m.severity === MarkerSeverity.Error ? "ERROR" : m.severity === MarkerSeverity.Warning ? "WARN" : "INFO";
 			return "[" + s + "] " + m.resource.fsPath + ":" + m.startLineNumber + " " + m.message;
 		}).join("\n") : "No issues workspace-wide.";
+	}
+
+	// -- Web tools --------------------------------------------------------------
+
+	private async _webFetch(input: Record<string, unknown>): Promise<string> {
+		const url = input.url as string;
+		if (!url) { return "Error: url is required"; }
+		// Basic URL validation
+		try { new URL(url); } catch { return "Error: invalid URL: " + url; }
+		// Only allow http/https
+		if (!url.startsWith('http://') && !url.startsWith('https://')) {
+			return "Error: only http/https URLs are supported";
+		}
+		const cwd = this._getCwd();
+		const prompt = (input.prompt as string) || 'Summarize the content';
+		try {
+			// Use the IPC exec bridge with curl
+			const result = await this._execShell(
+				`curl -sL --max-time 15 -H "User-Agent: AI-Studio/1.0" "${url}"`,
+				cwd, 20_000, 500 * 1024,
+			);
+			if (result.exitCode !== 0) {
+				return "Error fetching URL: " + (result.stderr || "HTTP error");
+			}
+			const html = result.stdout;
+			// Strip HTML tags and return text
+			const text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+				.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+				.replace(/<[^>]+>/g, ' ')
+				.replace(/&nbsp;/g, ' ')
+				.replace(/&amp;/g, '&')
+				.replace(/&lt;/g, '<')
+				.replace(/&gt;/g, '>')
+				.replace(/&quot;/g, '"')
+				.replace(/&#\d+;/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+				.slice(0, 8000);
+			return `## Web Content from ${url}\n\nExtraction prompt: ${prompt}\n\n${text}`;
+		} catch (err) {
+			return "Web fetch error: " + (err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	private async _webSearch(input: Record<string, unknown>): Promise<string> {
+		const query = input.query as string;
+		if (!query) { return "Error: query is required"; }
+		const numResults = Math.min((input.num_results as number) || 5, 10);
+		const cwd = this._getCwd();
+		try {
+			// Use DuckDuckGo Lite (no API key needed) for search via curl
+			const encoded = encodeURIComponent(query);
+			const result = await this._execShell(
+				`curl -sL --max-time 15 -H "User-Agent: AI-Studio/1.0" "https://lite.duckduckgo.com/lite/?q=${encoded}"`,
+				cwd, 20_000, 500 * 1024,
+			);
+			if (result.exitCode !== 0) {
+				return "Error searching: " + (result.stderr || "HTTP error");
+			}
+			const html = result.stdout;
+			// Parse DuckDuckGo Lite results — each result has a link and description
+			const links: string[] = [];
+			const liteLinkRegex = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/g;
+			let match;
+			while ((match = liteLinkRegex.exec(html)) !== null && links.length < numResults) {
+				if (!match[1].includes('duckduckgo.com') && !match[1].includes('javascript:')) {
+					links.push(`- [${match[2].trim()}](${match[1]})`);
+				}
+			}
+
+			if (!links.length) {
+				return "No search results found for: " + query;
+			}
+			return `## Web Search: ${query}\n\n${links.join('\n')}`;
+		} catch (err) {
+			return "Web search error: " + (err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	// -- Subprocess execution (IPC via vscode sandbox globals) -----------------

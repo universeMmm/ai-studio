@@ -25,6 +25,12 @@ export interface AIMessageContent {
 	tool_use_id?: string;
 	content?: string | Array<{ type: string; text?: string }>;
 	is_error?: boolean;
+	/** Image source data for Anthropic Messages API image content blocks. */
+	source?: {
+		type: 'base64';
+		media_type: string;
+		data: string;
+	};
 }
 
 /**
@@ -156,6 +162,44 @@ export interface AgentPlan {
 	currentStepIndex: number;
 }
 
+/**
+ * A single conversation turn (user/assistant pair).
+ * Duplicated from conversationMemory.ts to avoid circular imports.
+ */
+export interface ConversationTurn {
+	userMessage: string;
+	assistantMessage: string;
+	timestamp: number;
+}
+
+/** Complete session data for persistence. */
+export interface AgentSession {
+	/** ISO timestamp when the session was created */
+	sessionId: string;
+	/** When the session started (epoch ms) */
+	startedAt: number;
+	/** When the session ended (epoch ms) */
+	endedAt: number;
+	/** The original user instruction */
+	instruction: string;
+	/** All execution steps (thoughts, tool calls, results, errors) */
+	steps: AgentStep[];
+	/** The execution plan, if one was generated */
+	plan: AgentPlan | null;
+	/** User/assistant message pairs (backward-compatible with existing format) */
+	turns: ConversationTurn[];
+	/** Final agent status */
+	status: AgentStatus;
+	/** Token usage totals */
+	usage: { inputTokens: number; outputTokens: number } | null;
+	/** Model and config used */
+	meta: {
+		modelId: string;
+		maxSteps: number;
+		maxTokens: number;
+	};
+}
+
 export interface AgentStep {
 	stepNumber: number;
 	type: 'thought' | 'tool_use' | 'tool_result' | 'error' | 'plan';
@@ -183,6 +227,8 @@ export enum BuiltInToolName {
 	ListDirectory = 'list_directory',
 	ReadLints = 'read_lints',
 	SearchPattern = 'search_pattern',
+	WebFetch = 'web_fetch',
+	WebSearch = 'web_search',
 }
 
 /**

@@ -49,7 +49,8 @@ export class AIContextService extends Disposable implements IAIContextService {
 		const messages: AIMessage[] = [];
 		let systemPrompt = SYSTEM_PROMPT + "\n";
 		const workspaceRoot = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || '.';
-		const rules = new ProjectRules(workspaceRoot, this.fileService, this.logService);
+		const homeDir = process.env.HOME || process.env.USERPROFILE || '.';
+		const rules = new ProjectRules(workspaceRoot, this.fileService, this.logService, homeDir);
 		const rulesBlock = await rules.load();
 		if (rulesBlock) systemPrompt += rulesBlock;
 

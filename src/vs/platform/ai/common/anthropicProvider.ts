@@ -7,7 +7,7 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import type { IAIProvider } from './aiProvider.js';
 import type {
-	AIMessage, AITool, AIRequestOptions, AIStreamCallbacks,
+	AIMessage, AIMessageContent, AITool, AIRequestOptions, AIStreamCallbacks,
 	AICompletionOptions, AICompletionCallbacks, FileContext, AIModel,
 } from './aiTypes.js';
 import { SYSTEM_PROMPT, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
@@ -180,7 +180,7 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 			}
 			if (typeof msg.content === 'string') { result.push({ role: msg.role, content: msg.content }); continue; }
 			result.push({ role: msg.role, content: msg.content.map((b): any => {
-				switch (b.type) { case 'text': return { type: 'text' as const, text: (b as { text?: string }).text || '' }; case 'tool_use': return { type: 'tool_use' as const, id: (b as { id?: string }).id || '', name: (b as { name?: string }).name || '', input: (b as { input?: Record<string, unknown> }).input || {} }; case 'tool_result': return { type: 'tool_result' as const, tool_use_id: (b as { tool_use_id?: string }).tool_use_id || '', content: typeof (b as { content?: unknown }).content === 'string' ? (b as { content: string }).content : '' }; default: return { type: 'text' as const, text: '' }; }
+				switch (b.type) { case 'text': return { type: 'text' as const, text: (b as { text?: string }).text || '' }; case 'tool_use': return { type: 'tool_use' as const, id: (b as { id?: string }).id || '', name: (b as { name?: string }).name || '', input: (b as { input?: Record<string, unknown> }).input || {} }; case 'tool_result': return { type: 'tool_result' as const, tool_use_id: (b as { tool_use_id?: string }).tool_use_id || '', content: typeof (b as { content?: unknown }).content === 'string' ? (b as { content: string }).content : '' }; case 'image': { const img = b as AIMessageContent; if (img.source) { return { type: 'image', source: img.source }; } return { type: 'text' as const, text: '[Image]' }; } default: return { type: 'text' as const, text: '' }; }
 			}) });
 		}
 		return result;

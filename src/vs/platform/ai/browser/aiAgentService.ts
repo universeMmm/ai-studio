@@ -25,7 +25,7 @@ import { IDiffStore } from "../../../workbench/contrib/aiDiffApply/browser/diffS
 import { getBuiltInTools } from "../common/aiTools.js";
 import type {
 	AITool, AgentStep, AgentStatus, AIMessage, AIRequestOptions, AIStreamCallbacks,
-	AgentPlan, PlanStep, PlanStepStatus, BuiltInToolName,
+	AgentPlan, PlanStep, PlanStepStatus, BuiltInToolName, AgentSession,
 } from "../common/aiTypes.js";
 
 export const IAIAgentService = createDecorator<IAIAgentService>("aiAgentService");
@@ -92,6 +92,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		if ((this._status as string) === "running") { return; }
 		this.clearHistory();
 		this._setStatus("running");
+		const startTime = Date.now();
 		const cfgMaxSteps = this.configurationService.getValue<number>('ai.agent.maxSteps');
 		if (cfgMaxSteps && cfgMaxSteps > 0) { this.maxSteps = cfgMaxSteps; }
 		// 0.7: Multi-root workspace — use first folder; fallback to ~/.ai-studio/global/
@@ -109,9 +110,9 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		this._toolAbortController = new AbortController();
 
 		const memoryStore = new MemoryStore(root, this.fileService, this.logService);
-		const prevTurns = await memoryStore.loadLastSession();
-		if (prevTurns.length) {
-			for (const t of prevTurns) {
+		const prevSession = await memoryStore.loadLastSession();
+		if (prevSession?.turns.length) {
+			for (const t of prevSession.turns) {
 				this._memory.addTurn(t.userMessage, t.assistantMessage);
 			}
 		}
@@ -308,7 +309,23 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		if ((this._status as string) === "running") {
 			this._setStatus("stopped");
 		}
-		try { await memoryStore.saveSession(this._memory.turns); } catch { /* best-effort */ }
+		const agentSession: AgentSession = {
+			sessionId: new Date().toISOString().replace(/[:.]/g, '-'),
+			startedAt: startTime,
+			endedAt: Date.now(),
+			instruction,
+			steps: [...this._steps],
+			plan: this._plan,
+			turns: [...this._memory.turns],
+			status: this._status,
+			usage: this._lastUsage,
+			meta: {
+				modelId: options.model || '',
+				maxSteps: this.maxSteps,
+				maxTokens: options.maxTokens || 0,
+			},
+		};
+		try { await memoryStore.saveSessionFull(agentSession); } catch { /* best-effort */ }
 		} finally {
 			// 0.3: Clean up per-run resources
 			this._toolExecutor = null;
