@@ -35,6 +35,8 @@ export const aiConfigurationNode: IConfigurationNode = {
 			type: "string",
 			default: "",
 			description: "Legacy fallback API key for the selected provider. Prefer storing keys in AI Studio secure credentials instead of settings.",
+			restricted: true,
+			ignoreSync: true,
 		},
 		"ai.apiBase": {
 			type: "string",

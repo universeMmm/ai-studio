@@ -1279,7 +1279,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					this.configurationService.updateValue('ai.apiType', settings['apiType'] ?? 'openai');
 					if (settings['apiKey']) {
 						const apiKey = settings['apiKey'] as string;
-						this.configurationService.updateValue('ai.apiKey', apiKey);
 						this.keychainService.setApiKey(apiKey);
 					}
 					if (settings['endpoint']) {

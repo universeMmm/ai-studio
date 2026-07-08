@@ -1,0 +1,11 @@
+{
+	"ai.modelId": "",
+	"ai.apiType": "openai",
+	"ai.apiBase": "",
+	"ai.agent.maxSteps": 20,
+	"ai.chat.maxTokens": 16000,
+	"ai.completion.enabled": true,
+	"ai.completion.delay": 150,
+	"ai.commandApproval": "unsafe",
+	"ai.index.enabled": true
+}

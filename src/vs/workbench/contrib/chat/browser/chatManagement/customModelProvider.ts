@@ -91,7 +91,15 @@ export function registerCustomModelProvider(
 	const vendorDescriptor = {
 		vendor: AI_STUDIO_VENDOR_ID,
 		displayName: 'AI Studio',
-		configuration: undefined,
+		configuration: {
+			type: 'object' as const,
+			properties: {
+				modelId: { type: 'string', description: 'Model identifier' },
+				apiKey: { type: 'string', description: 'API key for the provider', secret: true },
+				endpoint: { type: 'string', description: 'API endpoint URL' },
+				apiType: { type: 'string', enum: ['openai', 'anthropic'], description: 'API type' },
+			},
+		},
 		managementCommand: undefined,
 		when: undefined,
 	};

@@ -25,7 +25,9 @@ Thumbs.db
 *.swo
 
 # IDE
-.vscode/
+/.vscode/*
+!/.vscode/settings.json
+extensions/**/.vscode/
 
 # Archives
 *.zip

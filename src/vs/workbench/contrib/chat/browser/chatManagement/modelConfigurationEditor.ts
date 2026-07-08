@@ -294,7 +294,6 @@ export class ModelConfigurationEditor extends EditorPane {
 			settings: {
 				[data.name]: {
 					modelId: data.modelId,
-					apiKey: data.apiKey,
 					endpoint: data.endpoint,
 					apiType: data.apiType,
 				}
@@ -320,7 +319,6 @@ export class ModelConfigurationEditor extends EditorPane {
 			this.configurationService.updateValue('ai.modelName', data.name);
 			this.configurationService.updateValue('ai.apiType', data.apiType);
 			if (data.apiKey) {
-				this.configurationService.updateValue('ai.apiKey', data.apiKey);
 				this.keychainService.setApiKey(data.apiKey);
 			}
 			if (data.endpoint) {
