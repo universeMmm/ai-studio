@@ -21,6 +21,9 @@ import { BuiltInToolName } from "../common/aiTypes.js";
 import { IAIIndexService } from "./aiIndexService.js";
 import { IDiffStore } from "../../../workbench/contrib/aiDiffApply/browser/diffStore.js";
 import type { DiffGroup, DiffHunk } from "../../../workbench/contrib/aiDiffApply/common/diffTypes.js";
+import { ITaskManager } from '../common/taskManager.js';
+import { ISubAgentManager } from '../common/subAgentManager.js';
+import { IUserMemoryStore } from '../common/userMemoryStore.js';
 
 // --- Inline path polyfill ---------------------------------------------------
 // Electron sandboxed renderer cannot access Node.js "path" module.
@@ -242,6 +245,10 @@ export class ToolExecutor {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		private readonly abortSignal?: AbortSignal,
+		// Phase 2: new dependencies
+		private readonly taskManager?: ITaskManager,
+		private readonly subAgentManager?: ISubAgentManager,
+		private readonly userMemoryStore?: IUserMemoryStore,
 	) { }
 
 	/**
@@ -263,6 +270,14 @@ export class ToolExecutor {
 				case BuiltInToolName.SearchPattern:  return await this._searchPattern(input);
 				case BuiltInToolName.WebFetch:       return await this._webFetch(input);
 				case BuiltInToolName.WebSearch:      return await this._webSearch(input);
+				case 'TaskCreate':
+				case 'TaskUpdate':
+				case 'TaskList':
+				case 'TaskGet':
+				case 'Agent':
+				case 'SendMessage':
+				case 'LocalMemoryRecall':
+					return await this._executeAgentTool(toolName, input);
 				default:                              return "Error: unknown tool \"" + toolName + "\"";
 			}
 		} catch (err) {
@@ -687,5 +702,111 @@ export class ToolExecutor {
 			stderr: `Cannot execute shell command — the AI Studio IPC exec handler is not registered in the main process.`,
 			exitCode: -1,
 		};
+	}
+
+	// -- Agent orchestration tools (Phase 2) ----------------------------------
+
+	private async _executeAgentTool(toolName: string, input: Record<string, unknown>): Promise<string> {
+		switch (toolName) {
+			case 'TaskCreate': {
+				if (!this.taskManager) return 'Error: TaskManager not available';
+				try {
+					const task = this.taskManager.create(
+						input.subject as string,
+						input.description as string,
+						input.activeForm as string | undefined,
+						input.blocks as string[] | undefined,
+						input.blockedBy as string[] | undefined,
+						input.metadata as Record<string, unknown> | undefined,
+					);
+					return `Task created: ${task.id} \u2014 "${task.subject}"`;
+				} catch (err: any) {
+					return `Error creating task: ${err.message}`;
+				}
+			}
+
+			case 'TaskUpdate': {
+				if (!this.taskManager) return 'Error: TaskManager not available';
+				try {
+					const patch: any = {};
+					if (input.status !== undefined) patch.status = input.status;
+					if (input.owner !== undefined) patch.owner = input.owner;
+					if (input.subject !== undefined) patch.subject = input.subject;
+					if (input.description !== undefined) patch.description = input.description;
+					if (input.activeForm !== undefined) patch.activeForm = input.activeForm;
+					if (input.addBlocks !== undefined) patch.addBlocks = input.addBlocks;
+					if (input.addBlockedBy !== undefined) patch.addBlockedBy = input.addBlockedBy;
+					const updated = this.taskManager.update(input.id as string, patch);
+					if (!updated) return `Error: Task "${input.id}" not found`;
+					return `Task "${updated.id}" updated \u2014 status: ${updated.status}`;
+				} catch (err: any) {
+					return `Error updating task: ${err.message}`;
+				}
+			}
+
+			case 'TaskList': {
+				if (!this.taskManager) return 'Error: TaskManager not available';
+				const tasks = this.taskManager.list();
+				if (!tasks.length) return 'No tasks.';
+				return tasks.map(t =>
+					`- [${t.status}] ${t.id}: ${t.subject}` +
+					(t.owner ? ` (owner: ${t.owner})` : '') +
+					(t.blockedBy.length ? ` blockedBy: [${t.blockedBy.join(', ')}]` : '') +
+					(t.blocks.length ? ` blocks: [${t.blocks.join(', ')}]` : '')
+				).join('\n');
+			}
+
+			case 'TaskGet': {
+				if (!this.taskManager) return 'Error: TaskManager not available';
+				const task = this.taskManager.get(input.id as string);
+				if (!task) return `Task "${input.id}" not found`;
+				return JSON.stringify(task, null, 2);
+			}
+
+			case 'Agent': {
+				if (!this.subAgentManager) return 'Error: SubAgentManager not available';
+				const configs = [{
+					subagent_type: (input.subagent_type as any) || 'general-purpose',
+					description: (input.description as string) || 'No description',
+					prompt: input.prompt as string,
+					name: input.name as string | undefined,
+					run_in_background: !!(input.run_in_background as boolean),
+					mode: (input.mode as any) || 'default',
+				}];
+				try {
+					const results = await this.subAgentManager.execute(configs);
+					const r = results[0];
+					if (r.status === 'error') return `Sub-agent "${r.name}" error: ${r.error}`;
+					return `Sub-agent "${r.name}" completed. Tool calls: ${r.toolCalls}\n\n${r.text}`;
+				} catch (err: any) {
+					return `Sub-agent error: ${err.message}`;
+				}
+			}
+
+			case 'SendMessage': {
+				if (!this.subAgentManager) return 'Error: SubAgentManager not available';
+				const to = input.to as string;
+				const summary = (input.summary as string) || '';
+				const message = input.message as string;
+				this.subAgentManager.sendMessage('parent', to, summary, message);
+				return `Message sent to ${to}`;
+			}
+
+			case 'LocalMemoryRecall': {
+				if (!this.userMemoryStore) return 'Error: UserMemoryStore not available';
+				const query = (input.query as string || '').toLowerCase();
+				const entries = await this.userMemoryStore.list();
+				if (!entries.length) return 'No memories found.';
+				const matched = entries.filter(e =>
+					e.name.toLowerCase().includes(query) ||
+					e.description.toLowerCase().includes(query)
+				);
+				if (!matched.length) return `No memories matching "${input.query}".`;
+				return matched.map(e => `## ${e.name} (${e.type})\n${e.description}\n\n${e.content}`).join('\n\n---\n\n');
+			}
+
+			default:
+				return `Error: unknown agent tool "${toolName}"`;
+		}
 	}
 }
