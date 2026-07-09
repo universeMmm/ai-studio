@@ -9,19 +9,19 @@ import { Disposable } from "../../../base/common/lifecycle.js";
 import { createDecorator } from "../../../platform/instantiation/common/instantiation.js";
 import { IEditorService } from "../../../workbench/services/editor/common/editorService.js";
 import { IActiveCodeEditor } from '../../../editor/browser/editorBrowser.js';
-import type { AIMessage, CodeSnippet, AgentPlan } from "../common/aiTypes.js";
+import type { AIMessage, CodeSnippet } from "../common/aiTypes.js";
 import { SYSTEM_PROMPT } from '../common/systemPrompt.js';
 import { ConversationMemory } from "../common/conversationMemory.js";
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
 import { ProjectRules } from '../common/projectRules.js';
+import { IUserMemoryStore } from '../common/userMemoryStore.js';
 
 export const IAIContextService = createDecorator<IAIContextService>("aiContextService");
 
 export interface BuildContextInput {
 	instruction: string;
-	plan: AgentPlan | null;
 	memory: ConversationMemory;
 	topK: number;
 }
@@ -41,6 +41,7 @@ export class AIContextService extends Disposable implements IAIContextService {
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IUserMemoryStore private readonly userMemoryStore?: IUserMemoryStore,
 	) { super(); }
 
 	// ---- Public API ---------------------------------------------------------
@@ -63,14 +64,21 @@ export class AIContextService extends Disposable implements IAIContextService {
 			systemPrompt += "\n";
 		}
 
-		// 2. Plan context
-		if (input.plan && input.plan.steps.length) {
-			systemPrompt += "\n## Execution Plan\n";
-			for (const s of input.plan.steps) {
-				systemPrompt += "- [" + s.status + "] " + s.title + (s.description ? ": " + s.description : "") + "\n";
+		// 2. User memory context
+		try {
+			if (this.userMemoryStore) {
+				const entries = await this.userMemoryStore.list();
+				if (entries.length) {
+					systemPrompt += '\n## User Memory\n\n';
+					systemPrompt += 'You have a persistent memory system at `~/.ai-studio/memory/`.\n';
+					systemPrompt += 'The following memories are available (use LocalMemoryRecall to read details):\n';
+					for (const e of entries) {
+						systemPrompt += `- **${e.name}** (${e.type}): ${e.description}\n`;
+					}
+					systemPrompt += '\n';
+				}
 			}
-			systemPrompt += "\n";
-		}
+		} catch { /* memory unavailable */ }
 
 		messages.push({ role: "system", content: systemPrompt });
 
