@@ -86,9 +86,6 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 						progress([{ content: new MarkdownString(step.content), kind: "markdownContent" }]);
 						this.logService.info('[AIStudioChatAgent] progress() returned');
 						break;
-					case "plan":
-						progress([{ content: new MarkdownString(step.content), kind: "markdownContent" }]);
-						break;
 					case "tool_use":
 						progress([{ kind: "progressMessage", content: new MarkdownString("Tool: **" + (step.toolName || "?") + "**") }]);
 						break;
@@ -106,17 +103,25 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 				}
 			});
 
-			// Render plan progress as a markdown checklist
-			const planListener = agentService.onDidChangePlan((plan) => {
-				if (!plan) return;
-				const completed = plan.steps.filter(s => s.status === "completed").length;
-				const total = plan.steps.length;
-				let md = "## Plan Progress (" + completed + "/" + total + ")\n";
-				for (const s of plan.steps) {
-					const icon = s.status === "completed" ? "- [x]" : s.status === "in_progress" ? "- [>]" : "- [ ]";
-					md += icon + " **" + s.title + "**: " + s.description + "\n";
+			// Render task progress as a markdown checklist
+			const taskListener = agentService.onDidChangeTasks((tasks) => {
+				if (!tasks || !tasks.length) return;
+				const total = tasks.filter(t => t.status !== 'deleted').length;
+				const completed = tasks.filter(t => t.status === 'completed').length;
+				const inProgress = tasks.filter(t => t.status === 'in_progress').length;
+				let md = '## Tasks (' + completed + '/' + total + ' done';
+				if (inProgress > 0) md += ', ' + inProgress + ' in progress';
+				md += ')\n';
+				for (const t of tasks) {
+					if (t.status === 'deleted') continue;
+					const icon = t.status === 'completed' ? '- [x]' : t.status === 'in_progress' ? '- [>]' : '- [ ]';
+					let label = t.subject;
+					if (t.owner) label += ' _(owner: ' + t.owner + ')_';
+					md += icon + ' **' + label + '**';
+					if (t.description) md += ': ' + t.description;
+					md += '\n';
 				}
-				progress([{ content: new MarkdownString(md), kind: "markdownContent" }]);
+				progress([{ content: new MarkdownString(md), kind: 'markdownContent' }]);
 			});
 
 			const cancelListener = token.onCancellationRequested(() => agentService.stop());
@@ -154,7 +159,7 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 				}
 			} finally {
 				stepListener.dispose();
-				planListener.dispose();
+				taskListener.dispose();
 				cancelListener.dispose();
 			}
 
