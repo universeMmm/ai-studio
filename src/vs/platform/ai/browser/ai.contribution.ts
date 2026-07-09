@@ -15,6 +15,9 @@ import { IAICompletionService, AICompletionService } from './aiCompletionService
 import { IAIContextService, AIContextService } from './aiContextService.js';
 import { IAIIndexService, AIIndexService } from './aiIndexService.js';
 import { IAIKeychainService, AIKeychainService } from './credentialService.js';
+import { ITaskManager, TaskManager } from '../common/taskManager.js';
+import { ISubAgentManager, SubAgentManager } from '../common/subAgentManager.js';
+import { IUserMemoryStore, UserMemoryStore } from '../common/userMemoryStore.js';
 import { InstantiationType, registerSingleton } from '../../../platform/instantiation/common/extensions.js';
 
 // ── Configuration ──────────────────────────────────────────────
@@ -28,3 +31,6 @@ registerSingleton(IAICompletionService, AICompletionService, InstantiationType.D
 registerSingleton(IAIContextService, AIContextService, InstantiationType.Delayed);
 registerSingleton(IAIIndexService, AIIndexService, InstantiationType.Delayed);
 registerSingleton(IAIKeychainService, AIKeychainService, InstantiationType.Delayed);
+registerSingleton(ITaskManager, TaskManager, InstantiationType.Delayed);
+registerSingleton(ISubAgentManager, SubAgentManager, InstantiationType.Delayed);
+registerSingleton(IUserMemoryStore, UserMemoryStore, InstantiationType.Delayed);
