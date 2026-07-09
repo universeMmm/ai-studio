@@ -41,7 +41,7 @@ export class AIContextService extends Disposable implements IAIContextService {
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IUserMemoryStore private readonly userMemoryStore?: IUserMemoryStore,
+		@IUserMemoryStore private readonly userMemoryStore: IUserMemoryStore,
 	) { super(); }
 
 	// ---- Public API ---------------------------------------------------------

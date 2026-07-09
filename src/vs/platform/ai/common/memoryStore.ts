@@ -9,7 +9,7 @@ import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import type { ConversationTurn, AgentSession, AgentStep, AgentStatus } from './aiTypes.js';
+import type { ConversationTurn, AgentSession, AgentStatus } from './aiTypes.js';
 
 const MAX_HISTORY_FILES = 10;
 

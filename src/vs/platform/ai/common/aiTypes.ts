@@ -185,7 +185,7 @@ export interface AgentSession {
 	/** All execution steps (thoughts, tool calls, results, errors) */
 	steps: AgentStep[];
 	/** Task snapshot captured at session end */
-	taskSnapshot: Task[] | null;
+	taskSnapshot: readonly Task[] | null;
 	/** User/assistant message pairs (backward-compatible with existing format) */
 	turns: ConversationTurn[];
 	/** Final agent status */

@@ -28,7 +28,7 @@ import { ISubAgentManager } from "../common/subAgentManager.js";
 import { getAgentTools } from "../common/agentTools.js";
 import type {
 	AITool, AgentStep, AgentStatus, AIMessage, AIRequestOptions, AIStreamCallbacks,
-	BuiltInToolName, AgentSession, Task, SubAgentConfig,
+	AgentSession, Task,
 } from "../common/aiTypes.js";
 
 export const IAIAgentService = createDecorator<IAIAgentService>("aiAgentService");

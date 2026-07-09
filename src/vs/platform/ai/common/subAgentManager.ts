@@ -15,7 +15,7 @@ import type { SubAgentConfig, SubAgentResult } from './aiTypes.js';
 import { ConversationMemory } from './conversationMemory.js';
 
 // IAIModelService is imported from browser/ — this is intentional as common/ modules can reference browser/ types
-import type { IAIModelService } from '../browser/aiModelService.js';
+import { IAIModelService } from '../browser/aiModelService.js';
 
 export const ISubAgentManager = createDecorator<ISubAgentManager>('subAgentManager');
 
