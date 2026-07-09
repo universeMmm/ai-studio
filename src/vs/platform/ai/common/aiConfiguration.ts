@@ -69,6 +69,13 @@ export const aiConfigurationNode: IConfigurationNode = {
 			maximum: 100,
 			description: "Maximum number of steps the agent may take before being force-stopped.",
 		},
+		"ai.agent.maxSubAgents": {
+			type: 'number',
+			default: 3,
+			minimum: 1,
+			maximum: 16,
+			description: 'Maximum number of sub-agents that can run in parallel',
+		},
 		"ai.commandApproval": {
 			type: "string",
 			enum: ["all", "unsafe", "none"],
