@@ -145,21 +145,20 @@ export interface CodeSnippet {
  * A single step in an agent execution trace.
  */
 
-/** A single step in the agent execution plan. */
-export interface PlanStep {
+/** Task status */
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted';
+
+/** A single task in the agent's task list */
+export interface Task {
 	readonly id: string;
-	readonly title: string;
-	readonly description: string;
-	expectedTool?: BuiltInToolName;
-	status: PlanStepStatus;
-}
-
-export type PlanStepStatus = "pending" | "in_progress" | "completed" | "failed";
-
-/** Structured execution plan generated before the agent loop. */
-export interface AgentPlan {
-	readonly steps: PlanStep[];
-	currentStepIndex: number;
+	subject: string;
+	description: string;
+	activeForm?: string;
+	status: TaskStatus;
+	owner?: string;
+	blocks: string[];
+	blockedBy: string[];
+	metadata?: Record<string, unknown>;
 }
 
 /**
@@ -184,8 +183,8 @@ export interface AgentSession {
 	instruction: string;
 	/** All execution steps (thoughts, tool calls, results, errors) */
 	steps: AgentStep[];
-	/** The execution plan, if one was generated */
-	plan: AgentPlan | null;
+	/** Task snapshot captured at session end */
+	taskSnapshot: Task[] | null;
 	/** User/assistant message pairs (backward-compatible with existing format) */
 	turns: ConversationTurn[];
 	/** Final agent status */
@@ -282,4 +281,48 @@ export interface DiffGroup {
 	chatMessageId: string;
 	hunks: DiffHunk[];
 	createdAt: number;
+}
+
+/**
+ * Sub-agent type determines available tools.
+ */
+export type SubAgentType = 'general-purpose' | 'Explore' | 'Plan' | 'verification';
+
+/**
+ * Configuration for spawning a sub-agent.
+ */
+export interface SubAgentConfig {
+	subagent_type: SubAgentType;
+	description: string;
+	name?: string;
+	run_in_background: boolean;
+	mode: 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'auto';
+	cwd?: string;
+}
+
+/**
+ * Result from a completed sub-agent.
+ */
+export interface SubAgentResult {
+	name: string;
+	status: 'completed' | 'error' | 'aborted';
+	text: string;
+	error?: string;
+	toolCalls: number;
+	usage?: { inputTokens: number; outputTokens: number };
+}
+
+/**
+ * Memory type.
+ */
+export type MemoryType = 'user' | 'feedback' | 'project' | 'reference';
+
+/**
+ * Parsed user memory entry from ~/.ai-studio/memory/.
+ */
+export interface MemoryEntry {
+	name: string;
+	description: string;
+	type: MemoryType;
+	content: string;
 }
