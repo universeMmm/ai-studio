@@ -23,9 +23,12 @@ import { ToolExecutor } from "./toolExecutor.js";
 import { MemoryStore } from '../common/memoryStore.js';
 import { IDiffStore } from "../../../workbench/contrib/aiDiffApply/browser/diffStore.js";
 import { getBuiltInTools } from "../common/aiTools.js";
+import { ITaskManager } from "../common/taskManager.js";
+import { ISubAgentManager } from "../common/subAgentManager.js";
+import { getAgentTools } from "../common/agentTools.js";
 import type {
 	AITool, AgentStep, AgentStatus, AIMessage, AIRequestOptions, AIStreamCallbacks,
-	AgentPlan, PlanStep, PlanStepStatus, BuiltInToolName, AgentSession,
+	BuiltInToolName, AgentSession, Task, SubAgentConfig,
 } from "../common/aiTypes.js";
 
 export const IAIAgentService = createDecorator<IAIAgentService>("aiAgentService");
@@ -35,9 +38,9 @@ export interface IAIAgentService {
 	readonly status: AgentStatus;
 	readonly onDidChangeStatus: Event<AgentStatus>;
 	readonly onDidAddStep: Event<AgentStep>;
-	readonly onDidChangePlan: Event<AgentPlan | null>;
+	readonly onDidChangeTasks: Event<Task[]>;
 	readonly steps: readonly AgentStep[];
-	readonly plan: AgentPlan | null;
+	readonly tasks: readonly Task[];
 	maxSteps: number;
 	run(instruction: string): Promise<void>;
 	stop(): void;
@@ -54,7 +57,6 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 	private _abortController: AbortController | null = null;
 	private _toolAbortController: AbortController | null = null;
 	private _toolExecutor: ToolExecutor | null = null;
-	private _plan: AgentPlan | null = null;
 	private _memory: ConversationMemory = new ConversationMemory();
 	private _lastUsage: { inputTokens: number; outputTokens: number } | null = null;
 
@@ -64,8 +66,8 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 	private readonly _onDidAddStep = this._register(new Emitter<AgentStep>());
 	readonly onDidAddStep = this._onDidAddStep.event;
 
-	private readonly _onDidChangePlan = this._register(new Emitter<AgentPlan | null>());
-	readonly onDidChangePlan = this._onDidChangePlan.event;
+	private readonly _onDidChangeTasks = this._register(new Emitter<Task[]>());
+	readonly onDidChangeTasks = this._onDidChangeTasks.event;
 
 	maxSteps = 20;
 
@@ -79,11 +81,14 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		@IDiffStore private readonly diffStore: IDiffStore,
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		// Phase 2:
+		@ITaskManager private readonly taskManager: ITaskManager,
+		@ISubAgentManager private readonly subAgentManager: ISubAgentManager,
 	) { super(); }
 
 	get status(): AgentStatus { return this._status; }
 	get steps(): readonly AgentStep[] { return this._steps; }
-	get plan(): AgentPlan | null { return this._plan; }
+	get tasks(): readonly Task[] { return this.taskManager?.tasks ?? []; }
 	get memory(): ConversationMemory { return this._memory; }
 
 	// --- Public API ---------------------------------------------------------
@@ -122,13 +127,13 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			this.fileService, this.logService, this.diffStore,
 			this.indexService, this.markerService, this.workspaceContextService,
 			this.configurationService, this._toolAbortController.signal,
+			this.taskManager, this.subAgentManager, undefined,
 		);
 
 		this._addStep("thought", instruction);
 
 		const messages = await this.contextService.buildContext({
 			instruction,
-			plan: this._plan || null,
 			memory: this._memory,
 			topK: 5,
 		});
@@ -149,7 +154,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 				}
 			} catch { /* index unavailable */ }
 		}
-		const tools: AITool[] = getBuiltInTools();
+		const tools: AITool[] = [...getBuiltInTools(), ...getAgentTools()];
 		const cfgModel = this.configurationService.getValue<string>("ai.modelId");
 		const cfgMaxTokens = this.configurationService.getValue<number>("ai.chat.maxTokens");
 		const options: AIRequestOptions = {
@@ -158,8 +163,6 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		};
 
 		try {
-		// Generate execution plan before starting the tool loop
-		await this._generatePlan(instruction, messages, options);
 
 		const MAX_BACKOFF_MS = 30_000;
 		const BASE_BACKOFF_MS = 500;
@@ -272,7 +275,6 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 					role: "tool",
 					content: [{ type: "tool_result", tool_use_id: result.toolCallId!, content: displayResult, is_error: toolResult.startsWith("Error") }],
 				});
-				this._updatePlanStep();
 
 				// Compress conversation if approaching context limit
 				if (this._memory.estimatedTokens > (options.maxContextTokens || 180000) * 0.8) {
@@ -315,7 +317,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			endedAt: Date.now(),
 			instruction,
 			steps: [...this._steps],
-			plan: this._plan,
+			taskSnapshot: this.taskManager?.tasks ?? null,
 			turns: [...this._memory.turns],
 			status: this._status,
 			usage: this._lastUsage,
@@ -342,7 +344,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		this._toolAbortController = null;
 	}
 
-	clearHistory(): void { this._steps = []; this._stepCounter = 0; this._memory.clear(); this._plan = null; }
+	clearHistory(): void { this._steps = []; this._stepCounter = 0; this._memory.clear(); }
 
 	// --- Internal ------------------------------------------------------------
 
@@ -389,82 +391,6 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 	}
 
 
-	private async _generatePlan(instruction: string, messages: AIMessage[], options: AIRequestOptions): Promise<AgentPlan | null> {
-		// Skip plan generation for conversational messages (greetings, small talk, simple questions)
-		if (_isConversational(instruction)) {
-			this.logService.info("[AIAgentService] Skipping plan — conversational message.");
-			return null;
-		}
-
-		try {
-			const planPrompt: AIMessage = { role: "user", content: `Break this task into numbered steps. Return ONLY a JSON array: [{"step":1,"title":"...","description":"...","tool":"read_file|write_file|edit_file|search_content|search_files|run_command|list_directory|read_lints"}]. Task: ${instruction}` };
-			const planMessages = [messages[0], planPrompt];
-			const planResult = await this._streamToCompletion(planMessages, [], options);
-			if (planResult.type !== "end_turn" || !planResult.text) return null;
-			const jsonMatch = planResult.text.match(/\[[\s\S]*?\]/);
-			if (!jsonMatch) return null;
-			let json: any;
-			try { json = JSON.parse(jsonMatch[0]); } catch { return null; }
-			if (!Array.isArray(json) || !json.length) return null;
-			const steps: PlanStep[] = json.map((s: any, i: number) => ({
-				id: "plan_" + i,
-				title: s.title || s.step || "Step " + (i + 1),
-				description: s.description || "",
-				expectedTool: s.tool as BuiltInToolName,
-				status: "pending" as PlanStepStatus,
-			}));
-			const plan: AgentPlan = { steps, currentStepIndex: 0 };
-			this._plan = plan;
-			this._onDidChangePlan.fire(plan);
-			this._addStep("plan", JSON.stringify(plan.steps.map(s => s.title)));
-			this.logService.info("[AIAgentService] Plan: " + steps.length + " steps");
-			return plan;
-		} catch (err) {
-			this.logService.warn("[AIAgentService] Plan generation failed:", err);
-			return null;
-		}
-	}
-
-	private _updatePlanStep(): void {
-		if (!this._plan) return;
-		const idx = this._plan.currentStepIndex;
-		if (idx < this._plan.steps.length) this._plan.steps[idx].status = "completed";
-		const ni = idx + 1;
-		if (ni < this._plan.steps.length) { this._plan.steps[ni].status = "in_progress"; this._plan.currentStepIndex = ni; }
-		this._onDidChangePlan.fire(this._plan);
-	}
-
-
-}
-
-/**
- * Heuristic to detect conversational messages that don't need an execution plan.
- * Greetings, small talk, thank-yous, and simple questions without action verbs
- * should be answered directly without the plan → tool loop overhead.
- */
-function _isConversational(instruction: string): boolean {
-	// Very short messages (under 10 chars) are almost always conversational
-	if (instruction.trim().length < 10) return true;
-
-	// Common conversational patterns that don't warrant a plan
-	const conversationalPatterns = [
-		/^(你好|您好|嗨|哈喽|哈啰|喂|在吗|hi|hello|hey|what's up|yo)[\s!！。.]*$/i,
-		/^(谢谢|多谢|感谢|thank|thanks|thx|ty)[\s!！。.]*$/i,
-		/^(拜拜|再见|88|bye|goodbye|see you|see ya)[\s!！。.]*$/i,
-		/^(好的|ok|okay|sure|alright|got it|明白了|知道了|了解了)[\s!！。.]*$/i,
-		/^what\s+(is|are|does|do)\s/i,
-		/^(你是谁|你叫什么|你能做什么|介绍一下自己|what are you|who are you|help我|帮我)/i,
-		/^(早上好|下午好|晚上好|早安|晚安|good morning|good afternoon|good evening|good night)/i,
-	];
-
-	// If the instruction is purely conversational, skip the plan
-	if (conversationalPatterns.some(p => p.test(instruction.trim()))) return true;
-
-	// If instruction has no action verb, it's likely conversational
-	const actionVerbs = /\b(write|create|make|build|implement|fix|debug|refactor|add|remove|delete|change|update|modify|edit|find|search|list|show|display|run|execute|compile|test|deploy|install|configure|setup|generate|analyze|optimize|convert|translate|summarize|explain)\b/i;
-	if (!actionVerbs.test(instruction)) return true;
-
-	return false;
 }
 
 function _isRetryableError(err: any): boolean {
