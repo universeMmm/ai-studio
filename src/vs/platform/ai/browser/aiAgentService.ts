@@ -28,7 +28,7 @@ import { ISubAgentManager } from "../common/subAgentManager.js";
 import { getAgentTools } from "../common/agentTools.js";
 import type {
 	AITool, AgentStep, AgentStatus, AIMessage, AIRequestOptions, AIStreamCallbacks,
-	AgentSession, Task,
+	AgentSession, Task, AskUserQuestionInput,
 } from "../common/aiTypes.js";
 
 export const IAIAgentService = createDecorator<IAIAgentService>("aiAgentService");
@@ -41,8 +41,12 @@ export interface IAIAgentService {
 	readonly onDidChangeTasks: Event<Task[]>;
 	readonly steps: readonly AgentStep[];
 	readonly tasks: readonly Task[];
+	readonly onDidAskQuestion: Event<AskUserQuestionInput>;
+	readonly onDidEnterPlanMode: Event<{ planFile: string; content: string }>;
 	maxSteps: number;
 	run(instruction: string): Promise<void>;
+	answerQuestion(answer: string): void;
+	approvePlan(approved: boolean): void;
 	stop(): void;
 	clearHistory(): void;
 	readonly memory: ConversationMemory;
@@ -69,7 +73,21 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 	private readonly _onDidChangeTasks = this._register(new Emitter<Task[]>());
 	readonly onDidChangeTasks = this._onDidChangeTasks.event;
 
+	private readonly _onDidAskQuestion = this._register(new Emitter<AskUserQuestionInput>());
+	readonly onDidAskQuestion = this._onDidAskQuestion.event;
+
+	private _questionResolve: ((answer: string) => void) | null = null;
+
+	private _planMode: boolean = false;
+	private _planAwaitingApproval: boolean = false;
+	private _planApprovalResolve: ((approved: boolean) => void) | null = null;
+	private readonly _onDidEnterPlanMode = this._register(new Emitter<{ planFile: string; content: string }>());
+	readonly onDidEnterPlanMode = this._onDidEnterPlanMode.event;
+
 	maxSteps = 20;
+
+	private static readonly READ_ONLY_TOOLS = new Set(['read_file', 'search_content', 'search_files', 'search_pattern', 'list_directory', 'read_lints', 'web_fetch', 'web_search', 'write_file']);
+	private static readonly PLAN_AGENT_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'SendMessage', 'LocalMemoryRecall', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion']);
 
 	constructor(
 		@IAIModelService private readonly aiModelService: IAIModelService,
@@ -128,6 +146,21 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			this.indexService, this.markerService, this.workspaceContextService,
 			this.configurationService, this._toolAbortController.signal,
 			this.taskManager, this.subAgentManager, undefined,
+			// Phase 3: AskUserQuestion callback
+			(qInput: AskUserQuestionInput) => {
+				return new Promise<string>((resolve) => {
+					this._questionResolve = resolve;
+					this._onDidAskQuestion.fire(qInput);
+				});
+			},
+			// Phase 3: EnterPlanMode callback
+			() => { this._planMode = true; },
+			// Phase 3: ExitPlanMode callback
+			(planFile: string, content: string) => {
+				this._addStep('plan', `Plan written to ${planFile}:\n\n${content}`);
+				this._planAwaitingApproval = true;
+				this._onDidEnterPlanMode.fire({ planFile, content });
+			},
 		);
 
 		this._addStep("thought", instruction);
@@ -154,7 +187,6 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 				}
 			} catch { /* index unavailable */ }
 		}
-		const tools: AITool[] = [...getBuiltInTools(), ...getAgentTools()];
 		const cfgModel = this.configurationService.getValue<string>("ai.modelId");
 		const cfgMaxTokens = this.configurationService.getValue<number>("ai.chat.maxTokens");
 		const options: AIRequestOptions = {
@@ -170,6 +202,10 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		let consecutiveErrors = 0;
 
 		while (step < this.maxSteps && (this._status as string) === "running") {
+			// Recompute tools each iteration so plan-mode restrictions take effect immediately
+			const tools: AITool[] = this._planMode
+				? [...getBuiltInTools().filter(t => AIAgentService.READ_ONLY_TOOLS.has(t.name)), ...getAgentTools().filter(t => AIAgentService.PLAN_AGENT_TOOLS.has(t.name))]
+				: [...getBuiltInTools(), ...getAgentTools()];
 			step++;
 
 			let result: { type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; toolCallId?: string };
@@ -295,6 +331,49 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 						0.8,
 					);
 				}
+				// Phase 3: Pause for plan approval — wait inline so listeners stay alive
+				if (this._planAwaitingApproval) {
+					this._setStatus('waiting_for_approval');
+					const approved = await new Promise<boolean>(resolve => {
+						this._planApprovalResolve = resolve;
+					});
+					this._planAwaitingApproval = false;
+					this._planApprovalResolve = null;
+					if (approved) {
+						this._planMode = false;
+						this._setStatus('running');
+						messages.push({
+							role: 'user',
+							content: 'The user has approved your implementation plan. Proceed with the implementation using the full tool set.',
+						});
+						// Re-create ToolExecutor with full capabilities (plan mode off)
+						this._toolAbortController = new AbortController();
+						this._toolExecutor = new ToolExecutor(
+							this.fileService, this.logService, this.diffStore,
+							this.indexService, this.markerService, this.workspaceContextService,
+							this.configurationService, this._toolAbortController.signal,
+							this.taskManager, this.subAgentManager, undefined,
+							(qInput: AskUserQuestionInput) => {
+								return new Promise<string>((resolve) => {
+									this._questionResolve = resolve;
+									this._onDidAskQuestion.fire(qInput);
+								});
+							},
+							() => { this._planMode = true; },
+							(planFile: string, content: string) => {
+								this._addStep('plan', `Plan written to ${planFile}:\n\n${content}`);
+								this._planAwaitingApproval = true;
+								this._onDidEnterPlanMode.fire({ planFile, content });
+							},
+						);
+						continue;
+					} else {
+						this._planMode = false;
+						this._setStatus('stopped');
+						this._addStep('thought', 'Plan rejected by user.');
+						break;
+					}
+				}
 				continue;
 			}
 
@@ -342,9 +421,27 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		// 0.2: Propagate cancellation to in-flight tool executions
 		this._toolAbortController?.abort();
 		this._toolAbortController = null;
+		// Resolve pending plan approval promise to unblock run()
+		if (this._planApprovalResolve) {
+			this._planApprovalResolve(false);
+			this._planApprovalResolve = null;
+		}
 	}
 
 	clearHistory(): void { this._steps = []; this._stepCounter = 0; this._memory.clear(); }
+
+	answerQuestion(answer: string): void {
+		if (this._questionResolve) {
+			this._questionResolve(answer);
+			this._questionResolve = null;
+		}
+	}
+
+	approvePlan(approved: boolean): void {
+		if (this._planApprovalResolve) {
+			this._planApprovalResolve(approved);
+		}
+	}
 
 	// --- Internal ------------------------------------------------------------
 

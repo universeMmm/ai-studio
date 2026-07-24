@@ -38,6 +38,7 @@ Usage notes:
 					prompt: { type: 'string', description: 'The task for the agent to perform' },
 					run_in_background: { type: 'boolean', description: 'Set to true to run this agent in the background. You will be notified when it completes.' },
 					name: { type: 'string', description: 'Name for the spawned agent. Makes it addressable via SendMessage.' },
+					isolation: { type: 'string', enum: ['worktree'], description: 'Isolation mode. "worktree" creates a temporary git worktree for the sub-agent.' },
 				},
 				required: ['description', 'prompt'],
 			},
@@ -143,6 +144,58 @@ Approving shutdown terminates the sub-agent. Rejecting plan sends the teammate b
 					query: { type: 'string', description: 'Search query to match against memory names and descriptions' },
 				},
 				required: ['query'],
+			},
+		},
+
+		// --- AskUserQuestion (Phase 3) ---
+		{
+			name: 'AskUserQuestion',
+			description: 'Ask the user a question and wait for their response. Use when you need to clarify requirements or get a decision before proceeding.',
+			input_schema: {
+				type: 'object',
+				properties: {
+					question: { type: 'string', description: 'The question to ask the user' },
+					header: { type: 'string', description: 'Short label displayed as a chip (max 12 chars)' },
+					options: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								label: { type: 'string', description: 'Display label for this option' },
+								description: { type: 'string', description: 'Explanation of what this option means' },
+							},
+							required: ['label', 'description'],
+						},
+						description: 'Available choices (2-4 options). The user can also provide custom text.',
+						} as any,
+
+					multiSelect: { type: 'boolean', description: 'Allow multiple answers (default false)' },
+				},
+				required: ['question', 'options'],
+			},
+		},
+
+		// --- EnterPlanMode (Phase 3) ---
+		{
+			name: 'EnterPlanMode',
+			description: 'Enter plan mode — restrict tools to read-only, explore the codebase, and write an implementation plan to a plan file. Call ExitPlanMode when the plan is ready for user approval.',
+			input_schema: {
+				type: 'object',
+				properties: {},
+				required: [],
+			},
+		},
+
+		// --- ExitPlanMode (Phase 3) ---
+		{
+			name: 'ExitPlanMode',
+			description: 'Exit plan mode and present the implementation plan for user approval. The plan must already be written to a plan file.',
+			input_schema: {
+				type: 'object',
+				properties: {
+					planFile: { type: 'string', description: 'Path to the written plan file (required)' },
+				},
+				required: ['planFile'],
 			},
 		},
 	];

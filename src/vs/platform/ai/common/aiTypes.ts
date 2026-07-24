@@ -299,6 +299,7 @@ export interface SubAgentConfig {
 	run_in_background: boolean;
 	mode: 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'auto';
 	cwd?: string;
+	isolation?: 'worktree';
 }
 
 /**
@@ -311,6 +312,16 @@ export interface SubAgentResult {
 	error?: string;
 	toolCalls: number;
 	usage?: { inputTokens: number; outputTokens: number };
+}
+
+/**
+ * Input for the AskUserQuestion tool.
+ */
+export interface AskUserQuestionInput {
+	question: string;
+	header?: string;
+	options: { label: string; description: string }[];
+	multiSelect?: boolean;
 }
 
 /**

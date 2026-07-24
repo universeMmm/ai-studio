@@ -85,9 +85,19 @@
 			}
 		}
 	],
+	"extensionsGallery": {
+		"serviceUrl": "https://open-vsx.org/vscode/gallery",
+		"resourceUrlTemplate": "https://open-vsx.org/vscode/asset/{publisher}/{name}/{version}/Microsoft.VisualStudio.Code.WebResources/{path}",
+		"extensionUrlTemplate": "https://open-vsx.org/extension/{publisher}/{name}",
+		"controlUrl": "",
+		"nlsBaseUrl": ""
+	},
+	"linkProtectionTrustedDomains": [
+		"https://open-vsx.org"
+	],
 	"defaultChatAgent": {
 		"extensionId": "ai-studio",
-		"chatExtensionId": "ai-studio.chat",
+		"chatExtensionId": "",
 		"chatExtensionOutputId": "ai-studio.chat.AI Studio Chat.log",
 		"chatExtensionOutputExtensionStateCommand": "aiStudio.debug.extensionState",
 		"documentationUrl": "",

@@ -10,12 +10,19 @@
 
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../platform/log/common/log.js';
+import { IFileService } from '../../../platform/files/common/files.js';
+import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import type { AIMessage, AITool, AIRequestOptions, AIStreamCallbacks } from './aiTypes.js';
 import type { SubAgentConfig, SubAgentResult } from './aiTypes.js';
 import { ConversationMemory } from './conversationMemory.js';
 
 // IAIModelService is imported from browser/ — this is intentional as common/ modules can reference browser/ types
 import { IAIModelService } from '../browser/aiModelService.js';
+import { IAIIndexService } from '../browser/aiIndexService.js';
+// ToolExecutor is imported from browser/ — needed for worktree isolation
+import { IDiffStore } from '../../../workbench/contrib/aiDiffApply/browser/diffStore.js';
+import { IMarkerService } from '../../../platform/markers/common/markers.js';
 
 export const ISubAgentManager = createDecorator<ISubAgentManager>('subAgentManager');
 
@@ -46,11 +53,17 @@ export class SubAgentManager implements ISubAgentManager {
 	declare readonly _serviceBrand: undefined;
 
 	/** Running sub-agents by name — used for SendMessage routing */
-	private _running: Map<string, { memory: ConversationMemory; abort: AbortController }> = new Map();
+	private _running: Map<string, { memory: ConversationMemory; abort: AbortController; worktreePath?: string }> = new Map();
 
 	constructor(
 		@IAIModelService private readonly aiModelService: IAIModelService,
 		@ILogService private readonly logService: ILogService,
+		@IFileService private readonly fileService: IFileService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IAIIndexService private readonly indexService: IAIIndexService,
+		@IDiffStore private readonly diffStore: IDiffStore,
+		@IMarkerService private readonly markerService: IMarkerService,
 	) {}
 
 	async execute(configs: SubAgentConfig[]): Promise<SubAgentResult[]> {
@@ -126,9 +139,20 @@ export class SubAgentManager implements ISubAgentManager {
 		const abort = new AbortController();
 		this._running.set(config.name, { memory, abort });
 
+		let worktreePath: string | undefined;
+
 		try {
+			// Phase 3: git worktree isolation
+			if ((config as any).isolation === 'worktree') {
+				worktreePath = await this._createWorktree(config.name);
+				config.cwd = worktreePath;
+			}
+
 			const tools = this._buildToolSet(config.subagent_type);
-			const systemPrompt = SYSTEM_PROMPTS[config.subagent_type] || SYSTEM_PROMPTS['general-purpose'];
+			let systemPrompt = SYSTEM_PROMPTS[config.subagent_type] || SYSTEM_PROMPTS['general-purpose'];
+			if (worktreePath) {
+				systemPrompt += `\n\nYour working directory is an isolated git worktree at: ${worktreePath}`;
+			}
 			const messages: AIMessage[] = [
 				{ role: 'system', content: systemPrompt },
 				{ role: 'user', content: 'prompt' in config ? (config as any).prompt : config.description },
@@ -147,6 +171,20 @@ export class SubAgentManager implements ISubAgentManager {
 			let toolCalls = 0;
 			const maxSteps = 10;
 
+			// Phase 3: create independent ToolExecutor for worktree agents
+			let worktreeExecutor: any = null;
+			if (worktreePath) {
+				const { ToolExecutor } = await import('../browser/toolExecutor.js');
+				worktreeExecutor = new ToolExecutor(
+					this.fileService, this.logService, this.diffStore,
+					this.indexService, this.markerService, this.workspaceContextService,
+					this.configurationService, abort.signal,
+					undefined, undefined, undefined,
+					undefined, undefined, undefined,
+					worktreePath,
+				);
+			}
+
 			for (let step = 0; step < maxSteps; step++) {
 				if (abort.signal.aborted) {
 					return { name: config.name, status: 'aborted', text: 'Sub-agent aborted', toolCalls };
@@ -163,9 +201,19 @@ export class SubAgentManager implements ISubAgentManager {
 						role: 'assistant',
 						content: [{ type: 'tool_use', id: result.toolCallId || '', name: result.toolName || '', input: result.toolInput || {} }],
 					});
+					let toolResult: string;
+					if (worktreeExecutor && result.toolName) {
+						try {
+							toolResult = await worktreeExecutor.execute(result.toolName, result.toolInput || {});
+						} catch (e: any) {
+							toolResult = `Error: ${e.message}`;
+						}
+					} else {
+						toolResult = '[Sub-agent tool execution via parent ToolExecutor]';
+					}
 					messages.push({
 						role: 'tool',
-						content: [{ type: 'tool_result', tool_use_id: result.toolCallId || '', content: '[Sub-agent tool execution via parent ToolExecutor]', is_error: false }],
+						content: [{ type: 'tool_result', tool_use_id: result.toolCallId || '', content: toolResult, is_error: toolResult.startsWith('Error') }],
 					});
 				}
 				if (result.type === 'error') {
@@ -182,7 +230,12 @@ export class SubAgentManager implements ISubAgentManager {
 		} catch (err: any) {
 			return { name: config.name, status: 'error', text: '', error: err?.message || String(err), toolCalls: 0 };
 		} finally {
-			this._running.delete(config.name);
+			if (worktreePath) {
+			await this._cleanupWorktree(worktreePath).catch(e =>
+				this.logService.warn('[SubAgentManager] worktree cleanup failed:', e)
+			);
+		}
+		this._running.delete(config.name);
 		}
 	}
 
@@ -190,6 +243,32 @@ export class SubAgentManager implements ISubAgentManager {
 		const allowed = TOOL_SETS[subagentType];
 		if (!allowed || !allowed.length) return [];
 		return [];
+	}
+
+	// --- Worktree isolation (Phase 3) ---------------------------------------
+
+	private async _createWorktree(name: string): Promise<string> {
+		const repoRoot = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath;
+		if (!repoRoot) throw new Error('No workspace for worktree creation');
+		const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+		const worktreePath = `${repoRoot}_wt_${sanitized}_${Date.now()}`;
+		await this._execShell(`git -C "${repoRoot}" worktree add --detach "${worktreePath}" HEAD`, repoRoot);
+		this.logService.info(`[SubAgentManager] Created worktree: ${worktreePath}`);
+		return worktreePath;
+	}
+
+	private async _cleanupWorktree(worktreePath: string): Promise<void> {
+		await this._execShell(`git worktree remove --force "${worktreePath}"`, worktreePath);
+		this.logService.info(`[SubAgentManager] Removed worktree: ${worktreePath}`);
+	}
+
+	private async _execShell(cmd: string, cwd: string, timeoutMs = 30000): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+		if ((globalThis as any).vscode?.ipcRenderer?.invoke) {
+			return (globalThis as any).vscode.ipcRenderer.invoke('vscode:ai-studio:exec', {
+				cmd, cwd, timeoutMs, maxBuffer: 1024 * 1024,
+			});
+		}
+		return { stdout: '', stderr: 'IPC bridge not available', exitCode: -1 };
 	}
 
 	private _callLLM(

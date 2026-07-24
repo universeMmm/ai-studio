@@ -47,3 +47,5 @@ coverage/
 tmp/
 temp/
 .ai-studio/
+docs/
+_do_task9.py

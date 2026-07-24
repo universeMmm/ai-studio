@@ -87,6 +87,11 @@ export const aiConfigurationNode: IConfigurationNode = {
 				"Skip all approval - execute any command automatically",
 			],
 		},
+		"ai.slashCommands": {
+			type: "object",
+			default: {},
+			markdownDescription: "User-defined slash commands. Each key is a command name (without /), value is an object with `description` (optional) and `prompt` (required). Example: `{ \"deploy\": { \"description\": \"Deploy the current project\", \"prompt\": \"Run the deploy script and verify\" } }`",
+		},
 		"ai.index.enabled": {
 			type: "boolean",
 			default: true,

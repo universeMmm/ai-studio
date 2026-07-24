@@ -17,6 +17,7 @@ import { ILogService } from "../../../platform/log/common/log.js";
 import { IConfigurationService } from "../../../platform/configuration/common/configuration.js";
 import { MarkerSeverity, IMarkerService } from "../../../platform/markers/common/markers.js";
 import { IWorkspaceContextService } from "../../../platform/workspace/common/workspace.js";
+import type { AskUserQuestionInput } from "../common/aiTypes.js";
 import { BuiltInToolName } from "../common/aiTypes.js";
 import { IAIIndexService } from "./aiIndexService.js";
 import { IDiffStore } from "../../../workbench/contrib/aiDiffApply/browser/diffStore.js";
@@ -249,6 +250,11 @@ export class ToolExecutor {
 		private readonly taskManager?: ITaskManager,
 		private readonly subAgentManager?: ISubAgentManager,
 		private readonly userMemoryStore?: IUserMemoryStore,
+		// Phase 3: interactive callbacks
+		private readonly onAskUserQuestion?: (input: AskUserQuestionInput) => Promise<string>,
+		private readonly onEnterPlanMode?: () => void,
+		private readonly onExitPlanMode?: (planFile: string, content: string) => void,
+		private readonly cwdOverride?: string,
 	) { }
 
 	/**
@@ -277,6 +283,9 @@ export class ToolExecutor {
 				case 'Agent':
 				case 'SendMessage':
 				case 'LocalMemoryRecall':
+				case 'AskUserQuestion':
+				case 'EnterPlanMode':
+				case 'ExitPlanMode':
 					return await this._executeAgentTool(toolName, input);
 				default:                              return "Error: unknown tool \"" + toolName + "\"";
 			}
@@ -323,7 +332,7 @@ export class ToolExecutor {
 	 * @throws If no workspace is open, or if the path escapes the workspace.
 	 */
 	private _resolvePath(filePath: string): string {
-		const root = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath;
+		const root = this.cwdOverride || this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath;
 		if (!root) { throw new Error("No workspace folder is open."); }
 		const resolved = _resolvePath(root, filePath);
 		const rel = _relative(root, resolved);
@@ -334,6 +343,7 @@ export class ToolExecutor {
 	}
 
 	private _getCwd(): string {
+		if (this.cwdOverride) return this.cwdOverride;
 		return this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || ".";
 	}
 
@@ -772,6 +782,7 @@ export class ToolExecutor {
 					name: input.name as string | undefined,
 					run_in_background: !!(input.run_in_background as boolean),
 					mode: (input.mode as any) || 'default',
+					isolation: input.isolation as 'worktree' | undefined,
 				}];
 				try {
 					const results = await this.subAgentManager.execute(configs);
@@ -805,8 +816,43 @@ export class ToolExecutor {
 				return matched.map(e => `## ${e.name} (${e.type})\n${e.description}\n\n${e.content}`).join('\n\n---\n\n');
 			}
 
+			case 'AskUserQuestion': {
+				if (!this.onAskUserQuestion) return 'Error: AskUserQuestion not available';
+				const qInput: AskUserQuestionInput = {
+					question: input.question as string,
+					header: input.header as string | undefined,
+					options: (input.options as any[]) || [],
+					multiSelect: !!(input.multiSelect as boolean),
+				};
+				try {
+					const answer = await this.onAskUserQuestion(qInput);
+					return answer;
+				} catch (err: any) {
+					return `Error: ${err.message}`;
+				}
+			}
+
+			case 'EnterPlanMode': {
+				this.onEnterPlanMode?.();
+				return 'Entered plan mode. Tools restricted to read-only. Explore the codebase, write your implementation plan to a plan file, then call ExitPlanMode.';
+			}
+
+			case 'ExitPlanMode': {
+				const planFile = input.planFile as string;
+				if (!planFile) return 'Error: planFile is required';
+				let content = '';
+				try {
+					const raw = (await this.fileService.readFile(URI.file(planFile))).value.toString();
+					content = raw;
+				} catch {
+					content = `(Plan file not readable: ${planFile})`;
+				}
+				this.onExitPlanMode?.(planFile, content);
+				return 'Plan presented for approval. Waiting for user decision.';
+			}
+
 			default:
-				return `Error: unknown agent tool "${toolName}"`;
+				return `Error: unknown agent tool "${toolName}`;
 		}
 	}
 }

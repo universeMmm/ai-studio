@@ -23,6 +23,13 @@
 	background: #35b24e;
 }
 
+.monaco-editor .ai-diff-glyph-added {
+	background: rgba(53, 178, 78, 0.6);
+	width: 4px !important;
+	margin-left: 0;
+	border-radius: 2px;
+}
+
 .monaco-editor .ai-diff-block-removed::before {
 	content: '';
 	position: absolute;

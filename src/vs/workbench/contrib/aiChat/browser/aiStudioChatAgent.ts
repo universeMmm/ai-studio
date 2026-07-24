@@ -24,6 +24,8 @@ import { ChatModeKind, ChatAgentLocation } from "../../../../workbench/contrib/c
 import { ThemeIcon } from "../../../../base/common/themables.js";
 import { MarkdownString } from "../../../../base/common/htmlContent.js";
 import { ILogService } from "../../../../platform/log/common/log.js";
+import { IQuickInputService } from "../../../../platform/quickinput/common/quickInput.js";
+import type { AskUserQuestionInput } from "../../../../platform/ai/common/aiTypes.js";
 import { IDiffStore } from "../../aiDiffApply/browser/diffStore.js";
 import { URI } from "../../../../base/common/uri.js";
 
@@ -37,6 +39,7 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@ILogService private readonly logService: ILogService,
 		@IDiffStore private readonly diffStore: IDiffStore,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
 	) { super(); this._registerAgent(); }
 
 	private _registerAgent(): void {
@@ -124,10 +127,81 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 				progress([{ content: new MarkdownString(md), kind: 'markdownContent' }]);
 			});
 
-			const cancelListener = token.onCancellationRequested(() => agentService.stop());
+		// Phase 3: Plan approval — present plan review via QuickPick
+		const planListener = agentService.onDidEnterPlanMode(({ planFile, content }) => {
+			progress([{
+				kind: 'markdownContent',
+				content: new MarkdownString('## Implementation Plan\n\n' + content.slice(0, 3000) + (content.length > 3000 ? '\n\n*(truncated)*' : '')),
+			}]);
+			this.quickInputService.pick([
+				{ label: '$(check) Approve', description: 'Approve the plan and start implementing', id: 'approve' },
+				{ label: '$(close) Reject', description: 'Reject the plan and stop', id: 'reject' },
+			], {
+				title: 'Approve Implementation Plan',
+				placeHolder: 'Plan written to ' + planFile,
+			}).then((selected) => {
+				agentService.approvePlan(selected?.id === 'approve');
+			});
+		});
+
+		const cancelListener = token.onCancellationRequested(() => agentService.stop());
+
+			// Phase 3: AskUserQuestion — present QuickPick to user and return answer
+			const questionListener = agentService.onDidAskQuestion((qInput: AskUserQuestionInput) => {
+				const picks = qInput.options.map((o, i) => ({
+					label: o.label,
+					description: o.description,
+					id: String(i),
+				}));
+				if (!qInput.multiSelect) {
+					picks.push({ label: '$(edit) Other (custom answer)...', description: 'Type your own answer', id: '__custom__' });
+				}
+				this.quickInputService.pick(picks, {
+					title: qInput.header || qInput.question,
+					placeHolder: qInput.question,
+							canPickMany: qInput.multiSelect as any,
+				}).then((selected) => {
+					if (!selected) {
+						agentService.answerQuestion('(user cancelled)');
+						return;
+					}
+					if (qInput.multiSelect && Array.isArray(selected)) {
+						agentService.answerQuestion(selected.map(s => s.label).join(', '));
+					} else if (!Array.isArray(selected) && (selected as any).id === '__custom__') {
+						this.quickInputService.input({
+							title: 'Answer',
+							placeHolder: 'Type your answer...',
+						}).then((value) => {
+							agentService.answerQuestion(value || '(no answer)');
+						});
+					} else {
+						const sel = Array.isArray(selected) ? selected[0] : selected;
+						agentService.answerQuestion(sel.label);
+					}
+				});
+			});
 
 			try {
-				await agentService.run(request.message);
+				// Extract implicit file attachments from request variables
+				let userMessage = request.message;
+				const vars = (request as any).variables?.variables as any[] | undefined;
+				if (vars && vars.length > 0) {
+					const implicitFiles = vars.filter((v: any) =>
+						(v.kind === 'file' || (v.value && typeof v.value === 'object' && v.value.fsPath)) &&
+						!v.range
+					);
+					if (implicitFiles.length > 0) {
+						let fileBlock = '\n\n## Attached Files\n';
+						for (const f of implicitFiles) {
+							const uri = f.value;
+							const fp = (typeof uri === 'object' && uri.fsPath) ? uri.fsPath :
+								(typeof uri === 'object' && uri.path) ? uri.path : String(uri || f.name || 'unknown');
+							fileBlock += `- ${fp}\n`;
+						}
+						userMessage += fileBlock;
+					}
+				}
+				await agentService.run(userMessage);
 				this.logService.info('[AIStudioChatAgent] agentService.run() completed');
 
 				// Build multiDiffData from the diffStore to show an interactive file change list
@@ -160,6 +234,8 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 			} finally {
 				stepListener.dispose();
 				taskListener.dispose();
+				questionListener.dispose();
+				planListener.dispose();
 				cancelListener.dispose();
 			}
 

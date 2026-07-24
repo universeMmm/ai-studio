@@ -15,6 +15,7 @@ import { ConversationMemory } from "../common/conversationMemory.js";
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { ProjectRules } from '../common/projectRules.js';
 import { IUserMemoryStore } from '../common/userMemoryStore.js';
 
@@ -42,6 +43,7 @@ export class AIContextService extends Disposable implements IAIContextService {
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IUserMemoryStore private readonly userMemoryStore: IUserMemoryStore,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) { super(); }
 
 	// ---- Public API ---------------------------------------------------------
@@ -80,13 +82,25 @@ export class AIContextService extends Disposable implements IAIContextService {
 			}
 		} catch { /* memory unavailable */ }
 
+		// 3. User-defined slash commands
+		try {
+			const slashCommands = this.configurationService.getValue<Record<string, { description?: string; prompt: string }>>('ai.slashCommands');
+			if (slashCommands && Object.keys(slashCommands).length > 0) {
+				systemPrompt += '\n## User-Defined Slash Commands\n\n';
+				for (const [name, cmd] of Object.entries(slashCommands)) {
+					systemPrompt += `- **/${name}**${cmd.description ? ': ' + cmd.description : ''}\n  → ${cmd.prompt}\n`;
+				}
+				systemPrompt += '\n';
+			}
+		} catch { /* slash commands unavailable */ }
+
 		messages.push({ role: "system", content: systemPrompt });
 
-		// 3. Conversation history
+		// 4. Conversation history
 		const historyMsgs = input.memory.toMessages();
 		for (const m of historyMsgs) { messages.push(m); }
 
-		// 4. Current instruction
+		// 5. Current instruction
 		messages.push({ role: "user", content: input.instruction });
 
 		return messages;
