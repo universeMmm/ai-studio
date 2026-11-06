@@ -17,7 +17,7 @@ import * as event from '../../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Iterable } from '../../../../../base/common/iterator.js';
 import { KeyCode } from '../../../../../base/common/keyCodes.js';
-import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { basename, dirname } from '../../../../../base/common/path.js';
 import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
@@ -66,12 +66,13 @@ import { IChatContentReference } from '../../common/chatService/chatService.js';
 import { coerceImageBuffer } from '../../common/chatImageExtraction.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { getImageAttachmentLimit, IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IBrowserViewVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, IPromptFileVariableEntry, IPromptTextVariableEntry, ISCMHistoryItemVariableEntry, OmittedState, PromptFileVariableKind, ChatRequestToolReferenceEntry, ISCMHistoryItemChangeVariableEntry, ISCMHistoryItemChangeRangeVariableEntry, ITerminalVariableEntry, isStringVariableEntry } from '../../common/attachments/chatVariableEntries.js';
-import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../common/languageModels.js';
+import { AI_STUDIO_VENDOR_ID, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../common/languageModels.js';
 import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { getCleanPromptName } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { IChatContextService } from '../contextContrib/chatContextService.js';
 import { IChatImageCarouselService } from '../chatImageCarouselService.js';
+import { renderStudioAttachmentCard } from './studioAttachmentCard.js';
 
 const commonHoverOptions: Partial<IHoverOptions> = {
 	style: HoverStyle.Pointer,
@@ -170,6 +171,9 @@ abstract class AbstractChatAttachmentWidget extends Disposable {
 		clearButton.icon = Codicon.close;
 		this._register(clearButton);
 		this._register(event.Event.once(clearButton.onDidClick)((e) => {
+			// Removing an attachment must not also invoke its open-resource handler.
+			e.preventDefault();
+			e.stopPropagation();
 			this._onDidDelete.fire(e);
 		}));
 		this._register(dom.addStandardDisposableListener(this.element, dom.EventType.KEY_DOWN, e => {
@@ -285,6 +289,7 @@ export class FileAttachmentWidget extends AbstractChatAttachmentWidget {
 			this._register(hookUpResourceAttachmentDragAndContextMenu(accessor, this.element, resource));
 		});
 		this.addResourceOpenHandlers(resource, range);
+		this._register(renderStudioAttachmentCard(this.element, attachment, resource, undefined, this.instantiationService));
 	}
 
 	private renderOmittedWarning(friendlyName: string, ariaLabel: string) {
@@ -482,6 +487,7 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		this.element.ariaLabel = this.appendDeletionHint(ariaLabel);
 
 		// Wire up click + keyboard (Enter/Space) open handlers
+		this._register(renderStudioAttachmentCard(this.element, attachment, resource, imageData ?? coerceImageBuffer(attachment.value)));
 		const canOpenCarousel = !!imageData && configurationService.getValue<boolean>(ChatConfiguration.ImageCarouselEnabled);
 		if (canOpenCarousel || resource) {
 			this.element.style.cursor = 'pointer';
@@ -542,7 +548,9 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 		}));
 	} else if ((!supportsVision && currentLanguageModel) || omittedState === OmittedState.Full) {
 		element.classList.add('warning');
-		hoverElement.textContent = localize('chat.imageAttachmentHover', "{0} does not support images.", currentLanguageModelName ?? 'This model');
+		hoverElement.textContent = currentLanguageModel?.metadata.vendor === AI_STUDIO_VENDOR_ID && !supportsVision && omittedState !== OmittedState.Full
+			? localize('studio.imageCapabilityUnknown', "{0} 尚未声明支持图片输入。可在模型配置中按提供商能力启用图片支持。", currentLanguageModelName ?? '此模型')
+			: localize('chat.imageAttachmentHover', "{0} does not support images.", currentLanguageModelName ?? 'This model');
 		disposable.add(hoverService.setupDelayedHover(element, {
 			content: hoverElement,
 			style: HoverStyle.Pointer,
@@ -575,6 +583,13 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 		}
 
 		const hoverImage = dom.$('img.chat-attached-context-image', { src: url, alt: '' });
+		disposable.add(toDisposable(() => {
+			hoverImage.onload = null;
+			hoverImage.onerror = null;
+			pillImg.removeAttribute('src');
+			hoverImage.removeAttribute('src');
+			URL.revokeObjectURL(url);
+		}));
 		const imageContainer = dom.$('div.chat-attached-context-image-container', {}, hoverImage);
 		hoverElement.appendChild(imageContainer);
 
@@ -585,8 +600,10 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 			hoverElement.append(separator, urlContainer);
 		}
 
-		hoverImage.onload = () => { URL.revokeObjectURL(url); };
 		hoverImage.onerror = () => {
+			pillImg.removeAttribute('src');
+			hoverImage.removeAttribute('src');
+			URL.revokeObjectURL(url);
 			// reset to original icon on error or invalid image
 			const pillIcon = dom.$('div.chat-attached-context-pill', {}, dom.$('span.codicon.codicon-file-media'));
 			const pill = dom.$('div.chat-attached-context-pill', {}, pillIcon);

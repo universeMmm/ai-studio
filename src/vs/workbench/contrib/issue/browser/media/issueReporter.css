@@ -8,10 +8,6 @@
 	overflow-y: scroll;
 }
 
-.web.issue-reporter-body .monaco-workbench select{
-	-webkit-appearance: auto;
-	appearance: auto;
-}
 
 /**
  * Table
@@ -91,7 +87,7 @@
 	padding: 0 4px;
 }
 
-.issue-reporter-body select {
+.issue-reporter-body .monaco-select-box {
 	height: calc(2.25rem + 2px);
 	display: inline-block;
 	padding: 3px 3px;
@@ -107,7 +103,7 @@
 
 .issue-reporter-body .issue-reporter textarea,
 .issue-reporter-body .issue-reporter input,
-.issue-reporter-body .issue-reporter select {
+.issue-reporter-body .issue-reporter .monaco-select-box {
 	font-family: inherit;
 }
 
@@ -266,7 +262,7 @@ body.issue-reporter-body  {
 	margin-top: 1em;
 }
 
-.issue-reporter-body .issue-reporter select,
+.issue-reporter-body .issue-reporter .monaco-select-box,
 .issue-reporter-body .issue-reporter input,
 .issue-reporter-body .issue-reporter textarea {
 	border: 1px solid transparent;
@@ -361,10 +357,6 @@ body.issue-reporter-body  {
 .issue-reporter-body #issue-source,
 .issue-reporter-body #extension-selector {
 	cursor: pointer;
-	cursor: pointer;
-	appearance: auto;
-	border: none;
-	border-right: 6px solid transparent;
 	padding-left: 10px;
 }
 
@@ -481,7 +473,7 @@ body.issue-reporter-body  {
 
 .issue-reporter-body .issue-reporter input[type="text"],
 .issue-reporter-body .issue-reporter textarea,
-.issue-reporter-body .issue-reporter select,
+.issue-reporter-body .issue-reporter .monaco-select-box,
 .issue-reporter-body .issue-reporter .issues-container > .issue > .issue-state,
 .issue-reporter-body .issue-reporter .block-info {
 	background-color: var(--vscode-input-background);
@@ -495,13 +487,13 @@ body.issue-reporter-body  {
 
 .issue-reporter-body .issue-reporter input[type="text"],
 .issue-reporter-body .issue-reporter textarea,
-.issue-reporter-body .issue-reporter select {
+.issue-reporter-body .issue-reporter .monaco-select-box {
 	border: 1px solid var(--vscode-input-border)
 }
 
 .issue-reporter-body .issue-reporter input[type='text']:focus,
 .issue-reporter-body .issue-reporter textarea:focus,
-.issue-reporter-body .issue-reporter select:focus,
+.issue-reporter-body .issue-reporter .monaco-select-box:focus,
 .issue-reporter-body .issue-reporter summary:focus,
 .issue-reporter-body .issue-reporter button:focus,
 .issue-reporter-body .issue-reporter a:focus,
@@ -612,4 +604,16 @@ body.issue-reporter-body  {
 .issue-reporter-body .internal-elements #show-private-repo-name {
 	align-self: flex-end;
 	font-size: 12px;
+}
+
+/* Let the shared picker own its arrow while the wrapper keeps the responsive form width. */
+.issue-reporter-body .section .issue-select-container {
+	position: relative;
+	vertical-align: middle;
+	margin-top: 10px;
+}
+.issue-reporter-body .section .issue-select-container > .monaco-select-box {
+	width: 100%;
+	margin-top: 0;
+	padding-right: 26px;
 }

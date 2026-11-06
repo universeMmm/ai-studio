@@ -12,6 +12,7 @@ import { MenuService } from '../../common/menuService.js';
 import { NullCommandService } from '../../../commands/test/common/nullCommandService.js';
 import { MockContextKeyService, MockKeybindingService } from '../../../keybinding/test/common/mockKeybindingService.js';
 import { InMemoryStorageService } from '../../../storage/common/storage.js';
+import { ContextKeyExpr } from '../../../contextkey/common/contextkey.js';
 
 // --- service instances
 
@@ -213,5 +214,22 @@ suite('MenuService', function () {
 
 		assert.throws(() => new MenuId(id));
 		assert.ok(menu === MenuId.for(id));
+	});
+
+	test('presentation conditions preserve original visibility and command registration', function () {
+		const originalWhen = ContextKeyExpr.has('originalVisible');
+		disposables.add(MenuRegistry.appendMenuItem(testMenuId, {
+			command: { id: 'presentation.test', title: 'Test' },
+			when: originalWhen,
+		}));
+		const provider = disposables.add(MenuRegistry.registerMenuItemConditionProvider(menu => menu === testMenuId ? ContextKeyExpr.has('advancedMode') : undefined));
+		const context = (originalVisible: boolean, advancedMode: boolean) => ({ getValue: <T>(key: string) => (key === 'originalVisible' ? originalVisible : advancedMode) as T });
+		const when = MenuRegistry.getMenuItems(testMenuId)[0].when!;
+		assert.strictEqual(when.evaluate(context(true, false)), false);
+		assert.strictEqual(when.evaluate(context(false, true)), false);
+		assert.strictEqual(when.evaluate(context(true, true)), true);
+		assert.ok(menuService.getMenuContexts(testMenuId).has('advancedMode'));
+		provider.dispose();
+		assert.strictEqual(MenuRegistry.getMenuItems(testMenuId)[0].when, originalWhen);
 	});
 });

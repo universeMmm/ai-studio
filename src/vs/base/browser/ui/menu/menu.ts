@@ -1239,11 +1239,22 @@ ${formatRule(Codicon.menuSubmenu)}
 .context-view.monaco-menu-container {
 	outline: 0;
 	border: none;
-	animation: fadeIn 0.083s linear;
+	animation: monaco-context-menu-enter 150ms ease-out;
 	-webkit-app-region: no-drag;
 	box-shadow: var(--vscode-shadow-lg${style.shadowColor ? `, 0 0 12px ${style.shadowColor}` : ''});
 	border-radius: var(--vscode-cornerRadius-large);
 	overflow: hidden;
+}
+
+@keyframes monaco-context-menu-enter {
+	from { opacity: 0; transform: translateY(4px); }
+	to { opacity: 1; transform: none; }
+}
+
+.monaco-reduce-motion .context-view.monaco-menu-container,
+:host-context(.monaco-reduce-motion) .context-view.monaco-menu-container { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+	.context-view.monaco-menu-container { animation: none; }
 }
 
 .context-view.monaco-menu-container :focus,

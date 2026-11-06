@@ -9,7 +9,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../nls.js';
-import type { IConfigurationNode } from '../../../platform/configuration/common/configurationRegistry.js';
+import { ConfigurationScope, type IConfigurationNode } from '../../../platform/configuration/common/configurationRegistry.js';
 
 export const aiConfigurationNode: IConfigurationNode = {
 	id: 'ai',
@@ -18,11 +18,14 @@ export const aiConfigurationNode: IConfigurationNode = {
 	type: 'object',
 	properties: {
 		'ai.modelName': {
+			scope: ConfigurationScope.MACHINE,
 			type: 'string',
 			default: '',
 			description: localize("studio.settings.modelName", "状态栏显示的模型名称。留空时显示模型 ID。"),
 		},
 		'ai.apiType': {
+			scope: ConfigurationScope.MACHINE,
+			restricted: true,
 			type: 'string',
 			enum: ['openai', 'anthropic'],
 			enumItemLabels: ['OpenAI', 'Anthropic'],
@@ -34,11 +37,13 @@ export const aiConfigurationNode: IConfigurationNode = {
 			],
 		},
 		'ai.modelId': {
+			scope: ConfigurationScope.MACHINE,
 			type: 'string',
 			default: '',
 			description: localize("studio.settings.modelId", "模型标识符。对话、智能体和行内补全共用此模型。"),
 		},
 		'ai.apiKey': {
+			scope: ConfigurationScope.MACHINE,
 			type: 'string',
 			default: '',
 			description: localize("studio.settings.apiKey", "兼容旧版设置的 API 密钥。建议将密钥保存到 AI Studio 的安全凭据中。"),
@@ -46,9 +51,27 @@ export const aiConfigurationNode: IConfigurationNode = {
 			ignoreSync: true,
 		},
 		'ai.apiBase': {
+			scope: ConfigurationScope.MACHINE,
+			restricted: true,
 			type: 'string',
 			default: '',
 			description: localize("studio.settings.apiBase", "模型服务的 API 地址。留空时使用所选服务的官方地址。"),
+		},
+		'ai.modelContextTokens': {
+			type: 'number',
+			scope: ConfigurationScope.MACHINE,
+			default: 128000,
+			minimum: 4096,
+			maximum: 2000000,
+			description: localize('studio.settings.modelContextTokens', '当前模型的上下文窗口大小。请按模型服务提供的上限填写。'),
+		},
+		'ai.reasoningEffort': {
+			type: 'string',
+			scope: ConfigurationScope.MACHINE,
+			default: 'default',
+			enum: ['default', 'low', 'medium', 'high'],
+			enumItemLabels: ['默认', '低', '中', '高'],
+			description: localize('studio.settings.reasoningEffort', '当前模型的推理强度。仅向已确认支持的模型发送参数；默认由模型服务决定。'),
 		},
 		'ai.completion.enabled': {
 			type: 'boolean',
@@ -84,6 +107,8 @@ export const aiConfigurationNode: IConfigurationNode = {
 			description: localize("studio.settings.maxSubAgents", "可同时运行的子智能体数量上限。"),
 		},
 		'ai.commandApproval': {
+			scope: ConfigurationScope.MACHINE,
+			restricted: true,
 			type: 'string',
 			enum: ['all', 'unsafe', 'none'],
 			enumItemLabels: [

@@ -8,8 +8,9 @@
  *  Uses native fetch() to call any OpenAI-compatible API — no npm SDK needed.
  *--------------------------------------------------------------------------------------------*/
 
-import { decodeToolArguments } from './toolRuntime.js';
+import { decodeToolArguments, ModelTurnError } from './toolRuntime.js';
 import { providerEvents } from './providerEvents.js';
+import { applyOpenAIReasoning, isDeepSeekReasoningModel } from './aiReasoning.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import type { IAIProvider } from './aiProvider.js';
@@ -49,6 +50,7 @@ export class CustomProvider extends Disposable implements IAIProvider {
 				stream_options: { include_usage: true },
 				stream: true,
 			};
+			applyOpenAIReasoning(body, this.modelId, this.apiBase, options.reasoningEffort);
 			if (tools.length) { body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })); }
 
 			let res: Response;
@@ -71,6 +73,7 @@ export class CustomProvider extends Disposable implements IAIProvider {
 				if (event.error) { throw new Error(event.error.message || 'Model stream error'); }
 				if (event.usage) { callbacks.onUsage?.({ inputTokens: event.usage.prompt_tokens ?? 0, outputTokens: event.usage.completion_tokens ?? 0 }); }
 				const choice = event.choices?.[0];
+				if (typeof choice?.delta?.reasoning_content === 'string') { callbacks.onReasoning?.(choice.delta.reasoning_content); }
 				if (choice?.delta?.content) { callbacks.onToken(choice.delta.content); }
 				for (const fragment of choice?.delta?.tool_calls ?? []) {
 					const index = fragment.index ?? 0;
@@ -82,15 +85,22 @@ export class CustomProvider extends Disposable implements IAIProvider {
 				}
 				if (choice?.finish_reason) {
 					finished = true;
-					if (choice.finish_reason === 'length') { reason = 'max_tokens'; }
+					switch (choice.finish_reason) {
+						case 'stop': reason = 'end_turn'; break;
+						case 'tool_calls': reason = 'tool_use'; break;
+						case 'length': reason = 'max_tokens'; break;
+						default: throw new ModelTurnError('error', 'Model generation did not complete: ' + String(choice.finish_reason));
+					}
 				}
 			}
-			if (calls.size && (!finished || reason === 'max_tokens')) { throw new Error('Incomplete model tool call batch'); }
+			signal.throwIfAborted();
+			if (!finished) { throw new Error('Incomplete model stream: missing completion event.'); }
+			if (calls.size && reason === 'max_tokens') { throw new ModelTurnError('max_tokens', 'Incomplete model tool call batch: output token limit reached.'); }
 			for (const [, call] of [...calls].sort(([left], [right]) => left - right)) {
 				const { input, error } = decodeToolArguments(call.args);
 				callbacks.onToolUse(call.name, input, call.id, error);
 			}
-			callbacks.onDone(calls.size ? 'tool_use' : reason);
+			callbacks.onDone(reason === 'max_tokens' ? reason : calls.size ? 'tool_use' : reason);
 		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { this.logService.error('[CustomProvider]', err); callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
@@ -153,7 +163,8 @@ export class CustomProvider extends Disposable implements IAIProvider {
 	private async _fetch(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
 		const url = (this.apiBase.endsWith('/') ? this.apiBase.slice(0, -1) : this.apiBase) + path;
 		const res = await fetch(url, {
-			method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + this.apiKey, 'HTTP-Referer': 'ai-studio', 'X-Title': 'AI Studio' }, body: JSON.stringify(body), signal,
+			// Credentials are scoped to this configured origin. Do not forward them through redirects.
+			method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + this.apiKey, 'HTTP-Referer': 'ai-studio', 'X-Title': 'AI Studio' }, body: JSON.stringify(body), signal,
 		});
 		if (!res.ok) { const text = await res.text(); throw new Error(`API ${res.status}: ${text.slice(0, 500)}`); }
 		return res;
@@ -161,6 +172,7 @@ export class CustomProvider extends Disposable implements IAIProvider {
 
 	private _convertMessages(messages: AIMessage[]): unknown[] {
 		const result: unknown[] = [];
+		const requiresReasoning = isDeepSeekReasoningModel(this.modelId, this.apiBase);
 		let pendingImages: ReturnType<typeof imagePart>[] = [];
 		const flushImages = () => {
 			if (pendingImages.length) {
@@ -169,11 +181,15 @@ export class CustomProvider extends Disposable implements IAIProvider {
 			}
 		};
 		for (const msg of messages) {
+			// DeepSeek requires this field on every assistant turn when tools are present,
+			// including older text-only history that predates reasoning preservation.
+			const reasoning = msg.role === 'assistant' && requiresReasoning
+				? { reasoning_content: msg.reasoningContent ?? '' } : {};
 			if (msg.role !== 'tool') {
 				flushImages();
 			}
 			if (typeof msg.content === 'string') {
-				result.push({ role: msg.role, content: msg.content, ...(msg.toolCallId ? { tool_call_id: msg.toolCallId } : {}) });
+				result.push({ role: msg.role, content: msg.content, ...reasoning, ...(msg.toolCallId ? { tool_call_id: msg.toolCallId } : {}) });
 				continue;
 			}
 			if (msg.role === 'tool') {
@@ -206,7 +222,7 @@ export class CustomProvider extends Disposable implements IAIProvider {
 				if (block.type === 'image' && block.source) { parts.push(imagePart(block.source)); }
 			}
 			const content = parts.every(part => part.type === 'text') ? parts.map(part => part.text).join('') : parts;
-			result.push({ role: msg.role, content: content || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
+			result.push({ role: msg.role, content: content || null, ...reasoning, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
 		}
 		flushImages();
 		return result;

@@ -54,8 +54,9 @@ import { IAccessibilityService } from '../../../../../../platform/accessibility/
 import { MenuWorkbenchButtonBar } from '../../../../../../platform/actions/browser/buttonbar.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { MenuId, MenuItemAction } from '../../../../../../platform/actions/common/actions.js';
-import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IAIKeychainService } from '../../../../../../platform/ai/browser/credentialService.js';
+import { getAICredentialTarget } from '../../../../../../platform/ai/common/aiSecurityConfiguration.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { registerAndCreateHistoryNavigationContext } from '../../../../../../platform/history/browser/contextScopedHistoryWidget.js';
@@ -670,6 +671,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			if (e.affectsConfiguration(AccessibilityVerbositySettingId.Chat)) {
 				newOptions.ariaLabel = this._getAriaLabel();
 			}
+			if (e.affectsConfiguration('ai.modelName') || e.affectsConfiguration('ai.modelId') || e.affectsConfiguration('ai.reasoningEffort')) {
+				newOptions.ariaLabel = this._getAriaLabel();
+				queueMicrotask(() => this.inputActionsToolbar?.relayout());
+			}
 			if (e.affectsConfiguration('editor.wordSegmenterLocales')) {
 				newOptions.wordSegmenterLocales = this.configurationService.getValue<string | string[]>('editor.wordSegmenterLocales');
 			}
@@ -920,7 +925,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				this.setCurrentLanguageModel(model);
 				this.renderAttachedContext();
 			},
-			getModels: () => this.getModels(),
+			getModels: () => {
+				const models = this.getModels();
+				const sessionType = this.getCurrentSessionType();
+				return !sessionType || sessionType === localChatSessionType ? models.filter(model => model.metadata.vendor === AI_STUDIO_VENDOR_ID) : models;
+			},
+			useStudioModelConfiguration: () => {
+				const sessionType = this.getCurrentSessionType();
+				return !sessionType || sessionType === localChatSessionType;
+			},
 			useGroupedModelPicker: () => {
 				const sessionType = this.getCurrentSessionType();
 				return !sessionType || sessionType === localChatSessionType;
@@ -1274,16 +1287,17 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			if (group) {
 				const settings = group.settings?.[group.name];
 				if (settings) {
-					this.configurationService.updateValue('ai.modelId', settings['modelId'] ?? '');
-					this.configurationService.updateValue('ai.modelName', model.metadata.name ?? '');
-					this.configurationService.updateValue('ai.apiType', settings['apiType'] ?? 'openai');
-					if (settings['apiKey']) {
-						const apiKey = settings['apiKey'] as string;
-						this.keychainService.setApiKey(apiKey);
-					}
-					if (settings['endpoint']) {
-						this.configurationService.updateValue('ai.apiBase', settings['endpoint']);
-					}
+					const apiType = (settings['apiType'] as string) || 'openai';
+					const endpoint = (settings['endpoint'] as string) || '';
+					void (async () => {
+						if (settings['apiKey']) {
+							await this.keychainService.setApiKey(settings['apiKey'] as string, getAICredentialTarget(apiType, endpoint));
+						}
+						await this.configurationService.updateValue('ai.apiType', apiType, ConfigurationTarget.USER);
+						await this.configurationService.updateValue('ai.apiBase', endpoint, ConfigurationTarget.USER);
+						await this.configurationService.updateValue('ai.modelId', settings['modelId'] ?? '', ConfigurationTarget.USER);
+						await this.configurationService.updateValue('ai.modelName', model.metadata.name ?? '', ConfigurationTarget.USER);
+					})().catch(error => this.logService.error('[AI Studio] Failed to select model configuration', error));
 				}
 			}
 		}
@@ -1510,7 +1524,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	private setCurrentLanguageModelToDefault() {
 		const allModels = this.getModels();
-		const defaultModel = findDefaultModel(allModels, this.location);
+		const sessionType = this.getCurrentSessionType();
+		const configuredId = this.configurationService.getValue<string>('ai.modelId');
+		const configuredName = this.configurationService.getValue<string>('ai.modelName');
+		// Initial provider resolution must preserve the model already selected in
+		// Studio settings rather than overwrite it with the first alphabetic entry.
+		const configuredModel = !sessionType || sessionType === localChatSessionType
+			? allModels.find(model => model.metadata.vendor === AI_STUDIO_VENDOR_ID && model.metadata.family === configuredId && (!configuredName || model.metadata.name === configuredName))
+			: undefined;
+		const defaultModel = configuredModel ?? findDefaultModel(allModels, this.location);
 		if (defaultModel) {
 			logChangesToStateModel(this._inputModel, `setCurrentLanguageModelToDefault to ${defaultModel.identifier} in ${this._currentSessionKey}`, undefined, undefined, this.logService);
 			this.setCurrentLanguageModel(defaultModel);
@@ -1551,7 +1573,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const mode = this._currentModeObservable.get();
 
 		// Include model information if available
-		const modelName = this._currentLanguageModel.get()?.metadata.name;
+		const sessionType = this.getCurrentSessionType();
+		const modelName = !sessionType || sessionType === localChatSessionType
+			? this.configurationService.getValue<string>('ai.modelName') || this.configurationService.getValue<string>('ai.modelId')
+			: this._currentLanguageModel.get()?.metadata.name;
 		const modelInfo = modelName ? localize('chatInput.model', ", {0}. ", modelName) : '';
 
 		let modeLabel = '';
@@ -2526,7 +2551,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				kind: 'last',
 				minItems: 1,
 				actionMinWidth: 48,
-				getActionMinWidth: action => shorterChatInputActionIds.has(action.id) ? 22 : undefined,
+				getActionMinWidth: action => {
+					const sessionType = this.getCurrentSessionType();
+					if (action.id === OpenModelPickerAction.ID && (!sessionType || sessionType === localChatSessionType)) {
+						// The combined Studio pill can truncate its model name; preserve it
+						// after trailing tool controls overflow in a narrow composer.
+						return 96;
+					}
+					return shorterChatInputActionIds.has(action.id) ? 22 : undefined;
+				},
 			},
 			actionViewItemProvider: (action, options) => {
 				// Phone-layout branch: when an agents-window phone presenter
@@ -2765,7 +2798,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}));
 		this.secondaryToolbar.getElement().classList.add('chat-secondary-input-toolbar');
 		this.secondaryToolbar.context = { widget } satisfies IChatExecuteActionContext;
-		
+
 		this._register(this.secondaryToolbar.onDidChangeMenuItems(() => {
 			// Update container reference for the pickers when the secondary toolbar hosts one.
 			// Only assign when found so we don't overwrite a valid primary container reference

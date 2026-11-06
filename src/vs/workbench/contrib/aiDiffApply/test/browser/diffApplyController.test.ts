@@ -5,8 +5,9 @@
 
 import * as assert from 'assert';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { resolve } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { upcastPartial } from '../../../../../base/test/common/mock.js';
+import { upcastDeepPartial, upcastPartial } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IFileContent, IFileService, IFileStatWithMetadata } from '../../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
@@ -19,7 +20,7 @@ suite('DiffApplyController', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('rejectHunk reverts the hunk at its modified line range when text repeats', async () => {
-		const filePath = 'C:/workspace/file.txt';
+		const filePath = resolve('workspace', 'file.txt');
 		const hunk: DiffHunk = {
 			id: 'hunk_1',
 			filePath,
@@ -39,6 +40,7 @@ suite('DiffApplyController', () => {
 		}];
 		let written = '';
 		const fileService = upcastPartial<IFileService>({
+			async realpath(resource: URI) { return resource; },
 			async readFile(_resource: URI) {
 				return upcastPartial<IFileContent>({ value: VSBuffer.fromString('modified\nkeep\nmodified\nend\n') });
 			},
@@ -54,7 +56,7 @@ suite('DiffApplyController', () => {
 			},
 		});
 		const textFiles = upcastPartial<ITextFileService>({ isDirty: () => false });
-		const workspace = upcastPartial<IWorkspaceContextService>({ isInsideWorkspace: () => true });
+		const workspace = upcastDeepPartial<IWorkspaceContextService>({ getWorkspace: () => ({ folders: [{ uri: URI.joinPath(URI.file(filePath), '..') }] }) });
 		const controller = new DiffApplyController(diffStore, textFiles, fileService, workspace);
 
 		await controller.rejectHunk('group_1', 'hunk_1');

@@ -38,16 +38,12 @@ export default (): string => `
 	<div class="section">
 		<div class="input-group">
 			<label class="inline-label" for="issue-type">${escape(localize('issueTypeLabel', "This is a"))}</label>
-			<select id="issue-type" class="inline-form-control">
-				<!-- To be dynamically filled -->
-			</select>
+			<span id="issue-type-container" class="issue-select-container inline-form-control"></span>
 		</div>
 
 		<div class="input-group" id="problem-source">
 			<label class="inline-label" for="issue-source">${escape(localize('issueSourceLabel', "For"))} <span class="required-input">*</span></label>
-			<select id="issue-source" class="inline-form-control" required>
-				<!-- To be dynamically filled -->
-			</select>
+			<span id="issue-source-container" class="issue-select-container inline-form-control"></span>
 			<div id="issue-source-empty-error" class="validation-error hidden" role="alert">${escape(localize('issueSourceEmptyValidation', "An issue source is required."))}</div>
 			<div id="problem-source-help-text" class="instructions hidden">${escape(localize('disableExtensionsLabelText', "Try to reproduce the problem after {0}. If the problem only reproduces when extensions are active, it is likely an issue with an extension."))
 		.replace('{0}', () => `<span tabIndex=0 role="button" id="disableExtensions" class="workbenchCommand">${escape(localize('disableExtensions', "disabling all extensions and reloading the window"))}</span>`)}
@@ -55,9 +51,7 @@ export default (): string => `
 
 			<div id="extension-selection">
 				<label class="inline-label" for="extension-selector">${escape(localize('chooseExtension', "Extension"))} <span class="required-input">*</span></label>
-				<select id="extension-selector" class="inline-form-control">
-					<!-- To be dynamically filled -->
-				</select>
+				<span id="extension-selector-container" class="issue-select-container inline-form-control"></span>
 				<div id="extension-selection-validation-error" class="validation-error hidden" role="alert">${escape(localize('extensionWithNonstandardBugsUrl', "The issue reporter is unable to create issues for this extension. Please visit {0} to report an issue."))
 		.replace('{0}', () => `<span tabIndex=0 role="button" id="extensionBugsLink" class="workbenchCommand"><!-- To be dynamically filled --></span>`)}</div>
 				<div id="extension-selection-validation-error-no-url" class="validation-error hidden" role="alert">

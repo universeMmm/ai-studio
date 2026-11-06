@@ -13,7 +13,7 @@ import { AnthropicProvider } from '../../../src/vs/platform/ai/common/anthropicP
 import { CustomProvider } from '../../../src/vs/platform/ai/common/customProvider.js';
 import type { IAIProvider } from '../../../src/vs/platform/ai/common/aiProvider.js';
 import type { AIMessage, StopReason } from '../../../src/vs/platform/ai/common/aiTypes.js';
-import { assistantToolMessage, collectAgentTurn, toolResult, type AgentToolCall } from '../../../src/vs/platform/ai/common/toolRuntime.js';
+import { assistantToolMessage, collectAgentTurn, ModelTurnError, toolResult, type AgentToolCall } from '../../../src/vs/platform/ai/common/toolRuntime.js';
 import { SYSTEM_PROMPT } from '../../../src/vs/platform/ai/common/systemPrompt.js';
 
 const log = new NullLogService();
@@ -62,6 +62,75 @@ async function stream(provider: IAIProvider, events: unknown[], messages = input
 }
 
 suite('Provider streaming', () => {
+	test('text-only EOF without a provider completion event is an error', async () => {
+		await assert.rejects(stream(new CustomProvider(endpoint, 'fixture', 'fixture', log), [
+			{ choices: [{ delta: { content: 'unfinished' } }] },
+		]), /Incomplete model stream/);
+		await assert.rejects(stream(new AnthropicProvider('fixture', 'fixture', endpoint, log), [
+			{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'unfinished' } },
+		]), /Incomplete model stream/);
+	});
+
+	test('text completion accepts explicit OpenAI finish or DONE and Anthropic message_stop', async () => {
+		for (const terminal of [{ choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']) {
+			const { reason } = await stream(new CustomProvider(endpoint, 'fixture', 'fixture', log), [
+				{ choices: [{ delta: { content: 'complete' } }] }, terminal,
+			]);
+			assert.strictEqual(reason, 'end_turn');
+		}
+		const { reason } = await stream(new AnthropicProvider('fixture', 'fixture', endpoint, log), [
+			{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'complete' } },
+			{ type: 'message_delta', delta: { stop_reason: 'end_turn' } }, { type: 'message_stop' },
+		]);
+		assert.strictEqual(reason, 'end_turn');
+	});
+
+	test('Anthropic stop reason survives trailing usage and preserves stop_sequence', async () => {
+		for (const stop_reason of ['max_tokens', 'stop_sequence'] as const) {
+			const { reason, usage } = await stream(new AnthropicProvider('fixture', 'fixture', endpoint, log), [
+				{ type: 'message_delta', delta: { stop_reason } },
+				{ type: 'message_delta', usage: { output_tokens: 100 } }, { type: 'message_stop' },
+			]);
+			assert.strictEqual(reason, stop_reason);
+			assert.strictEqual(usage?.outputTokens, 100);
+		}
+	});
+
+	test('filtered or paused model generations never become completed turns', async () => {
+		await assert.rejects(stream(new CustomProvider(endpoint, 'fixture', 'fixture', log), [
+			{ choices: [{ delta: {}, finish_reason: 'content_filter' }] }, '[DONE]',
+		]), ModelTurnError);
+		await assert.rejects(stream(new AnthropicProvider('fixture', 'fixture', endpoint, log), [
+			{ type: 'message_delta', delta: { stop_reason: 'pause_turn' } }, { type: 'message_stop' },
+		]), ModelTurnError);
+	});
+
+	test('agent collection rejects truncated text from either real provider and retains usage', async () => {
+		const original = globalThis.fetch;
+		try {
+			for (const [provider, events] of [
+				[new CustomProvider(endpoint, 'fixture', 'fixture', log), [
+					{ choices: [{ delta: { content: 'unfinished' }, finish_reason: 'length' }] },
+					{ choices: [], usage: { prompt_tokens: 10, completion_tokens: 100 } }, '[DONE]',
+				]],
+				[new AnthropicProvider('fixture', 'fixture', endpoint, log), [
+					{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'unfinished' } },
+					{ type: 'message_delta', delta: { stop_reason: 'max_tokens' }, usage: { input_tokens: 10, output_tokens: 100 } },
+					{ type: 'message_stop' },
+				]],
+			] as const) {
+				globalThis.fetch = async () => new Response(events.map(event => 'data: ' + (typeof event === 'string' ? event : JSON.stringify(event))).join('\n\n'));
+				let usage: { inputTokens: number; outputTokens: number } | undefined;
+				try {
+					await assert.rejects(collectAgentTurn(provider, input, [], {
+						model: 'fixture', maxTokens: 100, temperature: 0, thinking: false, cacheSystemPrompt: false, maxContextTokens: 1000,
+					}, new AbortController().signal, value => { usage = value; }), error => error instanceof ModelTurnError && error.stopReason === 'max_tokens');
+					assert.deepStrictEqual(usage, { inputTokens: 10, outputTokens: 100 });
+				} finally { provider.dispose(); }
+			}
+		} finally { globalThis.fetch = original; }
+	});
+
 	test('OpenAI preserves stop reason and trailing usage, and attaches tool images as user content', async () => {
 		const provider = new CustomProvider(endpoint, 'fixture', 'fixture', log);
 		const { body, reason, usage } = await stream(provider, [

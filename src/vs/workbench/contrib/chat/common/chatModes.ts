@@ -633,7 +633,7 @@ export class BuiltinChatMode implements IChatMode {
 export namespace ChatMode {
 	export const Ask = new BuiltinChatMode(ChatModeKind.Ask, localize('studioAskMode', "问答"), localize('studioAskHint', "输入你想了解的代码问题…"), Codicon.question);
 	export const Edit = new BuiltinChatMode(ChatModeKind.Edit, localize('studioEditMode', "编辑"), localize('studioEditHint', "描述要修改的代码…"), Codicon.edit);
-	export const Agent = new BuiltinChatMode(ChatModeKind.Agent, localize('studioAgentMode', "智能体"), localize('studioAgentHint', "描述任务，或输入 # 引用文件…"), Codicon.agent);
+	export const Agent = new BuiltinChatMode(ChatModeKind.Agent, localize('studioAgentMode', "智能体"), localize('studioAgentHint', "和 AI Studio 一起工作"), Codicon.agent);
 }
 
 export function isBuiltinChatMode(mode: IChatMode): boolean {

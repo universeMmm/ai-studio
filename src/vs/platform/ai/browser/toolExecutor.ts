@@ -26,6 +26,7 @@ import { ILogService } from '../../../platform/log/common/log.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { MarkerSeverity, IMarkerService } from '../../../platform/markers/common/markers.js';
 import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { getUserAIConfiguration } from '../common/aiSecurityConfiguration.js';
 import { BuiltInToolName, type AIMessageContent, type AskUserQuestionInput, type SubAgentConfig } from '../common/aiTypes.js';
 import { IAIIndexService } from './aiIndexService.js';
 import { IDiffStore } from '../../../workbench/contrib/aiDiffApply/browser/diffStore.js';
@@ -35,6 +36,7 @@ import { ISubAgentManager } from '../common/subAgentManager.js';
 import type { CommandApprovalHandler, ToolOutcome } from '../common/toolRuntime.js';
 import { IUserMemoryStore } from '../common/userMemoryStore.js';
 import { getAIStudioIpcRenderer } from '../common/desktopIpc.js';
+import { isSensitiveFile, SENSITIVE_FILE_GLOBS } from '../common/sensitiveFiles.js';
 
 class ToolFailure extends Error {
 	constructor(message: string, readonly outcome: ToolOutcome = 'error') { super(message); }
@@ -68,18 +70,8 @@ const RG_SHORT_OPTIONS: Record<string, string> = {
 
 type ImageSource = NonNullable<AIMessageContent['source']>;
 
-const SENSITIVE_FILE_PATTERNS = [
-	/(?:^|[\\/])\.git(?:[\\/]|$)/i,
-	/\.env(\..*)?$/,
-	/\.pem$/,
-	/\.key$/,
-	/credentials/i,
-	/secret/i,
-	/\.npmrc$/,
-	/id_rsa/,
-	/\.pfx$/,
-	/\.p12$/,
-];
+// Use the same basename globs for direct access and recursive ripgrep searches.
+const RG_SENSITIVE_EXCLUDES = SENSITIVE_FILE_GLOBS.map(pattern => '--iglob=!' + pattern);
 
 const BINARY_EXTENSIONS = new Set([
 	'.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.zip',
@@ -95,8 +87,13 @@ const IMAGE_EXTENSIONS = new Set([
 
 const PDF_EXTENSION = '.pdf';
 
-function isSensitiveFile(filePath: string): boolean {
-	return SENSITIVE_FILE_PATTERNS.some(p => p.test(filePath));
+function isFileNotFound(error: unknown): boolean {
+	if (!(error instanceof Error)) { return false; }
+	if (toFileOperationResult(error) === FileOperationResult.FILE_NOT_FOUND) { return true; }
+	const code = (error as Error & { code?: string }).code;
+	// The native filesystem IPC channel preserves message/name/stack, but not Node's code.
+	// Only recover its exact missing-path errno; permissions and unknown failures stay closed.
+	return code === 'ENOENT' || code === undefined && error.message.startsWith('ENOENT: ');
 }
 
 function isBinaryFile(filePath: string): boolean {
@@ -284,14 +281,51 @@ export class ToolExecutor {
 		return (isWindows ? extUriIgnorePathCase : extUri).isEqualOrParent(URI.file(filePath), root);
 	}
 
-	private _resolvePath(filePath: string): string {
+	private async _canonicalPath(resource: URI, allowMissing = false): Promise<URI> {
+		let ancestor = resource;
+		const missing: string[] = [];
+		while (true) {
+			this.abortSignal?.throwIfAborted();
+			try {
+				const canonical = await this.fileService.realpath(ancestor);
+				if (!canonical || canonical.scheme !== 'file') {
+					throw new ToolFailure('Error: cannot verify the real filesystem path: ' + ancestor.fsPath, 'denied');
+				}
+				return URI.joinPath(canonical, ...missing);
+			} catch (error) {
+				if (!allowMissing || !isFileNotFound(error)) { throw error; }
+				// A dangling symlink can fail realpath but still exist according to stat.
+				// It must not be mistaken for a new path under a permitted parent.
+				let exists = true;
+				try { await this.fileService.stat(ancestor); }
+				catch (statError) {
+					if (!isFileNotFound(statError)) { throw statError; }
+					exists = false;
+				}
+				if (exists) { throw error; }
+				const parent = extUri.dirname(ancestor);
+				if (extUri.isEqual(parent, ancestor)) { throw error; }
+				missing.unshift(extUri.basename(ancestor));
+				ancestor = parent;
+			}
+		}
+	}
+
+	private async _resolvePath(filePath: string, allowMissing = false): Promise<string> {
 		const roots = this._roots();
 		if (!roots.length) { throw new Error('No workspace folder is open.'); }
 		const resolved = resolve(roots[0].fsPath, filePath);
 		if (!roots.some(root => this._contains(root, resolved))) {
 			throw new Error('Path is outside the workspace: ' + filePath);
 		}
-		return resolved;
+		if (isSensitiveFile(resolved)) { throw new ToolFailure('Error: cannot access sensitive file: ' + filePath, 'denied'); }
+		const canonicalRoots = await Promise.all(roots.map(root => this._canonicalPath(root)));
+		const canonical = await this._canonicalPath(URI.file(resolved), allowMissing);
+		if (!canonicalRoots.some(root => this._contains(root, canonical.fsPath))) {
+			throw new ToolFailure('Error: real path is outside the workspace: ' + filePath, 'denied');
+		}
+		if (isSensitiveFile(canonical.fsPath)) { throw new ToolFailure('Error: cannot access sensitive file: ' + filePath, 'denied'); }
+		return canonical.fsPath;
 	}
 
 	private _getCwd(): string {
@@ -302,8 +336,7 @@ export class ToolExecutor {
 	// -- Tool implementations -------------------------------------------------
 
 	private async _readFile(input: Record<string, unknown>, onImage?: (source: ImageSource) => void): Promise<string> {
-		const fp = this._resolvePath(input.path as string);
-		if (isSensitiveFile(fp)) { throw new ToolFailure('Error: cannot read sensitive file: ' + (input.path as string)); }
+		const fp = await this._resolvePath(input.path as string);
 
 		// Handle image files — read as binary, base64-encode, return structured result
 		if (isImageFile(fp)) {
@@ -337,8 +370,7 @@ export class ToolExecutor {
 	}
 
 	private async _writeFile(input: Record<string, unknown>): Promise<string> {
-		const uri = URI.file(this._resolvePath(input.path as string));
-		if (isSensitiveFile(uri.fsPath)) { throw new ToolFailure('Error: cannot write to sensitive file: ' + input.path); }
+		const uri = URI.file(await this._resolvePath(input.path as string, true));
 		let original: IFileContent | undefined;
 		try { original = await this.fileService.readFile(uri); }
 		catch (err) {
@@ -357,8 +389,7 @@ export class ToolExecutor {
 	}
 
 	private async _editFile(input: Record<string, unknown>): Promise<string> {
-		const uri = URI.file(this._resolvePath(input.path as string));
-		if (isSensitiveFile(uri.fsPath)) { throw new ToolFailure('Error: cannot edit sensitive file: ' + input.path); }
+		const uri = URI.file(await this._resolvePath(input.path as string));
 		const oldStr = input.old_string as string;
 		const newStr = input.new_string as string;
 		if (!oldStr) { throw new ToolFailure('Error: old_string must not be empty'); }
@@ -430,15 +461,21 @@ export class ToolExecutor {
 	private async _searchContent(input: Record<string, unknown>): Promise<string> {
 		const pattern = input.pattern as string;
 		if (this.cwdOverride) {
-			const result = await this._spawn('rg', ['--no-config', '--line-number', '--fixed-strings', '--', pattern, '.'], this.cwdOverride, 15000, 5 * 1024 * 1024);
+			const cwd = await this._resolvePath(this.cwdOverride);
+			const result = await this._spawn('rg', ['--no-config', '--no-follow', '--line-number', '--fixed-strings', ...RG_SENSITIVE_EXCLUDES, '--', pattern, '.'], cwd, 15000, 5 * 1024 * 1024);
 			if (result.exitCode === 1) { return 'No matches.'; }
 			if (result.exitCode !== 0) { throw new ToolFailure('Search error: ' + result.stderr); }
 			return result.stdout;
 		}
 		try {
 			const results = await this.indexService.search(pattern, 10);
-			if (!results.length) { return 'No results for "' + pattern + '".'; }
-			return results.map(r => r.filePath + ':' + r.startLine + '\n' + r.content).join('\n---\n');
+			const safeResults: typeof results = [];
+			for (const result of results) {
+				try { await this._resolvePath(result.filePath); safeResults.push(result); }
+				catch (error) { if (this.abortSignal?.aborted) { throw error; } }
+			}
+			if (!safeResults.length) { return 'No results for "' + pattern + '".'; }
+			return safeResults.map(r => r.filePath + ':' + r.startLine + '\n' + r.content).join('\n---\n');
 		} catch (err) { throw new ToolFailure('Search error: ' + (err instanceof Error ? err.message : String(err))); }
 	}
 
@@ -475,16 +512,18 @@ export class ToolExecutor {
 		if (!roots.length) { throw new ToolFailure('Error: no workspace folder is open.'); }
 		const output: string[] = [];
 		for (const root of roots) {
+			const cwd = await this._resolvePath(root.fsPath);
 			const paths: string[] = [];
 			for (const operand of operands) {
 				const path = resolve(root.fsPath, operand);
-				if (this._contains(root, path)) { paths.push(path); }
+				if (this._contains(root, path)) { paths.push(await this._resolvePath(path)); }
 				else if (!isAbsolute(operand) || !roots.some(other => this._contains(other, path))) {
 					throw new ToolFailure('Error: path is outside the workspace: ' + operand);
 				}
 			}
 			if (operands.length && !paths.length) { continue; }
-			const result = await this._spawn('rg', [...options, '--', ...(paths.length ? paths : ['.'])], root.fsPath, 15_000, 5 * 1024 * 1024);
+			// Put exclusions after caller globs so a positive glob cannot override them.
+			const result = await this._spawn('rg', [...options, '--no-follow', ...RG_SENSITIVE_EXCLUDES, '--', ...(paths.length ? paths : ['.'])], cwd, 15_000, 5 * 1024 * 1024);
 			if (result.exitCode !== 0 && result.exitCode !== 1) { throw new ToolFailure('Search error: ' + result.stderr); }
 			const text = result.stdout.trim();
 			if (text) { output.push(roots.length > 1 ? root.fsPath + ':\n' + text : text); }
@@ -498,14 +537,15 @@ export class ToolExecutor {
 		if (!roots.length) { throw new ToolFailure('Error: no workspace folder is open.'); }
 		const files: string[] = [];
 		for (const root of roots) {
+			const canonicalRoot = URI.file(await this._resolvePath(root.fsPath));
 			let paths: string[];
 			try {
-				const result = await this._spawn('rg', ['--no-config', '--files', '--glob=' + pattern], root.fsPath, 10_000, 5 * 1024 * 1024);
+				const result = await this._spawn('rg', ['--no-config', '--no-follow', '--files', '--glob=' + pattern, ...RG_SENSITIVE_EXCLUDES], canonicalRoot.fsPath, 10_000, 5 * 1024 * 1024);
 				if (result.exitCode < 0) { throw new Error(result.stderr); }
 				paths = result.stdout.trim().split('\n').filter(Boolean);
 			} catch (err) {
 				if (this.abortSignal?.aborted) { throw err; }
-				paths = await this._walkFiles(root, pattern);
+				paths = await this._walkFiles(canonicalRoot, pattern);
 			}
 			for (const path of paths) {
 				files.push(roots.length === 1 ? path : resolve(root.fsPath, path));
@@ -525,8 +565,9 @@ export class ToolExecutor {
 			const dir = pending.pop()!;
 			const children = (await this.fileService.resolve(dir)).children;
 			for (const child of children ?? []) {
+				if (child.isSymbolicLink || isSensitiveFile(child.resource.fsPath)) { continue; }
 				if (child.isDirectory) {
-					if (!child.isSymbolicLink && !excluded.has(child.name)) { pending.push(child.resource); }
+					if (!excluded.has(child.name)) { pending.push(child.resource); }
 				} else if (match.test(child.name)) { files.push(child.resource.fsPath); }
 			}
 		}
@@ -542,7 +583,7 @@ export class ToolExecutor {
 		const cwd = this._getCwd();
 
 		// Check approval policy
-		const approval = this.configurationService.getValue<string>('ai.commandApproval') || 'unsafe';
+		const approval = getUserAIConfiguration<string>(this.configurationService, 'ai.commandApproval', 'unsafe');
 		const checkApproval = async () => {
 			if (!approve) { throw new ToolFailure('[REQUIRES_APPROVAL] Command: ' + cmd, 'denied'); }
 			const allowed = await approve(cmd, cwd, this.abortSignal);
@@ -578,7 +619,7 @@ export class ToolExecutor {
 	}
 
 	private async _listDirectory(input: Record<string, unknown>): Promise<string> {
-		const fp = this._resolvePath(input.path as string);
+		const fp = await this._resolvePath(input.path as string);
 		const stat = await this.fileService.resolve(URI.file(fp));
 		if (!stat.children) { return '(empty) ' + (input.path as string); }
 		return stat.children.map(c => (c.isDirectory ? '[DIR] ' : '[FILE] ') + c.name).join('\n');
@@ -587,16 +628,19 @@ export class ToolExecutor {
 	private async _readLints(input: Record<string, unknown>): Promise<string> {
 		const fp = input.path as string | undefined;
 		if (fp) {
-			const markers = this.markerService.read({ resource: URI.file(this._resolvePath(fp)) });
+			const markers = this.markerService.read({ resource: URI.file(await this._resolvePath(fp)) });
 			if (!markers.length) { return 'No issues for ' + fp; }
 			return markers.map(m => {
 				const s = m.severity === MarkerSeverity.Error ? 'ERROR' : m.severity === MarkerSeverity.Warning ? 'WARN' : 'INFO';
 				return '[' + s + '] ' + fp + ':' + m.startLineNumber + ':' + m.startColumn + ' ' + m.message;
 			}).join('\n');
 		}
-		const all = this.cwdOverride
-			? this.markerService.read().filter(marker => this._contains(URI.file(this.cwdOverride!), marker.resource.fsPath)).slice(0, 50)
-			: this.markerService.read({ take: 50 });
+		const all: ReturnType<IMarkerService['read']> = [];
+		for (const marker of this.markerService.read()) {
+			try { await this._resolvePath(marker.resource.fsPath); all.push(marker); }
+			catch (error) { if (this.abortSignal?.aborted) { throw error; } }
+			if (all.length === 50) { break; }
+		}
 		return all.length ? all.map(m => {
 			const s = m.severity === MarkerSeverity.Error ? 'ERROR' : m.severity === MarkerSeverity.Warning ? 'WARN' : 'INFO';
 			return '[' + s + '] ' + m.resource.fsPath + ':' + m.startLineNumber + ' ' + m.message;
@@ -797,8 +841,7 @@ export class ToolExecutor {
 				const planFile = typeof input.planFile === 'string' ? input.planFile : undefined;
 				let content = typeof input.content === 'string' ? input.content.trim() : '';
 				if (!content && planFile) {
-					const path = this._resolvePath(planFile);
-					if (isSensitiveFile(path)) { throw new ToolFailure('Cannot present a sensitive file.', 'denied'); }
+					const path = await this._resolvePath(planFile);
 					content = (await this.fileService.readFile(URI.file(path))).value.toString();
 				}
 				if (!content) { throw new ToolFailure('Error: a nonempty plan is required'); }

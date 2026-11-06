@@ -682,7 +682,7 @@
 	min-width: initial;
 }
 
-.settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-enum .setting-item-value > .setting-item-control > select {
+.settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-enum .setting-item-value > .setting-item-control > .monaco-select-box {
 	width: 320px;
 }
 
@@ -763,7 +763,7 @@
 	width: 320px;
 }
 
-.settings-editor > .settings-body .settings-tree-container .setting-list-widget .setting-list-object-list-row.select-container > select {
+.settings-editor > .settings-body .settings-tree-container .setting-list-widget .setting-list-object-list-row.select-container > .monaco-select-box {
 	width: inherit;
 }
 

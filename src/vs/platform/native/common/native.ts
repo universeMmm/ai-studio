@@ -56,6 +56,13 @@ export interface INativeHostOptions {
 	readonly targetWindowId?: number;
 }
 
+export interface IFileThumbnailOptions {
+	readonly maxWidth?: number;
+	readonly maxHeight?: number;
+	/** Unique per requesting window; used to discard a removed attachment's preview. */
+	readonly requestId?: string;
+}
+
 export const enum FocusMode {
 
 	/**
@@ -176,6 +183,10 @@ export interface ICommonNativeHostService {
 
 	// OS
 	showItemInFolder(path: string): Promise<void>;
+	/** Only for explicitly attached local files. Returns a bounded PNG data URL or no preview. */
+	getFileThumbnail(resource: UriComponents, options?: IFileThumbnailOptions): Promise<string | undefined>;
+	/** Cancels queued work and discards results; the system thumbnail API itself cannot be interrupted. */
+	cancelFileThumbnail(requestId: string): Promise<void>;
 	setRepresentedFilename(path: string, options?: INativeHostOptions): Promise<void>;
 	setDocumentEdited(edited: boolean, options?: INativeHostOptions): Promise<void>;
 	openExternal(url: string, defaultApplication?: string): Promise<boolean>;

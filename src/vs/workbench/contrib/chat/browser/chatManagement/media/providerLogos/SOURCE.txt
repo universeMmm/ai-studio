@@ -1,0 +1,24 @@
+Provider logos from Lobe Icons (@lobehub/icons-static-svg).
+Copyright (c) 2023 LobeHub. Distributed under the MIT license;
+the original license is preserved in LICENSE-lobehub.txt.
+
+Repository: https://github.com/lobehub/lobe-icons
+Pinned revision: ea434b96e75813517b377825e01c0df61dee8836 (2026-11-03)
+Original directory:
+https://github.com/lobehub/lobe-icons/tree/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons
+
+Unmodified source files:
+anthropic.svg
+deepseek.svg
+fireworks.svg
+groq.svg
+mistral.svg
+ollama.svg
+openai.svg
+openrouter.svg
+together.svg
+xai.svg
+
+These monochrome SVGs are bundled locally and used as CSS masks so they follow
+the application's text color. The application does not fetch icons at runtime.
+Brand names and trademarks belong to their respective owners.

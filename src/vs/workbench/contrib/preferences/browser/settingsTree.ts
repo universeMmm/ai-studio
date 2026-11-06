@@ -751,7 +751,7 @@ type ISettingNumberItemTemplate = ISettingTextItemTemplate;
 
 interface ISettingEnumItemTemplate extends ISettingItemTemplate<number> {
 	selectBox: SelectBox;
-	selectElement: HTMLSelectElement | null;
+	selectElement: HTMLElement | null;
 	enumDescriptionElement: HTMLElement;
 }
 
@@ -1887,7 +1887,7 @@ class SettingEnumRenderer extends AbstractSettingRenderer implements ITreeRender
 		common.toDispose.add(selectBox);
 		selectBox.render(common.controlElement);
 		// eslint-disable-next-line no-restricted-syntax
-		const selectElement = common.controlElement.querySelector('select');
+		const selectElement = common.controlElement.querySelector<HTMLElement>('.monaco-select-box');
 		if (selectElement) {
 			selectElement.classList.add(AbstractSettingRenderer.CONTROL_CLASS);
 			selectElement.tabIndex = 0;

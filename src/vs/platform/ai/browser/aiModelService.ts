@@ -19,6 +19,8 @@ import { IAIKeychainService } from './credentialService.js';
 import type { IAIProvider } from '../common/aiProvider.js';
 import { AnthropicProvider } from '../common/anthropicProvider.js';
 import { CustomProvider } from '../common/customProvider.js';
+import { getAICredentialTarget, getUserAIConfiguration } from '../common/aiSecurityConfiguration.js';
+import { getAIReasoningEfforts, normalizeAIReasoningEffort } from '../common/aiReasoning.js';
 import type {
 	AIProviderId,
 	AIMessage,
@@ -73,7 +75,7 @@ export class AIModelService extends Disposable implements IAIModelService {
 	// ── Public accessors ──────────────────────────────────────
 
 	get currentProviderId(): AIProviderId {
-		return this.configurationService.getValue<AIProviderId>('ai.apiType') ?? 'openai';
+		return getUserAIConfiguration<AIProviderId>(this.configurationService, 'ai.apiType', 'openai');
 	}
 
 	get currentModelId(): string {
@@ -89,7 +91,11 @@ export class AIModelService extends Disposable implements IAIModelService {
 	// ── Provider delegation ──────────────────────────────────
 
 	streamChat(messages: AIMessage[], tools: AITool[], options: AIRequestOptions, callbacks: AIStreamCallbacks): AbortController {
-		return this._startStream(provider => provider.streamChat(messages, tools, options, callbacks), err => callbacks.onError(err));
+		return this._startStream(provider => {
+			const allowed = getAIReasoningEfforts(this.currentProviderId, this.currentModelId, getUserAIConfiguration(this.configurationService, 'ai.apiBase', ''));
+			const effort = normalizeAIReasoningEffort(options.reasoningEffort ?? getUserAIConfiguration(this.configurationService, 'ai.reasoningEffort', 'default'), allowed);
+			return provider.streamChat(messages, tools, { ...options, reasoningEffort: effort }, callbacks);
+		}, err => callbacks.onError(err));
 	}
 
 	streamCompletion(prefix: string, suffix: string, fileContext: FileContext, options: AICompletionOptions, callbacks: AICompletionCallbacks): AbortController {
@@ -114,9 +120,9 @@ export class AIModelService extends Disposable implements IAIModelService {
 		this._provider = null;
 		try {
 			const apiType = this.currentProviderId;
-			const apiBase = this.configurationService.getValue<string>('ai.apiBase') ?? '';
+			const apiBase = getUserAIConfiguration(this.configurationService, 'ai.apiBase', '');
 			const modelId = this.currentModelId;
-			const apiKey = await this.keychainService.getApiKey();
+			const apiKey = await this.keychainService.getApiKey(getAICredentialTarget(apiType, apiBase));
 			if (this._initializing !== initializing) { return; }
 			if (!apiKey || !modelId) {
 				this.logService.warn('[AIModelService] Configure an API key and model ID to enable the provider.');

@@ -6,9 +6,9 @@
 import { localize } from '../../../../nls.js';
 import * as arrays from '../../../common/arrays.js';
 import { Emitter, Event } from '../../../common/event.js';
+import { defaultGenerator } from '../../../common/idGenerator.js';
 import { KeyCode, KeyCodeUtils } from '../../../common/keyCodes.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../common/lifecycle.js';
-import { isMacintosh } from '../../../common/platform.js';
 import { ScrollbarVisibility } from '../../../common/scrollable.js';
 import * as cssJs from '../../cssValue.js';
 import * as dom from '../../dom.js';
@@ -94,7 +94,8 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 
 	private _isVisible: boolean;
 	private selectBoxOptions: ISelectBoxOptions;
-	private selectElement: HTMLSelectElement;
+	private selectElement: HTMLButtonElement;
+	private readonly selectLabel: HTMLElement;
 	private container?: HTMLElement;
 	private options: ISelectOptionItem[] = [];
 	private selected: number;
@@ -132,8 +133,13 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 			this.selectBoxOptions.minBottomMargin = 0;
 		}
 
-		this.selectElement = document.createElement('select');
+		this.selectElement = document.createElement('button');
+		this.selectElement.type = 'button';
 		this.selectElement.className = 'monaco-select-box';
+		this.selectElement.setAttribute('aria-haspopup', 'listbox');
+		this.selectElement.setAttribute('aria-expanded', 'false');
+		this.selectLabel = dom.append(this.selectElement, $('span.monaco-select-box-label', { id: defaultGenerator.nextId() }));
+		this.selectElement.setAttribute('aria-describedby', this.selectLabel.id);
 
 		if (typeof this.selectBoxOptions.ariaLabel === 'string') {
 			this.selectElement.setAttribute('aria-label', this.selectBoxOptions.ariaLabel);
@@ -182,6 +188,8 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 		// SetUp ContextView container to hold select Dropdown
 		this.contextViewProvider = contextViewProvider;
 		this.selectDropDownContainer = dom.$('.monaco-select-box-dropdown-container');
+		this.selectDropDownContainer.id = defaultGenerator.nextId();
+		this.selectElement.setAttribute('aria-controls', this.selectDropDownContainer.id);
 
 		// Setup container for select option details
 		this.selectionDetailsPane = dom.append(this.selectDropDownContainer, $('.select-box-details-pane'));
@@ -208,21 +216,8 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 
 	private registerListeners() {
 
-		// Parent native select keyboard listeners
-
-		this._register(dom.addStandardDisposableListener(this.selectElement, 'change', (e) => {
-			this.selected = e.target.selectedIndex;
-			this._onDidSelect.fire({
-				index: e.target.selectedIndex,
-				selected: e.target.value
-			});
-			if (!!this.options[this.selected] && !!this.options[this.selected].text) {
-				this.setTitle(this.options[this.selected].text);
-			}
-		}));
-
 		// Have to implement both keyboard and mouse controllers to handle disabled options
-		// Intercept mouse events to override normal select actions on parents
+		// The trigger is a button so accessibility actions cannot open an OS picker.
 
 		this._register(dom.addDisposableListener(this.selectElement, dom.EventType.CLICK, (e) => {
 			dom.EventHelper.stop(e);
@@ -259,20 +254,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 
 		this._register(dom.addDisposableListener(this.selectElement, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const event = new StandardKeyboardEvent(e);
-			let showDropDown = false;
-
-			// Create and drop down select list on keyboard select
-			if (isMacintosh) {
-				if (event.keyCode === KeyCode.DownArrow || event.keyCode === KeyCode.UpArrow || event.keyCode === KeyCode.Space || event.keyCode === KeyCode.Enter) {
-					showDropDown = true;
-				}
-			} else {
-				if (event.keyCode === KeyCode.DownArrow && event.altKey || event.keyCode === KeyCode.UpArrow && event.altKey || event.keyCode === KeyCode.Space || event.keyCode === KeyCode.Enter) {
-					showDropDown = true;
-				}
-			}
-
-			if (showDropDown) {
+			if (event.keyCode === KeyCode.DownArrow || event.keyCode === KeyCode.UpArrow || event.keyCode === KeyCode.Space || event.keyCode === KeyCode.Enter || event.keyCode === KeyCode.F4) {
 				this.showSelectDropDown();
 				dom.EventHelper.stop(e, true);
 			}
@@ -284,14 +266,15 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 	}
 
 	public setOptions(options: ISelectOptionItem[], selected?: number): void {
+		if (!arrays.equals(this.options, options) || (selected !== undefined && selected !== this.selected)) {
+			this.hideSelectDropDown(false);
+		}
 		if (!arrays.equals(this.options, options)) {
 			this.options = options;
-			this.selectElement.options.length = 0;
 			this._hasDetails = false;
 			this._cachedMaxDetailsHeight = undefined;
 
-			this.options.forEach((option, index) => {
-				this.selectElement.add(this.createOption(option.text, index, option.isDisabled));
+			this.options.forEach(option => {
 				if (typeof option.description === 'string') {
 					this._hasDetails = true;
 				}
@@ -302,10 +285,13 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 			this.select(selected);
 			// Set current = selected since this is not necessarily a user exit
 			this._currentSelection = this.selected;
+		} else {
+			this.select(this.selected);
 		}
 	}
 
 	public setEnabled(enable: boolean): void {
+		if (!enable) { this.hideSelectDropDown(false); }
 		this.selectElement.disabled = !enable;
 	}
 
@@ -328,10 +314,10 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 			this.selected = 0;
 		}
 
-		this.selectElement.selectedIndex = this.selected;
-		if (!!this.options[this.selected] && !!this.options[this.selected].text) {
-			this.setTitle(this.options[this.selected].text);
-		}
+		const text = this.options[this.selected]?.text ?? '';
+		this.selectLabel.textContent = text;
+		this.selectElement.value = this.options[this.selected]?.value ?? text;
+		this.setTitle(text);
 	}
 
 	public setAriaLabel(label: string): void {
@@ -440,21 +426,12 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 		this.selectList.style(this.styles);
 	}
 
-	private createOption(value: string, index: number, disabled?: boolean): HTMLOptionElement {
-		const option = document.createElement('option');
-		option.value = value;
-		option.text = value;
-		option.disabled = !!disabled;
-
-		return option;
-	}
-
 	// ContextView dropdown methods
 
 	private showSelectDropDown() {
 		this.selectionDetailsPane.textContent = '';
 
-		if (!this.contextViewProvider || this._isVisible) {
+		if (!this.contextViewProvider || this._isVisible || this.selectElement.disabled || !this.options.length) {
 			return;
 		}
 
@@ -472,9 +449,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 			layout: () => {
 				this.layoutSelectDropDown();
 			},
-			onHide: () => {
-				this.selectDropDownContainer.classList.remove('visible');
-			},
+			onHide: () => this.onContextViewHidden(),
 			anchorPosition: this._dropDownPosition
 		}, this.selectBoxOptions.optionsAsChildren ? this.container : undefined);
 
@@ -486,9 +461,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 			getAnchor: () => this.selectElement,
 			render: (container: HTMLElement) => this.renderSelectDropDown(container),
 			layout: () => this.layoutSelectDropDown(),
-			onHide: () => {
-				this.selectDropDownContainer.classList.remove('visible');
-			},
+			onHide: () => this.onContextViewHidden(),
 			anchorPosition: this._dropDownPosition
 		}, this.selectBoxOptions.optionsAsChildren ? this.container : undefined);
 
@@ -496,6 +469,15 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 		this._currentSelection = this.selected;
 		this._isVisible = true;
 		this.selectElement.setAttribute('aria-expanded', 'true');
+	}
+
+	private onContextViewHidden(): void {
+		// Another workbench popup can replace this one without blurring the list.
+		// Clear ownership so a later dispose never hides that unrelated popup.
+		if (this._isVisible) { this.select(this._currentSelection); }
+		this._isVisible = false;
+		this.selectElement.setAttribute('aria-expanded', 'false');
+		this.selectDropDownContainer.classList.remove('visible');
 	}
 
 	private hideSelectDropDown(focusSelect: boolean) {
@@ -759,7 +741,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 					return label;
 				},
 				getWidgetAriaLabel: () => localize({ key: 'selectBox', comment: ['Behave like native select dropdown element.'] }, "Select Box"),
-				getRole: () => isMacintosh ? '' : 'option',
+				getRole: () => 'option',
 				getWidgetRole: () => 'listbox'
 			}
 		}));
@@ -848,7 +830,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 				this._currentSelection = this.selected;
 
 				this._onDidSelect.fire({
-					index: this.selectElement.selectedIndex,
+					index: this.selected,
 					selected: this.options[this.selected].text
 
 				});
@@ -958,7 +940,7 @@ export class SelectBoxList extends Disposable implements ISelectBoxDelegate, ILi
 		if (this.selected !== this._currentSelection) {
 			this._currentSelection = this.selected;
 			this._onDidSelect.fire({
-				index: this.selectElement.selectedIndex,
+				index: this.selected,
 				selected: this.options[this.selected].text
 			});
 			if (!!this.options[this.selected] && !!this.options[this.selected].text) {

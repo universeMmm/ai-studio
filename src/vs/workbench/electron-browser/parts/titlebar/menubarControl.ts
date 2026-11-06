@@ -96,7 +96,9 @@ export class NativeMenubarControl extends MenubarControl {
 				const menuActions = getFlatContextMenuActions(menu.getActions({ shouldForwardArgs: true }));
 				this.populateMenuItems(menuActions, menubarMenu, menubarData.keybindings);
 				if (menubarMenu.items.length === 0) {
-					return false; // Menus are incomplete
+					// A presentation mode may intentionally remove an entire menu.
+					// Still publish the rest, replacing any previously visible items.
+					continue;
 				}
 				menubarData.menus[topLevelMenuName] = menubarMenu;
 			}

@@ -21,6 +21,7 @@ import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ConfirmedReason, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';
+import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { IChatWidget, IChatWidgetService } from '../chat.js';
 import { ToolsScope } from '../widget/input/chatSelectedTools.js';
 import { CHAT_CATEGORY } from './chatActions.js';
@@ -119,6 +120,8 @@ export class ConfigureToolsAction extends Action2 {
 	public static ID = 'workbench.action.chat.configureTools';
 
 	constructor() {
+		const isStudioSession = ContextKeyExpr.or(ChatContextKeys.chatSessionType.isEqualTo(''), ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType))!;
+		const canConfigureTools = ContextKeyExpr.and(ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent), ChatContextKeys.lockedToCodingAgent.negate());
 		super({
 			id: ConfigureToolsAction.ID,
 			title: localize('label', "Configure Tools..."),
@@ -127,12 +130,14 @@ export class ConfigureToolsAction extends Action2 {
 			category: CHAT_CATEGORY,
 			precondition: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			menu: [{
-				when: ContextKeyExpr.and(
-					ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-					ChatContextKeys.lockedToCodingAgent.negate(),
-				),
+				when: ContextKeyExpr.and(canConfigureTools, isStudioSession.negate()),
 				id: MenuId.ChatInput,
 				group: 'navigation',
+				order: 100,
+			}, {
+				when: ContextKeyExpr.and(canConfigureTools, isStudioSession),
+				id: MenuId.ChatInput,
+				group: 'tools',
 				order: 100,
 			}]
 		});

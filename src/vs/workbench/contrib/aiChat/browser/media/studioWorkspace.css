@@ -3,41 +3,64 @@
  *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* AI Studio conversation and session navigation. Workbench colors follow the active theme. */
+/* AI Studio conversation workspace with a quiet, continuous composer surface. */
 .monaco-workbench .studio-chat-editor {
 	--studio-line: var(--vscode-panel-border, color-mix(in srgb, currentColor 16%, transparent));
 	--studio-accent: var(--vscode-textLink-foreground);
+	--studio-composer-surface: #f4f4f4;
+	--studio-composer-border: #e6e6e6;
+	--studio-composer-focus: #999999;
+	--studio-composer-text: #242424;
+	--studio-composer-muted: #727272;
+	--studio-composer-placeholder: #6f6f6f;
+	--studio-composer-control: #e9e9e9;
+	--studio-composer-hover: #e2e2e2;
+	--studio-composer-send: #202020;
+	--studio-composer-send-text: #ffffff;
 	height: 100%;
 	overflow: hidden;
 	container-type: size;
 }
-.studio-thread-header {
-	height: 44px;
+.monaco-workbench.vs-dark .studio-chat-editor,
+.monaco-workbench.studio-dark .studio-chat-editor {
+	--studio-composer-surface: #303030;
+	--studio-composer-border: #3e3e3e;
+	--studio-composer-focus: #777777;
+	--studio-composer-text: #efefef;
+	--studio-composer-muted: #acacac;
+	--studio-composer-placeholder: #a0a0a0;
+	--studio-composer-control: #414141;
+	--studio-composer-hover: #3a3a3a;
+	--studio-composer-send: #f2f2f2;
+	--studio-composer-send-text: #202020;
+}
+.studio-chat-editor .studio-thread-header {
+	height: 40px;
 	box-sizing: border-box;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 8px;
-	padding: 0 clamp(12px, 3.5%, 36px);
+	gap: 12px;
+	padding: 0 clamp(14px, 3.5%, 32px);
 	border-bottom: 1px solid var(--studio-line);
 }
-.studio-thread-folder, .studio-header-button, .studio-starter, .studio-nav-button, .studio-session-row {
+.studio-basic .studio-chat-editor .studio-thread-header { display: none; }
+.studio-chat-editor .studio-thread-folder,
+.studio-chat-editor .studio-composer-approval {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 9px;
 	min-width: 0;
-}
-.studio-thread-folder, .studio-header-button {
 	color: var(--vscode-descriptionForeground);
 	font-family: inherit;
 	font-size: 12px;
 }
-.studio-thread-folder span:not(.codicon), .studio-session-row .session-title {
+.studio-chat-editor .studio-thread-project {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.studio-header-button, .studio-starter, .studio-session-navigation button {
+.studio-chat-editor .studio-composer-approval {
 	background: transparent;
 	color: inherit;
 	border: none;
@@ -45,166 +68,319 @@
 	font: inherit;
 	text-align: start;
 }
-.studio-header-button:focus-visible, .studio-starter:focus-visible, .studio-session-navigation button:focus-visible {
-	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
+.studio-chat-editor .studio-composer-approval:focus-visible {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
 }
-.studio-chat-editor .studio-header-button {
-	border-radius: 6px;
-	padding: 5px 8px;
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
+.studio-chat-editor .studio-composer-approval {
+	flex-shrink: 0;
+	gap: 6px;
+	border-radius: 16px;
+	padding: 6px;
+	min-height: 32px;
+	font-size: 13px;
+	font-weight: 400;
+	color: var(--studio-composer-muted);
+	white-space: nowrap;
 }
-.studio-header-button:hover, .studio-session-navigation button:hover { background: var(--vscode-list-hoverBackground); }
-.studio-thread {
+.studio-chat-editor .studio-composer-approval:hover { background: var(--studio-composer-hover); color: var(--studio-composer-text); }
+.studio-chat-editor .studio-thread {
 	margin: auto;
-	width: min(800px, calc(100% - clamp(12px, 6%, 72px)));
+	width: min(900px, calc(100% - clamp(8px, 12cqw, 100px)));
 }
-.studio-chat-editor .studio-welcome[hidden], .studio-chat-editor .studio-starters[hidden] { display: none; }
+.studio-chat-editor .studio-welcome[hidden] { display: none; }
+.studio-chat-editor .chat-input-container .chat-attached-context-attachment.implicit.disabled { display: none; }
+.studio-chat-editor .chat-input-container > .chat-attachments-container > .chat-attached-context {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 8px;
+	width: 100%;
+	min-width: 0;
+}
+.studio-chat-editor .chat-input-container .chat-attached-context-attachment.studio-attachment-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	flex: 0 1 156px;
+	width: 156px;
+	min-width: 0;
+	max-width: 100%;
+	height: 124px;
+	box-sizing: border-box;
+	padding: 0;
+	border: 1px solid var(--studio-composer-border);
+	border-radius: 12px;
+	background: var(--vscode-editorWidget-background, var(--studio-composer-surface));
+	color: var(--studio-composer-text);
+	overflow: hidden;
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.studio-chat-editor .chat-input-container .studio-attachment-card:hover {
+	border-color: var(--studio-composer-muted);
+}
+.studio-chat-editor .chat-input-container .studio-attachment-card:focus-visible {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+.studio-chat-editor .studio-attachment-preview {
+	position: relative;
+	flex: 1;
+	width: 100%;
+	min-height: 0;
+	background: var(--vscode-editor-background);
+	overflow: hidden;
+}
+.studio-chat-editor .studio-attachment-fallback {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	height: 100%;
+	color: var(--studio-composer-muted);
+}
+.studio-chat-editor .studio-attachment-fallback[hidden] { display: none; }
+.studio-chat-editor .studio-attachment-fallback > .codicon { font-size: 28px; }
+.studio-chat-editor .studio-attachment-format { font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+.studio-chat-editor .studio-attachment-thumbnail {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	opacity: 0;
+}
+.studio-chat-editor .studio-attachment-thumbnail.loaded { opacity: 1; }
+.studio-chat-editor .studio-attachment-card[data-preview="system"] .studio-attachment-thumbnail {
+	object-fit: contain;
+}
+.studio-chat-editor .studio-attachment-footer {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 31px;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	padding: 0 9px;
+	border-top: 1px solid var(--studio-composer-border);
+	font-size: 11px;
+	line-height: 18px;
+}
+.studio-chat-editor .studio-attachment-type-icon { flex: 0 0 auto; font-size: 14px; color: var(--studio-composer-muted); }
+.studio-chat-editor .studio-attachment-footer > [hidden] { display: none; }
+.studio-chat-editor .studio-attachment-card[data-attachment-kind="image"] .studio-attachment-footer > .chat-attached-context-pill { display: none; }
+.studio-chat-editor .studio-attachment-footer > .monaco-icon-label,
+.studio-chat-editor .studio-attachment-footer > .chat-attached-context-custom-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.studio-chat-editor .studio-attachment-footer > .monaco-icon-label::before { display: none; }
+.studio-chat-editor .studio-attachment-footer .monaco-icon-name-container { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.studio-chat-editor .chat-input-container .chat-attached-context-attachment.studio-attachment-card > .monaco-button.codicon-close {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--studio-composer-border);
+	border-radius: 50%;
+	color: var(--studio-composer-text);
+	background: var(--studio-composer-surface);
+	box-shadow: 0 1px 3px #0002;
+	font-size: 13px;
+	opacity: .88;
+}
+.studio-chat-editor .chat-input-container .studio-attachment-card > .monaco-button.codicon-close:hover,
+.studio-chat-editor .chat-input-container .studio-attachment-card:focus-within > .monaco-button.codicon-close {
+	background: var(--studio-composer-hover);
+	opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+	.studio-chat-editor .chat-input-container .chat-attached-context-attachment.studio-attachment-card { transition: none; }
+}
 .studio-chat-editor.studio-new-session .chat-welcome-view-container,
 .studio-chat-editor.studio-new-session .chat-getting-started-tip-container { display: none !important; }
-.studio-new-session .interactive-session {
+.studio-chat-editor.studio-new-session .interactive-session {
 	box-sizing: border-box;
 	justify-content: safe center;
 	overflow-y: auto;
-	padding-block: 0 clamp(12px, 6vh, 80px);
+	padding-block: 24px clamp(40px, 14cqh, 130px);
 }
-.studio-welcome {
+.studio-chat-editor.studio-new-session .studio-thread { max-width: 840px; }
+.studio-chat-editor .studio-welcome {
+	flex: 0 0 auto;
 	display: flex;
 	flex-direction: column;
-	align-items: flex-start;
-	gap: 18px;
-	margin: 0 16px 18px;
+	align-items: center;
+	gap: 8px;
+	margin: 0 12px 28px;
+	text-align: center;
 }
-.studio-agent-mark {
-	height: 48px;
-	width: 48px;
-	background: url('../../../../browser/media/code-icon.png') center / contain no-repeat;
-}
-.studio-welcome h1 {
+.studio-chat-editor .studio-welcome h1 {
 	color: var(--vscode-editor-foreground);
-	font: 500 clamp(30px, 5.4cqw, 48px)/1.16 Georgia, 'Songti SC', 'Noto Serif CJK SC', serif;
-	letter-spacing: -.045em;
+	font-family: inherit;
+	font-size: clamp(24px, 3.5cqw, 28px);
+	font-weight: 500;
+	line-height: 1.4;
+	letter-spacing: -.02em;
 	margin: 0;
 	text-wrap: balance;
 }
-.studio-new-session .interactive-input-part { flex: 0 0 auto; }
+.studio-chat-editor .interactive-input-part { padding-bottom: 24px; }
+.studio-chat-editor.studio-new-session .interactive-input-part { flex: 0 0 auto; padding-bottom: 4px; }
 .studio-chat-editor .interactive-session .chat-input-container {
-	border-radius: 15px;
-	border: 1px solid color-mix(in srgb, var(--vscode-foreground) 22%, var(--vscode-editor-background));
-	box-shadow: 0 3px 12px color-mix(in srgb, var(--vscode-widget-shadow, #000) 13%, transparent);
+	/* Keep the editor and native toolbar on one continuous surface. These
+	 * tokens are local to the composer, leaving the rest of the IDE intact. */
+	--vscode-input-background: var(--studio-composer-surface);
+	--vscode-input-foreground: var(--studio-composer-text);
+	--vscode-input-placeholderForeground: var(--studio-composer-placeholder);
+	--vscode-editor-placeholder-foreground: var(--studio-composer-placeholder);
+	--vscode-icon-foreground: var(--studio-composer-muted);
+	--vscode-toolbar-hoverBackground: var(--studio-composer-control);
+	--vscode-button-background: var(--studio-composer-send);
+	--vscode-button-foreground: var(--studio-composer-send-text);
+	--vscode-button-hoverBackground: color-mix(in srgb, var(--studio-composer-send) 88%, var(--studio-composer-surface));
+	--vscode-button-secondaryBackground: var(--studio-composer-control);
+	--vscode-button-secondaryForeground: var(--studio-composer-muted);
+	--vscode-focusBorder: var(--studio-composer-focus);
+	border-radius: 24px;
+	padding-top: 0;
+	padding-bottom: 10px;
+	border: 1px solid var(--studio-composer-border);
+	background: var(--studio-composer-surface);
+	box-shadow: none;
 }
 .studio-chat-editor .interactive-session .chat-input-container.focused {
-	border-color: var(--vscode-focusBorder);
+	border-color: var(--studio-composer-border);
+	box-shadow: none;
 }
-.studio-chat-editor .interactive-session .interactive-input-editor { margin-top: 5px; }
-.studio-starters {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+.studio-chat-editor .interactive-session .interactive-input-editor { margin-top: 0; }
+/* Monaco renders this placeholder on ::after with a literal color captured at
+ * creation time. Resolve the current theme token here when switching themes. */
+.studio-chat-editor .chat-editor-container .monaco-editor [class*="ced-chat-session-detail"]::after {
+	color: var(--vscode-input-placeholderForeground);
+}
+.studio-chat-editor .interactive-session .chat-input-toolbars {
 	gap: 8px;
-	margin: 2px 16px 0;
+	margin-top: 4px;
+	min-height: 32px;
+	padding-inline: 4px;
 }
-.studio-chat-editor .studio-starter {
-	font-size: 12px;
-	line-height: 1.4;
-	border: 1px solid var(--studio-line);
-	border-radius: 9px;
-	padding: 12px 10px;
-	color: var(--vscode-descriptionForeground);
+.studio-chat-editor .chat-input-toolbars > .studio-composer-approval { order: -1; }
+.studio-chat-editor .chat-input-toolbars > .chat-execute-toolbar { flex: 0 0 auto; }
+.studio-chat-editor .chat-input-toolbar .monaco-action-bar,
+.studio-chat-editor .chat-input-toolbar .actions-container { width: 100%; }
+.studio-chat-editor .interactive-session .chat-input-toolbar .monaco-action-bar .actions-container > .action-item + .action-item::before { display: none; }
+.studio-chat-editor .chat-input-toolbar .action-item.studio-composer-leading {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+	overflow: visible;
 }
-.studio-chat-editor .studio-starter:hover, .studio-chat-editor .studio-starter:focus-visible {
-	color: var(--vscode-foreground);
-	background: var(--vscode-list-hoverBackground);
-	border-color: color-mix(in srgb, var(--studio-accent) 48%, var(--studio-line));
+.studio-chat-editor .chat-input-toolbar .studio-composer-leading > .action-label {
+	box-sizing: border-box;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	padding: 7px;
 }
-.studio-starter > .codicon:first-child { color: var(--studio-accent); }
-.studio-starter > .codicon:last-child { margin-left: auto; font-size: 12px; }
-.studio-chat-editor .interactive-item-container { padding: 12px 16px 16px; }
-.studio-chat-editor .interactive-response .rendered-markdown { line-height: 1.6; }
+.studio-chat-editor .interactive-session .chat-input-toolbar .studio-composer-leading > .action-label.codicon-add { font-size: 19px; }
+.studio-chat-editor .interactive-session .chat-input-toolbar .monaco-action-bar .actions-container > .action-item:has(.studio-model-picker) {
+	margin-left: auto;
+	min-width: 0;
+	flex-shrink: 1;
+}
+.studio-chat-editor .interactive-session .chat-input-toolbar .monaco-action-bar .actions-container > .action-item:has(.studio-model-picker)::before { display: none; }
+/* Style the existing native actions; cancellation uses stop-circle, while
+ * older hosts may still contribute debug-stop. Keep the command and ARIA intact. */
+.studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .action-item:has(> .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle)) {
+	border-radius: 50%;
+}
+.studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .action-item > .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle) {
+	font-size: 20px;
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground) !important;
+}
+/* Match the native send-button selector: its 22px size otherwise wins while
+ * the Studio padding applies, leaving the glyph outside the circle. */
+.monaco-workbench .studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .monaco-action-bar .action-item:has(> .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle)) > .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle) {
+	box-sizing: border-box;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 50%;
+	line-height: 1;
+}
+.studio-chat-editor .chat-execute-toolbar .action-item > .action-label:is(.codicon-debug-stop, .codicon-stop-circle)::before {
+	content: '';
+	display: block;
+	width: 12px;
+	height: 12px;
+	border-radius: 2px;
+	background: currentColor;
+}
+.studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .action-item.disabled > .action-label.codicon-arrow-up {
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground) !important;
+}
+.studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .action-item:not(.disabled) > .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle):hover {
+	background: var(--vscode-button-hoverBackground);
+}
+.studio-chat-editor .interactive-session .chat-input-toolbars > .chat-execute-toolbar .action-item:has(> .action-label:is(.codicon-arrow-up, .codicon-debug-stop, .codicon-stop-circle):focus-visible) {
+	outline: 2px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+.studio-chat-editor .interactive-item-container { padding: 16px 18px 20px; }
+.studio-chat-editor .interactive-response .rendered-markdown { font-size: 15px; line-height: 1.75; }
+.studio-basic .studio-chat-editor .interactive-item-container:is(.interactive-request, .interactive-response[data-agent-id="ai-studio.chat"]) > .header .avatar-container,
+.studio-basic .studio-chat-editor .interactive-item-container:is(.interactive-request, .interactive-response[data-agent-id="ai-studio.chat"]) > .header .username { display: none; }
+.studio-basic .studio-chat-editor .interactive-item-container:is(.interactive-request, .interactive-response[data-agent-id="ai-studio.chat"]) > .header { min-height: 0; margin-bottom: 4px; }
+.studio-chat-editor .interactive-item-container.interactive-request { padding-top: 24px; }
+.studio-chat-editor .interactive-item-container.interactive-request .value { display: flex; flex-direction: column; align-items: flex-end; }
+.studio-chat-editor .interactive-item-container.interactive-request .value > * { max-width: 100%; }
 .studio-chat-editor .interactive-session .interactive-item-container.interactive-request .value .rendered-markdown {
 	box-sizing: border-box;
 	overflow-wrap: anywhere;
 	background: var(--vscode-chat-requestBubbleBackground, var(--vscode-sideBar-background));
-	border: 1px solid var(--studio-line);
-	border-radius: 12px;
-	padding: 10px 15px;
+	border: none;
+	border-radius: 18px;
+	padding: 12px 16px;
+	font-size: 15px;
+	line-height: 1.6;
 }
-.studio-chat-editor .chat-tool-invocation-part { border-radius: 8px; }
-.studio-session-navigation {
-	display: flex;
-	height: 100%;
-	flex-direction: column;
-	box-sizing: border-box;
-	padding: 12px 10px;
-	color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+.studio-chat-editor .chat-tool-invocation-part { border-radius: 9px; }
+
+@container (max-width: 560px) {
+	.studio-chat-editor .studio-thread-header { gap: 6px; padding-inline: 14px; }
+	.studio-chat-editor .studio-welcome { margin-bottom: 20px; }
+	.studio-chat-editor .studio-composer-approval span:not(.codicon) { display: none; }
+	.studio-chat-editor .studio-composer-approval { padding: 7px; }
 }
-.studio-session-navigation .studio-nav-button {
-	padding: 8px 10px;
-	width: 100%;
-	border-radius: 7px;
-	font-size: 13px;
-}
-.studio-session-navigation .studio-new-button {
-	background: var(--vscode-button-background);
-	color: var(--vscode-button-foreground);
-	justify-content: center;
-	font-weight: 600;
-	min-height: 34px;
-	margin-bottom: 10px;
-}
-.studio-session-navigation .studio-new-button .codicon { color: inherit; }
-.studio-session-navigation .studio-new-button:hover { background: var(--vscode-button-hoverBackground); }
-.studio-nav-section {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border));
-	padding: 12px 7px 6px;
-	margin-top: 12px;
-}
-.studio-nav-section h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--vscode-descriptionForeground); }
-.studio-session-navigation .studio-filter-toggle {
-	display: grid;
-	place-items: center;
-	width: 25px;
-	height: 25px;
-	border-radius: 5px;
-}
-.studio-nav-filter {
-	box-sizing: border-box;
-	border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-	color: var(--vscode-input-foreground);
-	background: var(--vscode-input-background);
-	border-radius: 6px;
-	margin: 2px 0 8px;
-	padding: 6px 8px;
-	width: 100%;
-	font: inherit;
-}
-.studio-session-list { overflow: auto; min-height: 0; flex: 1; }
-.studio-session-list .studio-session-row {
-	width: 100%;
-	box-sizing: border-box;
-	min-height: 32px;
-	padding: 6px 8px;
-	border-radius: 6px;
-	font-size: 12px;
-}
-.studio-session-row .codicon { color: var(--vscode-descriptionForeground); font-size: 14px; }
-.studio-session-row[aria-current=true] {
-	color: var(--vscode-list-activeSelectionForeground);
-	background: var(--vscode-list-activeSelectionBackground);
-}
-.studio-session-row[aria-current=true] .codicon { color: inherit; }
-.studio-session-empty { color: var(--vscode-descriptionForeground); margin: 9px 8px; line-height: 1.5; font-size: 12px; }
-.studio-nav-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border); }
-@container (max-width: 640px) {
-	.studio-starters { grid-template-columns: 1fr; gap: 0; }
-	.studio-chat-editor .studio-starter { border: none; border-bottom: 1px solid var(--studio-line); border-radius: 0; padding: 9px 5px; }
-	.studio-welcome { margin-bottom: 10px; gap: 10px; }
+@container (max-width: 380px) {
+	.studio-chat-editor .studio-thread-header { height: 40px; }
+	.studio-chat-editor .interactive-session .chat-input-toolbars { gap: 4px; padding-inline: 0; }
+	.studio-chat-editor .studio-welcome h1 { font-size: 24px; }
 }
 @container (max-height: 440px) {
-	.studio-new-session .interactive-session { padding-block: 10px; }
-	.studio-agent-mark { display: none; }
-	.studio-welcome h1 { font-size: 28px; }
+	.studio-chat-editor.studio-new-session .interactive-session { padding-block: 16px; }
+	.studio-chat-editor .studio-welcome { gap: 8px; margin-bottom: 18px; }
+	.studio-chat-editor .studio-welcome h1 { font-size: 24px; }
+}
+@container (max-height: 300px) {
+	.studio-chat-editor.studio-new-session .interactive-session { justify-content: flex-start; }
+	.studio-chat-editor .studio-welcome { margin-bottom: 12px; }
 }

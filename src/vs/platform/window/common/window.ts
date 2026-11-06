@@ -138,27 +138,10 @@ export const enum MenuStyleConfiguration {
 	INHERIT = 'inherit',
 }
 
-export function hasNativeContextMenu(configurationService: IConfigurationService, titleBarStyle?: TitlebarStyle): boolean {
-	if (isWeb) {
-		return false;
-	}
-
-	const nativeTitle = hasNativeTitlebar(configurationService, titleBarStyle);
-	const windowConfigurations = configurationService.getValue<IWindowSettings | undefined>('window');
-
-	if (windowConfigurations?.menuStyle === MenuStyleConfiguration.NATIVE) {
-		// Do not support native menu with custom title bar
-		if (!isMacintosh && !nativeTitle) {
-			return false;
-		}
-		return true;
-	}
-
-	if (windowConfigurations?.menuStyle === MenuStyleConfiguration.CUSTOM) {
-		return false;
-	}
-
-	return nativeTitle; // Default to inherit from title bar style
+export function hasNativeContextMenu(_configurationService: IConfigurationService, _titleBarStyle?: TitlebarStyle): boolean {
+	// Application dropdowns and context menus always use the shared HTML menu.
+	// Retain the parameters and ignore old native/inherit settings for compatibility.
+	return false;
 }
 
 export function hasNativeMenu(configurationService: IConfigurationService, titleBarStyle?: TitlebarStyle): boolean {

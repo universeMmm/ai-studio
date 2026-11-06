@@ -34,6 +34,7 @@ import { getContextMenuActions } from '../../../../platform/actions/browser/menu
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
 import { Extensions } from '../../panecomposite.js';
+import { isStudioAdvancedMode, STUDIO_ADVANCED_MODE_CONFIG } from '../../../common/studioMode.js';
 
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
@@ -97,13 +98,14 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		@IMenuService menuService: IMenuService,
 		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
+		const partOptions = {
+			hasTitle: true,
+			trailingSeparator: true,
+			borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
+		};
 		super(
 			Parts.AUXILIARYBAR_PART,
-			{
-				hasTitle: true,
-				trailingSeparator: true,
-				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
-			},
+			partOptions,
 			AuxiliaryBarPart.activeViewSettingsKey,
 			ActiveAuxiliaryContext.bindTo(contextKeyService),
 			AuxiliaryBarFocusContext.bindTo(contextKeyService),
@@ -127,6 +129,20 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			extensionService,
 			menuService,
 		);
+
+		const updateStudioTitle = () => {
+			const hasTitle = isStudioAdvancedMode(configurationService) || this.getActivePaneComposite()?.getId() !== 'workbench.view.aiStudio.inspector';
+			partOptions.hasTitle = hasTitle;
+			this.titleArea?.classList.toggle('studio-hidden-title', !hasTitle);
+			if (this.dimension && this.contentPosition) {
+				this.layout(this.dimension.width, this.dimension.height, this.contentPosition.top, this.contentPosition.left);
+			}
+		};
+		this._register(this.onDidPaneCompositeOpen(updateStudioTitle));
+		this._register(this.onDidPaneCompositeClose(updateStudioTitle));
+		this._register(configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(STUDIO_ADVANCED_MODE_CONFIG)) { updateStudioTitle(); }
+		}));
 
 		// Track visible view containers for auto-hide
 		this.visibleViewContainersTracker = this._register(instantiationService.createInstance(VisibleViewContainersTracker, ViewContainerLocation.AuxiliaryBar));

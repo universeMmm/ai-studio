@@ -1889,6 +1889,15 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
+.chat-input-picker-item .action-label.model-picker-split .model-picker-section[aria-disabled="true"] {
+	color: var(--vscode-disabledForeground);
+	cursor: default;
+}
+
+.chat-input-picker-item .action-label.model-picker-split .model-picker-section[aria-disabled="true"]:hover {
+	background-color: transparent;
+}
+
 .chat-input-picker-item .action-label.model-picker-split .model-picker-section[aria-expanded="true"] {
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
@@ -1903,6 +1912,212 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+
+.chat-input-picker-item .action-label.studio-model-picker .model-picker-name {
+	max-width: 300px;
+	height: 28px;
+	gap: 6px;
+	padding: 2px 6px;
+	font-size: 14px;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--studio-pill-foreground);
+}
+.chat-input-picker-item .action-label.studio-model-picker .model-picker-name:hover,
+.chat-input-picker-item .action-label.studio-model-picker .model-picker-name[aria-expanded="true"] { background: transparent; }
+
+.chat-input-picker-item .action-label.studio-model-picker.compact .model-picker-name {
+	max-width: 180px;
+	gap: 4px;
+	padding-inline: 8px;
+}
+
+.chat-input-picker-item .action-label.studio-model-picker {
+	--studio-pill-foreground: #555555;
+	--studio-pill-strong: #555555;
+	padding: 0;
+}
+.studio-dark .chat-input-picker-item .action-label.studio-model-picker,
+.vs-dark .chat-input-picker-item .action-label.studio-model-picker {
+	--studio-pill-foreground: #ededed;
+	--studio-pill-strong: #b5b5b5;
+}
+.studio-model-picker .studio-picker-effort,
+.studio-model-picker .model-picker-name > .codicon { flex-shrink: 0; }
+.studio-model-picker .studio-picker-effort { color: var(--studio-pill-strong); }
+.studio-model-picker .studio-effort-active .studio-picker-effort { color: #337fea; }
+.studio-model-picker .studio-effort-ultra .studio-picker-effort { color: #ad79f4; }
+/* A solid bolt matches the compact intensity control; keep the accessible
+ * icon element instead of introducing another interactive target. */
+.studio-model-picker .model-picker-name > .codicon-zap,
+.studio-reasoning-heading > .codicon-zap {
+	display: inline-block;
+	width: 16px;
+	height: 18px;
+	background: currentColor;
+	clip-path: polygon(50% 0, 8% 55%, 41% 55%, 30% 100%, 92% 39%, 60% 39%, 73% 0);
+}
+.studio-model-picker .model-picker-name > .codicon-zap::before,
+.studio-reasoning-heading > .codicon-zap::before { display: none; }
+.studio-model-picker .model-picker-name > .codicon-chevron-down { opacity: .65; }
+
+.studio-reasoning-popover {
+	--studio-reasoning-accent: #337fea;
+	--studio-reasoning-track: #e4e4e4;
+	--studio-reasoning-tick: #aaaaaa;
+	--studio-reasoning-surface: #f7f7f7;
+	--studio-reasoning-border: #00000016;
+	--studio-reasoning-muted: #777777;
+	box-sizing: border-box;
+	width: 320px;
+	max-width: calc(100vw - 24px);
+	padding: 14px 15px 16px;
+	margin-bottom: 8px;
+	border: 1px solid var(--studio-reasoning-border);
+	border-radius: 20px;
+	background: var(--studio-reasoning-surface);
+	color: var(--vscode-menu-foreground);
+	box-shadow: 0 8px 24px #0000001f, 0 1px 3px #0000000a;
+	animation: studio-reasoning-popover-in 160ms cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes studio-reasoning-popover-in {
+	from { opacity: 0; transform: translateY(5px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+.studio-dark .studio-reasoning-popover,
+.vs-dark .studio-reasoning-popover {
+	--studio-reasoning-accent: #4792ff;
+	--studio-reasoning-track: #424242;
+	--studio-reasoning-tick: #818181;
+	--studio-reasoning-surface: #2c2c2c;
+	--studio-reasoning-border: #ffffff13;
+	--studio-reasoning-muted: #aaaaaa;
+	box-shadow: 0 12px 32px #00000038, 0 1px 4px #0000001f;
+}
+.studio-reasoning-popover button { border: 0; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+.studio-reasoning-popover button:disabled { color: var(--studio-reasoning-muted); opacity: .45; cursor: default; }
+/* The context view is outside the composer: override the workbench's unconditional focus ring locally. */
+.monaco-workbench .studio-reasoning-popover :is(button, input):focus { outline: none; }
+.monaco-workbench .studio-reasoning-popover.keyboard-focus :is(button, input):focus {
+	outline: 2px solid var(--studio-reasoning-accent);
+	outline-offset: 3px;
+}
+.studio-reasoning-popover[data-effort="ultra"] {
+	--studio-reasoning-accent: #ab73ed;
+}
+.studio-reasoning-popover[data-effort="default"] { --studio-reasoning-accent: var(--studio-reasoning-muted); }
+.studio-reasoning-heading { display: grid; grid-template-columns: 24px minmax(0, 1fr) 24px; align-items: center; gap: 6px; }
+.studio-reasoning-heading > .codicon { font-size: 18px; color: var(--studio-reasoning-accent); transition: color 420ms ease-out; }
+.studio-reasoning-level { text-align: center; font-size: 18px; font-weight: 500; color: var(--studio-reasoning-accent); transition: color 420ms ease-out; }
+.studio-reasoning-popover .studio-reasoning-reset { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--studio-reasoning-muted); }
+.studio-reasoning-popover .studio-reasoning-reset:not(:disabled):hover { background: var(--vscode-toolbar-hoverBackground); }
+.studio-reasoning-popover .studio-reasoning-model { display: flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; margin: 0 auto; padding: 2px 4px; border-radius: 7px; font-size: 14px; color: var(--studio-reasoning-muted); }
+.studio-reasoning-model span:not(.codicon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-reasoning-model .codicon { flex-shrink: 0; font-size: 12px; }
+.studio-reasoning-popover .studio-reasoning-model:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
+.studio-reasoning-control {
+	--studio-reasoning-progress: 0%;
+	--studio-reasoning-thumb-offset: 14px;
+	position: relative;
+	height: 28px;
+	margin-top: 18px;
+}
+.studio-reasoning-track {
+	position: absolute;
+	inset: 2px 0;
+	overflow: hidden;
+	border-radius: 999px;
+	background: var(--studio-reasoning-track);
+	box-shadow: inset 0 0 0 1px var(--studio-reasoning-border);
+	pointer-events: none;
+}
+.studio-reasoning-ticks {
+	position: absolute;
+	inset: 0 12px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.studio-reasoning-ticks > span { width: 4px; height: 4px; border-radius: 50%; background: var(--studio-reasoning-tick); }
+.studio-reasoning-fill {
+	position: absolute;
+	inset: 0;
+	opacity: 0;
+	background: #347ff6;
+	/* Align the fill's edge with the centre of the native thumb at every stop. */
+	clip-path: inset(0 calc(100% - var(--studio-reasoning-progress) - var(--studio-reasoning-thumb-offset)) 0 0);
+	transition: clip-path 180ms ease-out, opacity 120ms ease-out;
+}
+.studio-reasoning-control.has-fill .studio-reasoning-fill { opacity: 1; }
+.studio-reasoning-fill::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(105deg, #3e59dc 0%, #7351df 40%, #b778f2 72%, #7956d7 100%);
+	opacity: 0;
+	transition: opacity 420ms ease-out;
+}
+.studio-reasoning-control.is-ultra .studio-reasoning-fill::before { opacity: 1; }
+.studio-reasoning-fill::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background:
+		radial-gradient(circle at 8% 65%, #ffffff70 0 1px, transparent 1.5px),
+		radial-gradient(circle at 19% 28%, #ffffffb0 0 1px, transparent 1.5px),
+		radial-gradient(circle at 32% 74%, #ffffff60 0 1.5px, transparent 2px),
+		radial-gradient(circle at 46% 32%, #ffffff8a 0 1px, transparent 1.5px),
+		radial-gradient(circle at 63% 70%, #ffffff75 0 1px, transparent 1.5px),
+		radial-gradient(circle at 76% 35%, #ffffffa0 0 1px, transparent 1.5px),
+		radial-gradient(ellipse at 50% 50%, #d7c4ff25, transparent 60%);
+	background-size: 144px 100%, 144px 100%, 144px 100%, 144px 100%, 144px 100%, 144px 100%, 432px 100%;
+	background-repeat: repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x;
+	animation: studio-reasoning-flow 12s linear infinite;
+}
+@keyframes studio-reasoning-flow {
+	0% { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
+	50% { background-position: -72px 0, -72px 0, -72px 0, -72px 0, -72px 0, -72px 0, -216px 0; }
+	100% { background-position: -144px 0, -144px 0, -144px 0, -144px 0, -144px 0, -144px 0, -432px 0; }
+}
+.studio-reasoning-slider {
+	appearance: none;
+	-webkit-appearance: none;
+	position: relative;
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	height: 28px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	cursor: pointer;
+}
+.studio-reasoning-slider::-webkit-slider-runnable-track { background: transparent; }
+.studio-reasoning-slider::-moz-range-track { background: transparent; }
+.studio-reasoning-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border: 1px solid #ffffffb3; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 4px #0000001c; }
+.studio-reasoning-slider::-moz-range-thumb { width: 26px; height: 26px; border: 1px solid #ffffffb3; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 4px #0000001c; }
+.studio-reasoning-slider:disabled { cursor: default; }
+.studio-reasoning-control.is-disabled { opacity: .55; }
+.studio-reasoning-control:not(.has-fill) .studio-reasoning-fill::after,
+.studio-reasoning-control.is-disabled .studio-reasoning-fill::after,
+.monaco-reduce-motion .studio-reasoning-fill::after { animation: none; }
+.studio-reasoning-control.is-disabled .studio-reasoning-fill,
+.monaco-reduce-motion .studio-reasoning-fill,
+.monaco-reduce-motion .studio-reasoning-fill::before,
+.monaco-reduce-motion .studio-reasoning-heading > .codicon,
+.monaco-reduce-motion .studio-reasoning-level { transition: none; }
+.monaco-reduce-motion .studio-reasoning-popover { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+	.studio-reasoning-popover { animation: none; }
+	.studio-reasoning-fill::after { animation: none; }
+	.studio-reasoning-fill,
+	.studio-reasoning-fill::before,
+	.studio-reasoning-heading > .codicon,
+	.studio-reasoning-level { transition: none; }
+}
+.studio-reasoning-unavailable { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--studio-reasoning-muted); }
 
 .chat-input-picker-item .action-label.model-picker-split .model-picker-effort,
 .chat-input-picker-item .action-label.model-picker-split .model-picker-tokens {

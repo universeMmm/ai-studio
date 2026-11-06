@@ -10,8 +10,13 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "package:mac": "node build/darwin/package-studio.ts",
+    "test:ai:package": "node test/integration/ai-package/run.mjs",
     "test": "echo Please run any of the test scripts from the scripts folder.",
     "test:ai": "tsgo --project test/unit/ai/tsconfig.json && mocha --ui tdd --timeout 20000 --require ./test/unit/ai/bootstrap.mjs \".build/test-ai/test/{unit/ai,smoke}/*.test.js\" \".build/test-ai/src/vs/{platform/ai,workbench/contrib/aiDiffApply}/test/**/*.test.js\"",
+    "test:ai:network": "node test/integration/ai-network/run.mjs",
+    "test:ai:capabilities": "node test/integration/ai-capabilities/run.mjs",
+    "test:ai:opencode": "node test/integration/ai-opencode/run.mjs",
     "test-browser": "npx playwright install && node test/unit/browser/index.js",
     "test-browser-no-install": "node test/unit/browser/index.js",
     "test-node": "mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit",

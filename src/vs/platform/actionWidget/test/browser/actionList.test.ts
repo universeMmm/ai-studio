@@ -35,6 +35,7 @@ function separator(label?: string): IActionListItem<ITestActionItem> {
 
 function createActionListWidget(disposables: ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, options: {
 	readonly items?: readonly IActionListItem<ITestActionItem>[];
+	readonly actionItemHeight?: number;
 	readonly onFilter?: (filter: string, cancellationToken: CancellationToken) => Promise<readonly IActionListItem<ITestActionItem>[]>;
 }): ActionListWidget<ITestActionItem> {
 	const instantiationService = disposables.add(new TestInstantiationService());
@@ -59,7 +60,7 @@ function createActionListWidget(disposables: ReturnType<typeof ensureNoDisposabl
 		options.items ?? [action('initial')],
 		delegate,
 		undefined,
-		{ showFilter: true },
+		{ showFilter: true, actionItemHeight: options.actionItemHeight },
 	));
 
 	if (widget.filterContainer) {
@@ -148,6 +149,20 @@ function createActionList(disposables: ReturnType<typeof ensureNoDisposablesAreL
 
 suite('ActionListWidget', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('custom action height keeps virtual row geometry aligned with headers and separators', () => {
+		const widget = createActionListWidget(disposables, {
+			actionItemHeight: 30,
+			items: [{ kind: ActionListItemKind.Header, label: 'Models' }, action('one'), separator(), action('two')],
+		});
+		const rows = widget.domNode.querySelectorAll<HTMLElement>('.monaco-list-row.action');
+		assert.strictEqual(rows.length, 2);
+		assert.strictEqual(widget.lineHeight, 30);
+		assert.strictEqual(rows[0].getBoundingClientRect().height, 30);
+		assert.strictEqual(rows[1].getBoundingClientRect().height, 30);
+		assert.strictEqual(rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top, 38);
+		assert.strictEqual(createActionListWidget(disposables, {}).lineHeight, 24);
+	});
 
 	test('runs dynamic filter updates immediately', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 		const filters: string[] = [];

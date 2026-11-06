@@ -247,6 +247,7 @@ import './contrib/imageCarousel/browser/imageCarousel.contribution.js';
 import '../platform/ai/browser/ai.contribution.js';
 import './contrib/aiChat/browser/aiStudioChatAgent.js';
 import './contrib/aiChat/browser/aiCommands.js';
+import './contrib/studioShell/browser/studioSettings.contribution.js';
 import './contrib/aiStatusBar/browser/aiStatusBar.contribution.js';
 import './contrib/aiContextView/browser/aiContextView.contribution.js';
 import './contrib/aiDiffApply/browser/diff.contribution.js';

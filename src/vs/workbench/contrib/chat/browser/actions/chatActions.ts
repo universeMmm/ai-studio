@@ -37,11 +37,10 @@ import product from '../../../../../platform/product/common/product.js';
 import { GitHubPaths, IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ActiveEditorContext } from '../../../../common/contextkeys.js';
-import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
+import { ViewContainerLocation } from '../../../../common/views.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 import { ACTIVE_GROUP, AUX_WINDOW_GROUP, SIDE_GROUP } from '../../../../services/editor/common/editorService.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
-import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
 import { IPreferencesService } from '../../../../services/preferences/common/preferences.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { EXTENSIONS_CATEGORY, IExtensionsWorkbenchService } from '../../../extensions/common/extensions.js';
@@ -599,38 +598,8 @@ export function registerChatActions() {
 		}
 
 		async run(accessor: ServicesAccessor) {
-			const layoutService = accessor.get(IWorkbenchLayoutService);
-			const viewsService = accessor.get(IViewsService);
-			const viewDescriptorService = accessor.get(IViewDescriptorService);
-			const widgetService = accessor.get(IChatWidgetService);
-
-			const chatLocation = viewDescriptorService.getViewLocationById(ChatViewId);
-			const chatVisible = viewsService.isViewVisible(ChatViewId);
-			if (chatVisible) {
-				this.updatePartVisibility(layoutService, chatLocation, false);
-			} else {
-				this.updatePartVisibility(layoutService, chatLocation, true);
-				(await widgetService.revealWidget())?.focusInput();
-			}
-		}
-
-		private updatePartVisibility(layoutService: IWorkbenchLayoutService, location: ViewContainerLocation | null, visible: boolean): void {
-			let part: Parts.PANEL_PART | Parts.SIDEBAR_PART | Parts.AUXILIARYBAR_PART | undefined;
-			switch (location) {
-				case ViewContainerLocation.Panel:
-					part = Parts.PANEL_PART;
-					break;
-				case ViewContainerLocation.Sidebar:
-					part = Parts.SIDEBAR_PART;
-					break;
-				case ViewContainerLocation.AuxiliaryBar:
-					part = Parts.AUXILIARYBAR_PART;
-					break;
-			}
-
-			if (part) {
-				layoutService.setPartHidden(!visible, part);
-			}
+			// Chat lives in the Studio editor; toggling it must not hide the task inspector.
+			(await accessor.get(IChatWidgetService).revealWidget())?.focusInput();
 		}
 	});
 

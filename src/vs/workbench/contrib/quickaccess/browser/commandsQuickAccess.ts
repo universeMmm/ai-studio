@@ -30,6 +30,7 @@ import { IQuickInputService, IQuickPickSeparator } from '../../../../platform/qu
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchQuickAccessConfiguration } from '../../../browser/quickaccess.js';
+import { isStudioAdvancedMode, isStudioSimpleCommand } from '../../../common/studioMode.js';
 import { CommandInformationResult, IAiRelatedInformationService, RelatedInformationType } from '../../../services/aiRelatedInformation/common/aiRelatedInformation.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
@@ -126,10 +127,17 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 			return [];
 		}
 
-		return [
+		const picks = [
 			...this.getCodeEditorCommandPicks(),
 			...this.getGlobalCommandPicks()
-		].map(picks => ({
+		];
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			// Editor actions bypass the global CommandPalette menu; apply the same
+			// presentation policy after merging and omit professional gear actions.
+			return picks.filter(pick => isStudioSimpleCommand(pick.commandId));
+		}
+
+		return picks.map(picks => ({
 			...picks,
 			buttons: [{
 				iconClass: ThemeIcon.asClassName(Codicon.gear),
@@ -144,7 +152,8 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 
 	protected hasAdditionalCommandPicks(filter: string, token: CancellationToken): boolean {
 		if (
-			!this.useAiRelatedInfo
+			!isStudioAdvancedMode(this.configurationService)
+			|| !this.useAiRelatedInfo
 			|| token.isCancellationRequested
 			|| filter === ''
 			|| !this.aiRelatedInformationService.isEnabled()

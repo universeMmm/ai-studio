@@ -309,6 +309,9 @@ const nativeExtensions = [
 ];
 
 const excludedExtensions = [
+	// AI Studio does not install or compile the upstream account providers.
+	'github-authentication',
+	'microsoft-authentication',
 	'vscode-api-tests',
 	'vscode-colorize-tests',
 	'vscode-colorize-perf-tests',

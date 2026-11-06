@@ -94,7 +94,11 @@ AI 行为状态机，实现 `plan → execute → observe → refine` 闭环。�
 
 ### Agent UI
 
-新窗口默认进入智能体工作区。左侧可以新建、筛选和恢复会话，中间使用原生聊天编辑器提交任务、查看工具回执和批准命令，右侧按当前会话展示文件变更、执行记录与上下文。工作区文件、编辑器、终端和设置沿用 VS Code 工作台，可从同一窗口打开。桌面布局参考了 Claude Code 的会话侧栏与差异审查交互。[Claude Code 桌面文档](https://code.claude.com/docs/en/desktop)
+新窗口默认进入智能体工作区：单层导航标题栏、左侧窄图标栏与项目会话列表、中间聊天区域、右侧悬浮任务详情。基本模式隐藏编辑器标签和重复面板标题；文件编辑、终端、差异审查与底层工作台能力仍然保留，高级模式可恢复完整界面。
+
+新会话页采用简洁标题与输入框。输入框显示实际使用的模型，提供审批入口、推理强度调节和附件缩略图；模型、附件和导航菜单由应用绘制并带弹出动画。左侧保留项目、会话搜索、文件、变更与技能连接入口，终端入口仅在高级模式显示。标题栏的浅色／深色按钮切换完整工作台主题并保存到用户设置。基本模式在窄窗口自动收起侧栏，放宽后恢复，也允许手动展开；不关闭文件或终端进程。
+
+推理强度通过 `ai.reasoningEffort` 保存，界面和请求共用能力判断。已确认支持的 OpenAI Chat Completions 模型使用 `reasoning_effort`；DeepSeek 只显示实际可区分的档位并保留工具循环中的推理续接数据；支持独立 effort 的 Claude 4.x 使用 `output_config.effort`，不会因此开启尚未接入的扩展 thinking 协议。其他模型保留服务默认值，控件会说明暂不可调。参数依据 [OpenAI 推理文档](https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat)、[Claude effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)和 [DeepSeek thinking 文档](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 代码路径：`src/vs/workbench/contrib/studioShell/`、`aiChat/`、`aiContextView/`、`aiDiffApply/`。
 
@@ -145,9 +149,26 @@ scripts\code.bat           # Windows
 
 运行 AI 模块的离线回归测试可使用 `npm run test:ai`。
 
+在 macOS 上运行 `npm run package:mac -- --version=1.122.0-preview.1` 可构建当前处理器架构的应用和 DMG。输出位于 `.build/release/`，包含安装包及 SHA-256 校验文件；磁盘镜像内提供应用与 `Applications` 快捷方式。脚本复用现有生产构建流程和 Electron 签名工具，不包含用户配置或模型密钥。已有完整构建可用 `--skip-build` 只生成磁盘镜像。
+
+构建后可运行 `npm run test:ai:package` 验证正式应用的独立启动、本地模型流式请求、文件工具、模型列表、系统代理及中文缓存。测试使用临时用户配置和本机模拟服务；设置 `STUDIO_TEST_APP` 可指定从 DMG 复制出来的应用可执行文件。
+
+未设置 `CODESIGN_IDENTITY` 时使用临时签名，安装包未经 Apple 公证，macOS 首次运行可能需要在「系统设置 → 隐私与安全性」中允许打开。Developer ID 签名和公证需自行配置 Apple 开发者凭据。预览版仍保留上游 Agent Host 占位模块相关的全量类型检查错误；AI Studio 核心回归与正式构建使用各自独立的检查流程。
+
 桌面首次启动默认使用简体中文。核心菜单、编辑器命令、设置说明及内置扩展的译文随项目分发，可断网启动。上游译文来自与编辑器版本匹配的 [Microsoft 简体中文语言包](https://github.com/microsoft/vscode-loc/tree/6328467f46f70a56566410dc5dcce9d6e2fec2f9/i18n/vscode-language-pack-zh-hans)。使用 `./scripts/code.sh --locale=en` 可显式选择英文核心界面。
 
-启动后打开左侧「模型设置」，填写配置名称、模型 ID、接口类型和 API 地址。也可以在设置中搜索 `ai.` 查看运行策略。
+启动后使用标题栏「设置 → 管理模型」，填写配置名称、模型 ID、接口类型和 API 地址。默认界面围绕任务、项目和文件展开；「设置 → 高级模式」可显示终端、调试、编辑器工具栏与完整设置。切换模式保留未保存的文件、终端进程和原有布局，不改写用户的编辑器展示设置。
+
+「设置 → 技能与工具」及输入框左侧「+」提供技能、插件和 MCP 连接入口：
+
+- 技能复用已有的 `SKILL.md` 发现机制；可添加本机技能集合目录、创建技能，并将技能附加到本轮会话。
+- 插件复用现有插件清单与启停机制；通过本机插件文件夹添加技能和 MCP 工具包。
+- MCP 复用现有连接、信任、授权与工具服务，连接成功的工具进入主 Agent 的调用链；停用的工具不会继续执行。只读计划模式暂不开放 MCP 工具。
+- 网络继续跟随系统代理，不增加应用内代理配置。第三方本机 MCP 程序自身发起的网络请求由该程序负责，应用不能替外部进程承诺代理行为。
+
+文件可以拖入输入框或通过「+」添加，附件以缩略图卡片展示。macOS/Windows 文档预览复用系统缩略图；不支持的格式或平台显示文件类型卡片。预览不会把文档转成模型输入：文本与图片按已有附件规则发送，PDF、Word 等二进制文件目前仅发送路径引用。点击卡片右上角「×」会从后续请求中移除该附件。
+
+技能与 MCP 的隔离回归可使用 `npm run test:ai:capabilities`，详见 [测试说明](test/integration/ai-capabilities/README.md)。
 
 | 配置项 | 说明 |
 |--------|------|
@@ -169,17 +190,36 @@ scripts\code.bat           # Windows
 | 项目 | 上游源码行为 | AI Studio 中的对应行为 |
 |------|--------------|-----------------------|
 | [OpenAI Codex](https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/tools/parallel.rs) | 按工具是否支持并行决定获取读锁或写锁 | 连续只读调用可重叠执行，写入和终端命令按原顺序执行。每批最多同时运行 4 个只读工具，这是 AI Studio 的本地上限。 |
-| [Gemini CLI 调度器](https://github.com/google-gemini/gemini-cli/blob/1fe22af5f800d8c3024e9968d35bb75bd09e6b79/packages/core/src/scheduler/scheduler.ts#L487-L550) | 将连续可并行的调用分组；执行前评估权限并处理确认 | 两种模型协议均按索引组装流式调用，并按调用 ID 回传每项结果。需要确认的命令等待用户决定，取消后终止等待。 |
+| [Gemini CLI 调度器](https://github.com/google-gemini/gemini-cli/blob/1fe22af5f800d8c3024e9968d35bb75bd09e6b79/packages/core/src/scheduler/scheduler.ts#L487-L550) | 将连续可并行的调用分组；执行前评估权限并处理确认 | 主、子智能体共用连续调用分组。需要确认的命令等待用户决定，取消后终止等待。模型协议解析由 AI Studio 自行实现。 |
 | [OpenCode 工具上下文](https://github.com/anomalyco/opencode/blob/fc7e4cf93e660ad5ddabb0c48ecc99e934ebfe95/packages/opencode/src/session/tools.ts#L55-L94) | 在权限请求中关联会话、消息和工具调用 ID | 桌面审批绑定本次请求，工具记录与变更按会话保存。旧会话的审批无法放行新请求。 |
 
 主智能体和子智能体共用 `src/vs/platform/ai/common/toolRuntime.ts`。只读计划模式在执行器中限制可用工具。运行时也会拒绝无效参数，并将拒绝或失败关联到对应的调用。
+
+### Agent 核心修复与 OpenCode V2 验证（2026-11-06）
+
+- API 地址、接口类型、命令审批等配置从用户/策略层读取，工作区不能覆盖。密钥按 provider + origin 存储；认证模型请求拒绝重定向，安全存储失败不回退到明文。
+- 无目标绑定的旧全局密钥会保留，但不会自动猜测所属地址；升级后如模型提示未配置密钥，请在模型表单为目标地址重新保存。用户级旧 `ai.apiKey` 与明确配置的地址可迁移。
+- 主、子智能体按实际消息和工具定义计算请求预算，成功摘要后替换当前消息；失败或取消保留原历史。`ai.modelContextTokens` 为用户填写的模型窗口，默认 128k，尚未自动探测服务端窗口。
+- 异常断流、输出上限和不支持的停止原因按失败处理；读取、写入与搜索复用文件服务真实路径检查，防止常见符号链接外逃，并统一敏感文件排除策略。这些检查不替代 OS 沙箱或文件系统竞态防护。
+
+OpenCode 使用独立目录内锁定的 **`@opencode/sdk@2.2.5`** 验证，直接运行其会话、权限、工具和 SQLite 实现。宿主采用 Electron utility process，HTTP 请求接入 Electron 系统代理栈；未支持的 Node 网络出口在验证进程中明确拒绝。当前默认 Agent 仍使用原运行时，未把 SDK 加入主应用依赖。
+
+```bash
+npm run test:ai
+npm run compile
+npm run test:ai:network
+npm ci --prefix test/integration/ai-opencode --ignore-scripts --legacy-peer-deps
+npm run test:ai:opencode
+```
+
+[网络回归说明](test/integration/ai-network/README.md)与 [OpenCode 验证说明](test/integration/ai-opencode/README.md)列出覆盖范围、复跑条件和平台限制。报告分别写入 `.build/ai-network/report.json`、`.build/opencode-validation/report.json`。后续整核迁移需继续接通工作台审批/审查 UI，并验收 MCP、终端/子进程网络、OS 沙箱及跨平台打包。
 
 已知待完善项：
 
 | 优先级 | 内容 |
 |--------|------|
 | 高 | 编译稳定性、Windows 原生模块绑定 |
-| 高 | 路径越界防护、命令注入加固、API Key 安全存储迁移 |
+| 高 | OS 沙箱接入、文件系统竞态防护、命令执行策略收敛 |
 | 中 | 扩大跨平台审查和回滚测试、优化大工作区索引 |
 | 低 | 扩展视图样式适配、错误边界、可访问性 |
 

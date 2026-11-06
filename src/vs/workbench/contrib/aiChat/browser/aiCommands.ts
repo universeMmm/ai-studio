@@ -13,9 +13,9 @@ import { IAIIndexService } from '../../../../platform/ai/browser/aiIndexService.
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { EditorsOrder } from '../../../common/editor.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
+import { ChatViewContainerId, ChatViewId, IChatWidgetService } from '../../chat/browser/chat.js';
 import { ChatEditorInput } from '../../chat/browser/widgetHosts/editor/chatEditorInput.js';
 import './studioSessions.js';
 import './media/aiChat.css';
@@ -27,13 +27,20 @@ registerAction2(class extends Action2 {
 			keybinding: { primary: KeyMod.CtrlCmd | KeyCode.KeyL, weight: KeybindingWeight.WorkbenchContrib }
 		});
 	}
-	run(accessor: ServicesAccessor) {
-		const editors = accessor.get(IEditorService);
-		const last = editors.getEditors(EditorsOrder.MOST_RECENTLY_ACTIVE).find(item => item.editor instanceof ChatEditorInput);
-		if (last) { return editors.openEditor(last.editor, { pinned: true }, last.groupId); }
-		return editors.openEditor({ resource: ChatEditorInput.getNewEditorUri(), options: { pinned: true } });
+	async run(accessor: ServicesAccessor) {
+		const widget = await accessor.get(IChatWidgetService).revealWidget();
+		widget?.focusInput();
 	}
 });
+
+// Keep existing keybindings and extension callers working after retiring the
+// sidebar view. These commands reveal the same session; they never clear it.
+for (const id of [ChatViewContainerId, `${ChatViewId}.open`, `${ChatViewId}.focus`]) {
+	CommandsRegistry.registerCommand(id, async (accessor, options?: { preserveFocus?: boolean }) => {
+		const widget = await accessor.get(IChatWidgetService).revealWidget(options?.preserveFocus);
+		if (!options?.preserveFocus) { widget?.focusInput(); }
+	});
+}
 
 registerAction2(class extends Action2 {
 	constructor() {

@@ -8,8 +8,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { append, $, isHTMLElement } from '../../../../base/browser/dom.js';
+import { SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
-import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { isAbsolute } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
 import { AgentSession, AgentStep, DiffGroup, DiffHunk, Task } from '../../../../platform/ai/common/aiTypes.js';
@@ -17,10 +18,12 @@ import { MemoryStore } from '../../../../platform/ai/common/memoryStore.js';
 import { IAIAgentService } from '../../../../platform/ai/browser/aiAgentService.js';
 import { IAIIndexService } from '../../../../platform/ai/browser/aiIndexService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { getCodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ViewPane } from '../../../browser/parts/views/viewPane.js';
@@ -45,6 +48,7 @@ export class AIContextView extends ViewPane {
 	}
 	selectTab(tab: InspectorTab): void { this.tab = tab; this.content?.selectTab(tab); }
 	override focus(): void { super.focus(); this.content?.focus(); }
+	override getOptimalWidth(): number { return 304; }
 }
 
 function icon(parent: HTMLElement, name: string): void {
@@ -60,6 +64,8 @@ function empty(parent: HTMLElement, symbol: string, title: string, text: string)
 
 class InspectorContent extends Disposable {
 	private readonly root: HTMLElement;
+	private readonly status: HTMLElement;
+	private readonly metrics = new Map<InspectorTab, HTMLElement>();
 	private readonly nav: HTMLElement;
 	private readonly body: HTMLElement;
 	private readonly tabButtons = new Map<InspectorTab, HTMLButtonElement>();
@@ -70,6 +76,7 @@ class InspectorContent extends Disposable {
 	private archive: AgentSession | null = null;
 	private loadingHistory = false;
 	private readonly selection = this._register(new MutableDisposable());
+	private readonly renderedControls = this._register(new DisposableStore());
 	private readonly refresh = this._register(new RunOnceScheduler(() => this.render(), 35));
 	private readonly expanded = new Set<string>();
 	private readonly busy = new Set<string>();
@@ -87,9 +94,29 @@ class InspectorContent extends Disposable {
 		@ICommandService private readonly commands: ICommandService,
 		@ILogService private readonly log: ILogService,
 		@INotificationService private readonly notifications: INotificationService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
 		this.root = append(parent, $('.studio-inspector'));
+		const overview = append(this.root, $('.studio-inspector-overview'));
+		const heading = append(overview, $('.studio-inspector-overview-heading'));
+		const projectName = this.workspace.getWorkspace().folders[0]?.name ?? '任务详情';
+		append(heading, $('span.studio-inspector-eyebrow', { title: projectName }, projectName));
+		this.status = append(heading, $('span.studio-inspector-status', { role: 'status' }));
+		const close = this.action(heading, '收起任务详情', () => this.commands.executeCommand('workbench.action.toggleAuxiliaryBar'), 'close');
+		close.classList.add('studio-inspector-close');
+		close.replaceChildren();
+		icon(close, 'close');
+		append(overview, $('p.studio-inspector-description', {}, '跟进执行进度，审查每一次修改。'));
+		const metrics = append(overview, $('.studio-inspector-metrics', { 'aria-label': '当前会话概览' }));
+		for (const [tab, label, symbol] of [['changes', '变更', 'diff'], ['activity', '执行记录', 'history'], ['context', '来源', 'references']] as const) {
+			const button = this.action(metrics, label, () => this.selectTab(tab), 'metric:' + tab);
+			button.classList.add('studio-inspector-metric');
+			button.replaceChildren();
+			icon(button, symbol);
+			append(button, $('span', {}, label));
+			this.metrics.set(tab, append(button, $('strong', {}, '0')));
+		}
 		this.nav = append(this.root, $('.studio-inspector-tabs', { role: 'tablist', 'aria-label': '任务详情' }));
 		this.body = append(this.root, $('.studio-inspector-body', { role: 'tabpanel', tabindex: '0' }));
 		for (const tab of Object.keys(tabs) as InspectorTab[]) {
@@ -126,13 +153,20 @@ class InspectorContent extends Disposable {
 			const active = key === tab;
 			button.setAttribute('aria-selected', String(active));
 			button.tabIndex = active ? 0 : -1;
+			this.metrics.get(key)?.parentElement?.setAttribute('aria-pressed', String(active));
 		}
 		this.body.setAttribute('aria-label', tabs[tab]);
 		this.body.scrollTop = 0;
 		this.render();
 	}
 
-	focus(): void { this.tabButtons.get(this.tab)?.focus(); }
+	focus(): void {
+		const tab = this.tabButtons.get(this.tab);
+		// Basic mode presents these sections as overview rows, while advanced mode
+		// retains the tab strip. Focus the currently visible control in either layout.
+		if (tab?.offsetParent) { tab.focus(); }
+		else { this.metrics.get(this.tab)?.parentElement?.focus(); }
+	}
 
 	private watchEditor(): void {
 		const editor = getCodeEditor(this.editors.activeTextEditorControl);
@@ -142,7 +176,8 @@ class InspectorContent extends Disposable {
 
 	private updateSession(): void {
 		const session = this.chats.lastFocusedWidget?.viewModel?.sessionResource.toString();
-		if (this.session === session) { return; }
+		// Opening a diff or code editor must keep the task being reviewed selected.
+		if (!session || this.session === session) { return; }
 		this.session = session;
 		this.archive = null;
 		this.allChanges = false;
@@ -162,9 +197,11 @@ class InspectorContent extends Disposable {
 	}
 
 	private render(): void {
+		this.renderOverview();
 		const active = this.body.ownerDocument.activeElement;
 		const focus = isHTMLElement(active) && this.body.contains(active) ? active.dataset.focus : undefined;
 		const scroll = this.body.scrollTop;
+		this.renderedControls.clear();
 		this.focusableElements.clear();
 		this.body.replaceChildren();
 		if (this.tab === 'changes') { this.renderChanges(); }
@@ -175,6 +212,23 @@ class InspectorContent extends Disposable {
 			(next ?? this.body).focus({ preventScroll: true });
 		}
 		this.body.scrollTop = scroll;
+	}
+
+	private renderOverview(): void {
+		const status = this.live ? this.agent.status : this.archive?.status;
+		const labels = { idle: '就绪', running: '执行中', waiting_for_approval: '等待确认', stopped: '已停止', error: '执行出错' };
+		this.status.textContent = this.loadingHistory ? '读取中' : status ? labels[status] : '就绪';
+		this.status.dataset.state = status ?? 'idle';
+		const groups = this.diffs.groups.filter(g => !this.session || this.allChanges || g.sessionId === this.session);
+		const pending = groups.flatMap(g => g.hunks).filter(h => h.status === 'applied').length;
+		const calls = this.steps.filter(step => step.type === 'tool_use');
+		const paths = new Set(calls.filter(step => ['read_file', 'write_file', 'edit_file'].includes(step.toolName ?? '') && typeof step.toolInput?.path === 'string').map(step => step.toolInput!.path as string));
+		for (const [tab, value] of [['changes', pending], ['activity', calls.length], ['context', paths.size]] as const) {
+			const metric = this.metrics.get(tab)!;
+			metric.textContent = String(value);
+			const button = metric.parentElement!;
+			button.setAttribute('aria-label', `${button.title}：${value}`);
+		}
 	}
 
 	private action(parent: HTMLElement, label: string, run: () => void, key: string, glyph?: string): HTMLButtonElement {
@@ -221,12 +275,18 @@ class InspectorContent extends Disposable {
 		const head = this.section('文件变更');
 		const outsideSession = this.session && this.diffs.groups.some(g => g.sessionId !== this.session);
 		if (outsideSession) {
-			const scope = append(head, $<HTMLSelectElement>('select', { 'aria-label': '变更范围', 'data-focus': 'scope' }));
-			this.focusableElements.set('scope', scope);
-			append(scope, $('option', { value: 'chat' }, '当前会话'));
-			append(scope, $('option', { value: 'workspace' }, '工作区'));
-			scope.value = this.allChanges ? 'workspace' : 'chat';
-			scope.onchange = () => { this.allChanges = scope.value === 'workspace'; this.render(); };
+			const scopeContainer = append(head, $('.studio-inspector-scope'));
+			const scope = this.renderedControls.add(new SelectBox([{ text: '当前会话' }, { text: '工作区' }], this.allChanges ? 1 : 0, this.contextViewService, defaultSelectBoxStyles, { ariaLabel: '变更范围' }));
+			scope.render(scopeContainer);
+			// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+			const button = scopeContainer.querySelector<HTMLElement>('.monaco-select-box')!;
+			button.dataset.focus = 'scope';
+			this.focusableElements.set('scope', button);
+			this.renderedControls.add(scope.onDidSelect(event => {
+				this.allChanges = event.index === 1;
+				this.render();
+				this.focusableElements.get('scope')?.focus({ preventScroll: true });
+			}));
 		}
 		const groups = this.diffs.groups.filter(g => !this.session || this.allChanges || g.sessionId === this.session);
 		const pending = groups.flatMap(g => g.hunks.filter(h => h.status === 'applied'));
@@ -273,7 +333,7 @@ class InspectorContent extends Disposable {
 		return text.slice(line, Math.min(end < 0 ? text.length : end, line + 180)) || '（空行）';
 	}
 
-	private get live(): boolean { return this.session === this.agent.sessionId; }
+	private get live(): boolean { return !!this.session && this.session === this.agent.sessionId; }
 	private get steps(): readonly AgentStep[] { return this.live ? this.agent.steps : this.archive?.steps ?? []; }
 	private get tasks(): readonly Task[] { return (this.live ? this.agent.tasks : this.archive?.taskSnapshot ?? []).filter(t => t.status !== 'deleted'); }
 

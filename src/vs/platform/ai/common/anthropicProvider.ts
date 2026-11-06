@@ -8,13 +8,14 @@
  *  Uses native fetch() to call Anthropic Messages API.
  *--------------------------------------------------------------------------------------------*/
 
-import { decodeToolArguments } from './toolRuntime.js';
+import { decodeToolArguments, ModelTurnError } from './toolRuntime.js';
 import { providerEvents } from './providerEvents.js';
+import { applyAnthropicEffort } from './aiReasoning.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import type { IAIProvider } from './aiProvider.js';
 import type {
-	AIMessage, AITool, AIRequestOptions, AIStreamCallbacks,
+	AIMessage, AITool, AIRequestOptions, AIStreamCallbacks, StopReason,
 	AICompletionOptions, AICompletionCallbacks, FileContext, AIModel,
 } from './aiTypes.js';
 import { withSystemPrompt, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
@@ -52,19 +53,22 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 				thinking: options.thinking ? { type: 'enabled' } : { type: 'disabled' },
 			};
 			if (options.thinking && this._baseUrl.includes('deepseek')) { body.reasoning_effort = 'high'; }
+			applyAnthropicEffort(body, this.modelId, this._baseUrl, options.reasoningEffort);
 			if (tools.length) { body.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })); }
 
 			const url = this._baseUrl + '/v1/messages';
 			this.logService.info('[Anthropic] POST ' + url + ' model=' + this.modelId);
 
 			const res = await fetch(url, {
-				method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01', ...(options.cacheSystemPrompt !== false ? { 'anthropic-beta': 'prompt-caching-2024-07-31' } : {}) }, body: JSON.stringify(body), signal,
+				// x-api-key is not stripped by fetch on cross-origin redirects.
+				method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01', ...(options.cacheSystemPrompt !== false ? { 'anthropic-beta': 'prompt-caching-2024-07-31' } : {}) }, body: JSON.stringify(body), signal,
 			});
 			if (!res.ok) { const t = await res.text(); throw new Error('Anthropic ' + res.status + ': ' + t.slice(0, 500)); }
 
 			const calls = new Map<number, { id: string; name: string; initial: unknown; args: string; complete: boolean }>();
 			let inputTokens = 0, outputTokens = 0;
-			let finished = false, truncated = false;
+			let finished = false;
+			let reason: StopReason = 'end_turn';
 			for await (const data of providerEvents(res)) {
 				const event = JSON.parse(data);
 				const index = event.index ?? 0;
@@ -93,19 +97,29 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 						if (call) { call.complete = true; }
 						break;
 					}
-					case 'message_delta': truncated = event.delta?.stop_reason === 'max_tokens'; break;
+					case 'message_delta':
+						if (event.delta?.stop_reason) {
+							switch (event.delta.stop_reason) {
+								case 'end_turn': case 'stop_sequence': case 'tool_use': case 'max_tokens': reason = event.delta.stop_reason; break;
+								default: throw new ModelTurnError('error', 'Model generation did not complete: ' + String(event.delta.stop_reason));
+							}
+						}
+						break;
 					case 'message_stop': finished = true; break;
 				}
 				if (finished) { break; }
 			}
-			if (calls.size && (!finished || truncated || [...calls.values()].some(call => !call.complete))) {
+			signal.throwIfAborted();
+			if (!finished) { throw new Error('Incomplete model stream: missing message_stop event.'); }
+			if (calls.size && reason === 'max_tokens') { throw new ModelTurnError('max_tokens', 'Incomplete model tool call batch: output token limit reached.'); }
+			if (calls.size && [...calls.values()].some(call => !call.complete)) {
 				throw new Error('Incomplete model tool call batch');
 			}
 			for (const [, call] of [...calls].sort(([left], [right]) => left - right)) {
 				const { input, error } = decodeToolArguments(call.args || JSON.stringify(call.initial ?? {}));
 				callbacks.onToolUse(call.name, input, call.id, error);
 			}
-			callbacks.onDone(calls.size ? 'tool_use' : truncated ? 'max_tokens' : 'end_turn');
+			callbacks.onDone(reason === 'max_tokens' ? reason : calls.size ? 'tool_use' : reason);
 		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { this.logService.error('[Anthropic]', err); callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
@@ -118,7 +132,7 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 	private async _streamCompletion(prefix: string, suffix: string, fc: FileContext, options: AICompletionOptions, callbacks: AICompletionCallbacks, signal: AbortSignal): Promise<void> {
 		try {
 			const body = { model: this.modelId, max_tokens: options.maxTokens || 4096, temperature: options.temperature ?? 0, system: COMPLETION_SYSTEM_PROMPT(fc.languageId, fc.filePath), messages: [{ role: 'user', content: '<code_before>\n' + prefix + '\n</code_before>\n<code_after>\n' + suffix + '\n</code_after>' }], stream: true };
-			const res = await fetch(this._baseUrl + '/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body), signal });
+			const res = await fetch(this._baseUrl + '/v1/messages', { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body), signal });
 			const reader = res.body!.getReader(); const d = new TextDecoder(); let buf = '', full = '';
 			while (true) {
 				const { done, value } = await reader.read();

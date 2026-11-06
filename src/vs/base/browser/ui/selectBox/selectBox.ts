@@ -5,14 +5,12 @@
 
 import { Event } from '../../../common/event.js';
 import { IDisposable } from '../../../common/lifecycle.js';
-import { isMacintosh } from '../../../common/platform.js';
 import { MarkdownActionHandler } from '../../markdownRenderer.js';
 import { IContextViewProvider } from '../contextview/contextview.js';
 import { IListStyles, unthemedListStyles } from '../list/listWidget.js';
 import { Widget } from '../widget.js';
 import './selectBox.css';
 import { SelectBoxList } from './selectBoxCustom.js';
-import { SelectBoxNative } from './selectBoxNative.js';
 
 
 
@@ -35,6 +33,7 @@ export interface ISelectBoxDelegate extends IDisposable {
 }
 
 export interface ISelectBoxOptions {
+	/** @deprecated Application select boxes are always custom drawn. */
 	useCustomDrawn?: boolean;
 	ariaLabel?: string;
 	ariaDescription?: string;
@@ -45,6 +44,7 @@ export interface ISelectBoxOptions {
 // Utilize optionItem interface to capture all option parameters
 export interface ISelectOptionItem {
 	text: string;
+	readonly value?: string;
 	detail?: string;
 	decoratorRight?: string;
 	description?: string;
@@ -92,12 +92,8 @@ export class SelectBox extends Widget implements ISelectBoxDelegate {
 	constructor(options: ISelectOptionItem[], selected: number, contextViewProvider: IContextViewProvider, styles: ISelectBoxStyles, selectBoxOptions?: ISelectBoxOptions) {
 		super();
 
-		// Default to native SelectBox for OSX unless overridden
-		if (isMacintosh && !selectBoxOptions?.useCustomDrawn) {
-			this.selectBoxDelegate = new SelectBoxNative(options, selected, styles, selectBoxOptions);
-		} else {
-			this.selectBoxDelegate = new SelectBoxList(options, selected, contextViewProvider, styles, selectBoxOptions);
-		}
+		// Keep every application dropdown in the workbench, including on macOS.
+		this.selectBoxDelegate = new SelectBoxList(options, selected, contextViewProvider, styles, selectBoxOptions);
 
 		this._register(this.selectBoxDelegate);
 	}

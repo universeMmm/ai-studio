@@ -129,7 +129,7 @@ export abstract class MenubarControl extends Disposable {
 		this.menus = {};
 		this.topLevelTitles = {};
 
-		const [, mainMenuActions] = this.mainMenu.getActions()[0];
+		const mainMenuActions = this.mainMenu.getActions().flatMap(([, actions]) => actions);
 		for (const mainMenuAction of mainMenuActions) {
 			if (mainMenuAction instanceof SubmenuItemAction && typeof mainMenuAction.item.title !== 'string') {
 				this.menus[mainMenuAction.item.title.original] = this.mainMenuDisposables.add(this.menuService.createMenu(mainMenuAction.item.submenu, this.contextKeyService, { emitEventsForSubmenuChanges: true }));

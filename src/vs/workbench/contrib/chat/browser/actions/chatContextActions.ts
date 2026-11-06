@@ -53,6 +53,7 @@ import { resizeImage } from '../chatImageUtils.js';
 import { registerPromptActions } from '../promptSyntax/promptFileActions.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { registerCreatePluginAction } from './createPluginAction.js';
+import { showStudioChatAddMenu } from '../attachments/studioChatAddMenu.js';
 
 export function registerChatContextActions(): DisposableStore {
 	const store = new DisposableStore();
@@ -527,9 +528,13 @@ export class AttachContextAction extends Action2 {
 		const keybindingService = accessor.get(IKeybindingService);
 		const contextPickService = accessor.get(IChatContextPickService);
 
-		const context = args[0] as { widget?: IChatWidget; placeholder?: string } | undefined;
+		const context = args[0] as { widget?: IChatWidget; placeholder?: string; showAllContexts?: boolean } | undefined;
 		const widget = context?.widget ?? widgetService.lastFocusedWidget;
 		if (!widget) {
+			return;
+		}
+		if (!context?.showAllContexts && await instantiationService.invokeFunction(showStudioChatAddMenu, widget, () =>
+			instantiationService.invokeFunction(accessor => this.run(accessor, { widget, showAllContexts: true })))) {
 			return;
 		}
 

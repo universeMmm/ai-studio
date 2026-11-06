@@ -46,6 +46,20 @@ const finish: ModelTurn = cb => { cb.onToken('完成'); cb.onDone('end_turn'); }
 const results = (messages: AIMessage[]) => messages.findLast(msg => msg.role === 'tool')!.content as AIMessageContent[];
 
 suite('Tool runtime', () => {
+	test('output truncation marks the agent as failed without replaying the same request', async () => {
+		const { agent, invoked } = scripted(cb => {
+			cb.onToken('unfinished');
+			cb.onDone('max_tokens');
+		});
+		try {
+			await agent.run('long response');
+			assert.strictEqual(agent.status, 'error');
+			assert.strictEqual(invoked.length, 1);
+			assert.strictEqual(agent.steps.at(-1)?.type, 'error');
+			assert.match(agent.steps.at(-1)!.content, /输出上限/);
+		} finally { agent.dispose(); }
+	});
+
 	test('malformed nested question choices fail before opening the user prompt', () => {
 		const ask = getAgentTools().find(t => t.name === 'AskUserQuestion')!;
 		assert.match(validateToolCall(call('ask', ask.name, { question: '选哪个？', options: [null] }), ask)!, /options\[0\]/);

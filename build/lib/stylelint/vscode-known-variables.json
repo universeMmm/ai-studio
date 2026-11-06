@@ -937,6 +937,7 @@
 	],
 	"others": [
 		"--studio-mac-controls-width",
+		"--studio-sidebar-width",
 		"--activity-bar-action-height",
 		"--activity-bar-icon-size",
 		"--activity-bar-width",

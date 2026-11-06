@@ -6,6 +6,7 @@
 import { localize } from '../../../../../nls.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../base/common/event.js';
+import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { nullExtensionDescription } from '../../../../services/extensions/common/extensions.js';
 import {
@@ -16,6 +17,7 @@ import {
 	IUserFriendlyLanguageModel,
 } from '../../common/languageModels.js';
 import { ILanguageModelsConfigurationService } from '../../common/languageModelsConfiguration.js';
+import { BUILTIN_PROVIDERS } from './providerDefinitions.js';
 
 /**
  * Provides user-configured custom models from languageModels.json as selectable
@@ -61,7 +63,7 @@ export class CustomModelProvider extends Disposable implements ILanguageModelCha
 					isUserSelectable: true,
 					targetChatSessionType: undefined,
 					capabilities: {
-						vision: false,
+						vision: settings['vision'] === true,
 						toolCalling: true,
 						agentMode: true,
 					},
@@ -96,10 +98,12 @@ export function registerCustomModelProvider(
 		configuration: {
 			type: 'object',
 			properties: {
+				providerKey: { type: 'string', enum: BUILTIN_PROVIDERS.map(provider => provider.key), description: localize('studio.model.providerPreset', '供应商预设') },
 				modelId: { type: 'string', description: localize('studio.model.modelId', '模型标识符') },
 				apiKey: { type: 'string', description: localize('studio.model.key', '模型服务的 API 密钥'), secret: true },
 				endpoint: { type: 'string', description: localize('studio.model.endpoint', '模型服务的 API 地址') },
 				apiType: { type: 'string', enum: ['openai', 'anthropic'], description: localize('studio.model.apiType', '接口类型') },
+				vision: { type: 'boolean', default: false, description: localize('studio.model.vision', '此模型支持图片输入（以模型提供商的能力说明为准）') },
 			},
 		},
 		managementCommand: undefined,
@@ -107,6 +111,9 @@ export function registerCustomModelProvider(
 	};
 	languageModelsService.deltaLanguageModelChatProviderDescriptors([vendorDescriptor], []);
 	const providerDisposable = languageModelsService.registerLanguageModelProvider(AI_STUDIO_VENDOR_ID, provider);
+	// The configuration may have loaded before this provider was registered, so
+	// waiting only for subsequent group changes can leave the initial picker empty.
+	void languageModelsService.selectLanguageModels({ vendor: AI_STUDIO_VENDOR_ID }).catch(onUnexpectedError);
 
 	return toDisposable(() => {
 		providerDisposable.dispose();

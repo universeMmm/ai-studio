@@ -9,6 +9,7 @@ import { IStringDictionary } from '../../../../base/common/collections.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { join } from '../../../../base/common/path.js';
+import { getBundledChineseLanguagePack } from '../../../../base/node/nls.js';
 import { Promises } from '../../../../base/node/pfs.js';
 import { INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -66,6 +67,12 @@ export class LanguagePackCachedDataCleaner extends Disposable {
 				const entry = metaData[locale];
 				installed[`${entry.hash}.${locale}`] = true;
 			}
+			// The first launch uses the bundled pack before extension discovery writes
+			// its own cache hash. Keep that active cache available to later windows.
+			const bundled = await getBundledChineseLanguagePack(this.environmentService.builtinExtensionsPath);
+			if (bundled) {
+				installed[`${bundled.hash}.zh-cn`] = true;
+			}
 
 			// Cleanup entries for language packs that aren't installed anymore
 			const cacheDir = join(this.environmentService.userDataPath, 'clp');
@@ -89,6 +96,9 @@ export class LanguagePackCachedDataCleaner extends Disposable {
 			const now = Date.now();
 			for (const packEntry of Object.keys(installed)) {
 				const folder = join(cacheDir, packEntry);
+				if (!(await Promises.exists(folder))) {
+					continue; // An installed language may not have been compiled yet.
+				}
 				const entries = await Promises.readdir(folder);
 				for (const entry of entries) {
 					if (entry === 'tcf.json') {

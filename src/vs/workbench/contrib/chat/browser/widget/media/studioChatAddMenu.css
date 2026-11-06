@@ -1,0 +1,80 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Use the native list for keyboard navigation, scrolling and selection. */
+.action-widget:has(.studio-add-menu-item) {
+	--studio-add-surface: #f7f7f7;
+	--studio-add-border: #00000016;
+	--studio-add-hover: #e8e8e8;
+	--studio-add-text: #353535;
+	--studio-add-muted: #777777;
+	--vscode-focusBorder: #8b74ce;
+	--vscode-menu-selectionBorder: transparent;
+	padding: 8px;
+	border: 1px solid var(--studio-add-border) !important;
+	border-radius: 20px;
+	background: var(--studio-add-surface);
+	color: var(--studio-add-text);
+	box-shadow: 0 12px 32px #00000024;
+	animation: studio-add-menu-enter 160ms ease-out;
+	transform-origin: bottom left;
+}
+.studio-dark .action-widget:has(.studio-add-menu-item),
+.vs-dark .action-widget:has(.studio-add-menu-item) {
+	--studio-add-surface: #2c2c2c;
+	--studio-add-border: #ffffff16;
+	--studio-add-hover: #3a3a3a;
+	--studio-add-text: #ededed;
+	--studio-add-muted: #999999;
+	--vscode-focusBorder: #b280f5;
+	box-shadow: 0 12px 32px #00000038;
+}
+.action-widget:has(.studio-add-menu-item) .monaco-list-row {
+	box-sizing: border-box;
+	padding-inline: 12px;
+	border-radius: 12px;
+}
+.action-widget:has(.studio-add-menu-item) .monaco-list-row.group-header {
+	margin-top: 0;
+	color: var(--studio-add-muted) !important;
+	font-size: 12px;
+	font-weight: 400;
+}
+.action-widget .monaco-list-row.studio-add-menu-item {
+	color: var(--studio-add-text);
+	font-size: 14px;
+	gap: 9px;
+}
+.action-widget .monaco-list-row.studio-add-menu-item .codicon {
+	color: var(--studio-add-muted);
+	font-size: 17px;
+}
+.action-widget .monaco-list-row.studio-add-menu-item > .title {
+	flex-shrink: 0;
+	font-weight: 400;
+}
+.action-widget .monaco-list-row.studio-add-menu-item > .description {
+	min-width: 0;
+	color: var(--studio-add-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.action-widget:has(.studio-add-menu-item) .monaco-list-row.action.focused:not(.option-disabled),
+.action-widget:has(.studio-add-menu-item) .monaco-list-row.action:hover:not(.option-disabled) {
+	background: var(--studio-add-hover) !important;
+	color: var(--studio-add-text);
+	outline: none;
+}
+@keyframes studio-add-menu-enter {
+	from { opacity: 0; transform: translateY(6px) scale(0.985); }
+	to { opacity: 1; transform: none; }
+}
+.monaco-reduce-motion .action-widget:has(.studio-add-menu-item) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+	.action-widget:has(.studio-add-menu-item) { animation: none; }
+}
+@media (max-width: 700px) {
+	.action-widget .monaco-list-row.studio-add-menu-item > .description { display: none; }
+}

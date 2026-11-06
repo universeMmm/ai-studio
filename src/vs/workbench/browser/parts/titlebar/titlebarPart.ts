@@ -58,6 +58,7 @@ import { IHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegate.
 import { safeIntl } from '../../../../base/common/date.js';
 import { IsCompactTitleBarContext, TitleBarVisibleContext } from '../../../common/contextkeys.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
+import { isStudioAdvancedMode, STUDIO_ADVANCED_MODE_CONFIG } from '../../../common/studioMode.js';
 
 export interface ITitleVariable {
 	readonly name: string;
@@ -231,9 +232,16 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	readonly minimumWidth: number = 0;
 	readonly maximumWidth: number = Number.POSITIVE_INFINITY;
 
+	protected get isStudioBasicTitlebar(): boolean {
+		return isNative && !this.isAuxiliary && !isStudioAdvancedMode(this.configurationService) && hasCustomTitlebar(this.configurationService, this.titleBarStyle);
+	}
+
 	get minimumHeight(): number {
 		const wcoEnabled = isWeb && isWCOEnabled();
 		let value = this.isCommandCenterVisible || wcoEnabled ? DEFAULT_CUSTOM_TITLEBAR_HEIGHT : 30;
+		if (this.isStudioBasicTitlebar) {
+			value = 44;
+		}
 		if (wcoEnabled) {
 			value = Math.max(value, getWCOTitlebarAreaRect(getWindow(this.element))?.height ?? 0);
 		}
@@ -397,7 +405,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		}
 
 		// Command Center
-		if (event.affectsConfiguration(LayoutSettings.COMMAND_CENTER)) {
+		if (event.affectsConfiguration(LayoutSettings.COMMAND_CENTER) || event.affectsConfiguration(STUDIO_ADVANCED_MODE_CONFIG)) {
 			this.recreateTitle();
 		}
 	}
@@ -490,13 +498,37 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 		if (isNative && !this.isAuxiliary && hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
 			const commands = this.instantiationService.invokeFunction(accessor => accessor.get(ICommandService));
+			const navigation = append(this.leftContent, $('div.studio-window-navigation'));
+			const addNavigationButton = (icon: string, label: string, command: string) => {
+				const button = append(navigation, $('button.studio-window-button')) as HTMLButtonElement;
+				button.type = 'button';
+				button.title = label;
+				button.setAttribute('aria-label', label);
+				append(button, $(`span.codicon.codicon-${icon}`)).setAttribute('aria-hidden', 'true');
+				this._register(addDisposableListener(button, EventType.CLICK, () => commands.executeCommand(command).catch(onUnexpectedError)));
+				return button;
+			};
+			const back = addNavigationButton('arrow-left', localize('studioBack', '后退'), 'workbench.action.navigateBack');
+			const forward = addNavigationButton('arrow-right', localize('studioForward', '前进'), 'workbench.action.navigateForward');
+			const sidebar = addNavigationButton('layout-sidebar-left', localize('studioSidebar', '显示或隐藏会话侧栏'), 'workbench.action.toggleSidebarVisibility');
+			const updateNavigation = () => {
+				back.disabled = this.contextKeyService.getContextKeyValue('canNavigateBack') !== true;
+				forward.disabled = this.contextKeyService.getContextKeyValue('canNavigateForward') !== true;
+				sidebar.setAttribute('aria-pressed', String(this.layoutService.isVisible(Parts.SIDEBAR_PART)));
+			};
+			updateNavigation();
+			this._register(this.contextKeyService.onDidChangeContext(event => {
+				if (event.affectsSome(new Set(['canNavigateBack', 'canNavigateForward']))) { updateNavigation(); }
+			}));
+			this._register(this.layoutService.onDidChangePartVisibility(updateNavigation));
 			const home = append(this.leftContent, $('button.studio-home')) as HTMLButtonElement;
 			home.type = 'button';
-			home.title = localize('studioHome', '打开智能体工作区');
+			home.title = localize('studioHome', '返回会话');
 			home.setAttribute('aria-label', home.title);
 			append(home, $('span.studio-mark')).setAttribute('aria-hidden', 'true');
+			append(home, $('span.studio-home-icon.codicon.codicon-home')).setAttribute('aria-hidden', 'true');
 			append(home, $('span.studio-wordmark')).textContent = 'AI Studio';
-			this._register(addDisposableListener(home, EventType.CLICK, () => commands.executeCommand('ai.chat.open').catch(onUnexpectedError)));
+			this._register(addDisposableListener(home, EventType.CLICK, () => commands.executeCommand('aiStudio.home').catch(onUnexpectedError)));
 
 			const review = append(this.rightContent, $('button.studio-review')) as HTMLButtonElement;
 			review.type = 'button';
@@ -611,13 +643,24 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		// Text Title
 		if (!this.isCommandCenterVisible) {
 			if (!isShowingTitleInNativeTitlebar) {
-				this.title.textContent = this.windowTitle.value;
-				this.titleDisposables.add(this.windowTitle.onDidChange(() => {
-					this.title.textContent = this.windowTitle.value;
+				const updateTitle = () => {
+					if (this.isStudioBasicTitlebar) {
+						const activeEditor = this.editorGroupsContainer.activeGroup.activeEditor;
+						const name = activeEditor?.getName() || 'AI Studio';
+						const icon = $('span.studio-title-icon.codicon.codicon-folder', { 'aria-hidden': 'true' });
+						reset(this.title, icon, $('span.studio-title-text', undefined, name));
+						if (activeEditor?.isDirty()) { append(this.title, $('span.studio-title-dirty', { title: localize('studioUnsaved', '尚未保存') }, '●')); }
+						this.title.title = this.windowTitle.value;
+					} else {
+						this.title.textContent = this.windowTitle.value;
+						this.title.removeAttribute('title');
+					}
 					if (this.lastLayoutDimensions) {
 						this.updateLayout(this.lastLayoutDimensions); // layout menubar and other renderings in the titlebar
 					}
-				}));
+				};
+				updateTitle();
+				this.titleDisposables.add(this.windowTitle.onDidChange(updateTitle));
 			} else {
 				reset(this.title);
 			}

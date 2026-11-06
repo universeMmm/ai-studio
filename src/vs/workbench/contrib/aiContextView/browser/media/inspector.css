@@ -10,59 +10,84 @@
 	flex-direction: column;
 	color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
 	font-size: 12px;
+	container-type: inline-size;
 	--studio-muted: var(--vscode-descriptionForeground);
 	--studio-line: var(--vscode-widget-border, var(--vscode-sideBar-border, color-mix(in srgb, currentColor 13%, transparent)));
 	--studio-accent: var(--vscode-textLink-foreground);
 }
-.studio-inspector button, .studio-inspector select { color: inherit; font: inherit; }
+.studio-inspector button { color: inherit; font: inherit; }
 .studio-inspector button {
 	cursor: pointer;
 	border: 0;
 	background: transparent;
 	padding: 0;
 }
-.studio-inspector button:focus-visible, .studio-inspector select:focus-visible, .studio-inspector summary:focus-visible {
+.studio-inspector button:focus-visible, .studio-inspector summary:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: 2px;
 }
 .studio-inspector button:disabled { opacity: .55; cursor: default; }
+.studio-inspector-overview { padding: 20px 16px 16px; flex: none; }
+.studio-inspector-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.studio-inspector-eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--studio-muted); }
+.studio-inspector .studio-inspector-close { flex: 0 0 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; color: var(--studio-muted); }
+.studio-inspector .studio-inspector-close:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
+.studio-inspector-status { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--studio-muted); font-size: 10px; }
+.studio-inspector-status::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.studio-inspector-status[data-state="running"] { color: var(--studio-accent); }
+.studio-inspector-status[data-state="waiting_for_approval"] { color: var(--vscode-editorWarning-foreground); }
+.studio-inspector-status[data-state="error"] { color: var(--vscode-errorForeground); }
+.studio-inspector-description { color: var(--studio-muted); margin: 8px 0 16px; font-size: 11px; line-height: 1.6; }
+.studio-inspector-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--studio-line); border-radius: 10px; overflow: hidden; background: var(--vscode-editor-background); }
+.studio-inspector .studio-inspector-metric { min-width: 0; padding: 12px 2px; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.studio-inspector-metric + .studio-inspector-metric { border-left: 1px solid var(--studio-line); }
+.studio-inspector-metric strong { font-size: 21px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.studio-inspector-metric span { font-size: 10px; color: var(--studio-muted); white-space: nowrap; }
+.studio-inspector-metric > .codicon { font-size: 16px; }
+.studio-inspector .studio-inspector-metric:hover { background: var(--vscode-list-hoverBackground); }
+.studio-inspector .studio-inspector-metric:focus-visible { outline-offset: -3px; }
 .studio-inspector-tabs {
-	display: flex;
+	display: grid;
+	grid-template-columns: 1fr 1fr 1fr;
 	flex: none;
-	border-bottom: 1px solid var(--studio-line);
-	padding: 0 14px;
-	gap: 14px;
+	border: 1px solid var(--studio-line);
+	background: var(--vscode-editor-background);
+	border-radius: 8px;
+	margin: 0 16px 8px;
+	padding: 3px;
+	gap: 2px;
 }
 .studio-inspector-tabs button {
 	color: var(--studio-muted);
-	border-bottom: 2px solid transparent;
+	border-radius: 5px;
+	font-size: 11px;
 	white-space: nowrap;
-	line-height: 34px;
+	line-height: 29px;
 }
 .studio-inspector-tabs button[aria-selected="true"] {
 	color: var(--vscode-foreground);
 	font-weight: 600;
-	border-bottom-color: var(--studio-accent);
+	background: var(--vscode-list-hoverBackground);
 }
-.studio-inspector-body { overflow: auto; overscroll-behavior: contain; padding: 4px 14px 20px; flex: 1 1 0; min-width: 0; }
+.studio-inspector-body { overflow: auto; overscroll-behavior: contain; padding: 0 16px 20px; flex: 1 1 0; min-width: 0; }
 .studio-inspector-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; margin-top: 14px; }
 .studio-inspector-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
-.studio-inspector-heading > span, .studio-inspector-heading select { color: var(--studio-muted); font-size: 11px; }
-.studio-inspector-heading select {
-	max-width: 50%;
+.studio-inspector-heading > span, .studio-inspector-heading .monaco-select-box { color: var(--studio-muted); font-size: 11px; }
+.studio-inspector-heading .studio-inspector-scope { max-width: 50%; min-width: 0; }
+.studio-inspector-heading .studio-inspector-scope .monaco-select-box {
 	border: 1px solid var(--studio-line);
 	background: var(--vscode-dropdown-background);
 	border-radius: 4px;
-	padding: 2px;
+	padding: 4px 23px 4px 6px;
 }
 .studio-inspector-heading button { padding: 4px; border-radius: 4px; }
 .studio-inspector-heading button:hover, .studio-inspector-file:hover { background: var(--vscode-list-hoverBackground); }
 .studio-inspector-summary { margin: 3px 0 12px; color: var(--studio-muted); font-size: 11px; line-height: 1.6; }
-.studio-inspector-empty { text-align: center; padding: 32px 8px; }
-.studio-inspector-empty > .codicon { color: var(--studio-muted); font-size: 25px; }
+.studio-inspector-empty { text-align: center; padding: 28px 12px; border: 1px dashed var(--studio-line); border-radius: 12px; margin-top: 10px; }
+.studio-inspector-empty > .codicon { color: var(--studio-muted); font-size: 25px; background: var(--vscode-editor-background); border: 1px solid var(--studio-line); border-radius: 12px; padding: 12px; }
 .studio-inspector-empty h3 { margin: 12px 0 5px; font-size: 13px; font-weight: 550; }
 .studio-inspector-empty p { max-width: 230px; margin: 0 auto; color: var(--studio-muted); font-size: 12px; line-height: 1.7; }
-.studio-inspector-change { border-top: 1px solid var(--studio-line); padding: 10px 0; }
+.studio-inspector-change { border: 1px solid var(--studio-line); border-radius: 10px; background: var(--vscode-editor-background); padding: 12px; margin: 10px 0; }
 .studio-inspector .studio-inspector-file { width: 100%; text-align: left; display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: 4px; }
 .studio-inspector-file > .codicon { color: var(--studio-muted); flex: none; }
 .studio-inspector-file > .codicon:last-child { opacity: 0; font-size: 12px; }
@@ -88,8 +113,47 @@
 .studio-inspector-task > .codicon, .studio-inspector-event summary > .codicon { color: var(--studio-muted); }
 .studio-inspector-task > span:not(.codicon), .studio-inspector-event summary > span:not(.codicon) { flex: 1; overflow-wrap: anywhere; }
 .studio-inspector-task small, .studio-inspector-event summary small { flex: none; }
-.studio-inspector-event { border-bottom: 1px solid var(--studio-line); }
+.studio-inspector-event { position: relative; border-left: 1px solid var(--studio-line); padding-left: 12px; margin-left: 5px; }
+.studio-inspector-event::before { content: ''; position: absolute; left: -3px; top: 16px; width: 5px; height: 5px; border-radius: 50%; background: var(--studio-muted); }
 .studio-inspector-event summary { cursor: pointer; }
 .studio-inspector-event summary::-webkit-details-marker { display: none; }
 .studio-inspector-event[open] summary { color: var(--studio-accent); }
 .studio-inspector-event pre { margin: 3px 0 9px 2px; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 var(--monaco-monospace-font); border-left: 2px solid var(--studio-line); }
+
+/* In the task workspace, details sit on a small surface beside the conversation. */
+.studio-basic .part.auxiliarybar { background: var(--vscode-editor-background) !important; border-left-color: transparent !important; }
+.studio-basic .studio-inspector {
+	box-sizing: border-box;
+	height: auto;
+	max-height: calc(100% - 24px);
+	margin: 12px 12px 12px 8px;
+	border: 1px solid var(--studio-line);
+	border-radius: 18px;
+	background: var(--vscode-menu-background);
+	overflow: hidden;
+}
+.studio-basic .studio-inspector-overview { padding: 16px 18px 0; }
+.studio-basic .studio-inspector-status { margin-left: auto; font-size: 11px; }
+.studio-basic .studio-inspector-description, .studio-basic .studio-inspector-tabs { display: none; }
+.studio-basic .studio-inspector-metrics { display: flex; flex-direction: column; border: 0; border-radius: 0; background: transparent; padding-top: 9px; }
+.studio-basic .studio-inspector .studio-inspector-metric { flex-direction: row; padding: 11px 2px; gap: 10px; border: 0; border-bottom: 1px solid var(--studio-line); border-radius: 0; }
+.studio-basic .studio-inspector-metric > span:not(.codicon) { color: var(--vscode-foreground); font-size: 13px; }
+.studio-basic .studio-inspector-metric strong { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--studio-muted); }
+.studio-basic .studio-inspector .studio-inspector-metric:hover { background: transparent; color: var(--vscode-foreground); }
+.studio-basic .studio-inspector .studio-inspector-metric:hover span:not(.codicon) { text-decoration: underline; text-underline-offset: 3px; }
+.studio-basic .studio-inspector-body { flex: 1 1 auto; padding: 0 18px 18px; }
+.studio-basic .studio-inspector-empty { border: 0; border-radius: 0; padding: 22px 4px 14px; }
+.studio-basic .studio-inspector-empty > .codicon { border: 0; padding: 0; background: transparent; font-size: 20px; }
+.studio-basic .studio-inspector-empty h3 { font-size: 13px; font-weight: 400; }
+.studio-basic .studio-inspector-empty p { font-size: 12px; line-height: 1.6; }
+.studio-basic .studio-inspector-change { background: transparent; border: 0; border-bottom: 1px solid var(--studio-line); border-radius: 0; padding: 8px 0 14px; }
+.studio-basic .studio-inspector-change:last-child { border-bottom: 0; }
+.studio-basic .studio-inspector-actions button { border-radius: 7px; padding: 3px 10px; }
+
+@container (max-width: 245px) {
+	.studio-inspector-overview { padding: 14px 10px 12px; }
+	.studio-inspector-tabs { margin-left: 10px; margin-right: 10px; }
+	.studio-inspector-body { padding-left: 10px; padding-right: 10px; }
+	.studio-inspector-eyebrow { font-size: 13px; }
+	.studio-inspector-description { font-size: 10px; }
+}

@@ -714,6 +714,14 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.dragHandle = undefined;
 		delete templateData.rowContainer.dataset.pendingRequestId;
 		delete templateData.rowContainer.dataset.pendingKind;
+		// Expose response identity to presentation layers without hiding the name
+		// or keyboard-accessible agent details of other participants. Clear it on
+		// every reuse, including rows recycled into requests and pending dividers.
+		if (isResponseVM(element) && element.agent?.id) {
+			templateData.rowContainer.dataset.agentId = element.agent.id;
+		} else {
+			delete templateData.rowContainer.dataset.agentId;
+		}
 
 		// Handle pending divider with simplified rendering
 		if (isPendingDividerVM(element)) {

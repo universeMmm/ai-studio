@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import { exec } from 'child_process';
-import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, session, shell, systemPreferences, webContents } from 'electron';
+import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, nativeImage, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, session, shell, systemPreferences, webContents } from 'electron';
 import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 'os';
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
@@ -27,7 +27,7 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, IRelaunchOptions } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
-import { FocusMode, ICommonNativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IToastOptions, IToastResult, PowerSaveBlockerType, SystemIdleState, ThermalState } from '../common/native.js';
+import { FocusMode, ICommonNativeHostService, IFileThumbnailOptions, INativeHostOptions, IOSProperties, IOSStatistics, IToastOptions, IToastResult, PowerSaveBlockerType, SystemIdleState, ThermalState } from '../common/native.js';
 import { IProductService } from '../../product/common/productService.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
@@ -49,6 +49,7 @@ import { IProxyAuthService } from './auth.js';
 import { AuthInfo, Credentials, IRequestService } from '../../request/common/request.js';
 import { randomPath } from '../../../base/common/extpath.js';
 import { CancellationTokenSource } from '../../../base/common/cancellation.js';
+import { NativeFileThumbnailProvider } from '../node/fileThumbnail.js';
 
 export interface INativeHostMainService extends AddFirstParameterToFunctions<ICommonNativeHostService, Promise<unknown> /* only methods, not events */, number | undefined /* window ID */> { }
 
@@ -57,6 +58,8 @@ export const INativeHostMainService = createDecorator<INativeHostMainService>('n
 export class NativeHostMainService extends Disposable implements INativeHostMainService {
 
 	declare readonly _serviceBrand: undefined;
+	private readonly fileThumbnails = this._register(new NativeFileThumbnailProvider((filePath, size) => nativeImage.createThumbnailFromPath(filePath, size), isMacintosh || isWindows));
+	private readonly thumbnailWindows = this._register(new DisposableMap<number>());
 
 	constructor(
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
@@ -625,6 +628,22 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	async showItemInFolder(windowId: number | undefined, path: string): Promise<void> {
 		shell.showItemInFolder(path);
+	}
+
+	async getFileThumbnail(windowId: number | undefined, resource: UriComponents, options?: IFileThumbnailOptions): Promise<string | undefined> {
+		const window = this.windowById(windowId)?.win;
+		if (typeof windowId !== 'number' || !window || window.isDestroyed()) { return undefined; }
+		if (!this.thumbnailWindows.has(windowId)) {
+			this.thumbnailWindows.set(windowId, Event.once(Event.fromNodeEventEmitter(window, 'closed'))(() => {
+				this.fileThumbnails.cancelWindow(windowId);
+				this.thumbnailWindows.deleteAndDispose(windowId);
+			}));
+		}
+		return this.fileThumbnails.get(windowId, resource, options);
+	}
+
+	async cancelFileThumbnail(windowId: number | undefined, requestId: string): Promise<void> {
+		if (typeof windowId === 'number') { this.fileThumbnails.cancel(windowId, requestId); }
 	}
 
 	async setRepresentedFilename(windowId: number | undefined, path: string, options?: INativeHostOptions): Promise<void> {

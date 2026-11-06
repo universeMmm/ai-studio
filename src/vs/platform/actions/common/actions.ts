@@ -459,12 +459,15 @@ export interface IMenuRegistry {
 	appendMenuItems(items: Iterable<{ id: MenuId; item: IMenuItem | ISubmenuItem }>): IDisposable;
 	appendMenuItem(menu: MenuId, item: IMenuItem | ISubmenuItem): IDisposable;
 	getMenuItems(loc: MenuId): Array<IMenuItem | ISubmenuItem>;
+	/** Add presentation conditions without changing command registration or execution. */
+	registerMenuItemConditionProvider(provider: (menu: MenuId, item: IMenuItem | ISubmenuItem) => ContextKeyExpression | undefined): IDisposable;
 }
 
 export const MenuRegistry: IMenuRegistry = new class implements IMenuRegistry {
 
 	private readonly _commands = new Map<string, ICommandAction>();
 	private readonly _menuItems = new Map<MenuId, LinkedList<IMenuItem | ISubmenuItem>>();
+	private readonly _conditionProviders = new Set<(menu: MenuId, item: IMenuItem | ISubmenuItem) => ContextKeyExpression | undefined>();
 	private readonly _onDidChangeMenu = new MicrotaskEmitter<IMenuRegistryChangeEvent>({
 		merge: MenuRegistryChangeEvent.merge
 	});
@@ -514,6 +517,20 @@ export const MenuRegistry: IMenuRegistry = new class implements IMenuRegistry {
 		return result;
 	}
 
+	registerMenuItemConditionProvider(provider: (menu: MenuId, item: IMenuItem | ISubmenuItem) => ContextKeyExpression | undefined): IDisposable {
+		const invalidate = () => {
+			for (const id of new Set([...this._menuItems.keys(), MenuId.CommandPalette])) {
+				this._onDidChangeMenu.fire(MenuRegistryChangeEvent.for(id));
+			}
+		};
+		this._conditionProviders.add(provider);
+		invalidate();
+		return markAsSingleton(toDisposable(() => {
+			this._conditionProviders.delete(provider);
+			invalidate();
+		}));
+	}
+
 	getMenuItems(id: MenuId): Array<IMenuItem | ISubmenuItem> {
 		let result: Array<IMenuItem | ISubmenuItem>;
 		if (this._menuItems.has(id)) {
@@ -525,6 +542,12 @@ export const MenuRegistry: IMenuRegistry = new class implements IMenuRegistry {
 			// CommandPalette is special because it shows
 			// all commands by default
 			this._appendImplicitItems(result);
+		}
+		for (const provider of this._conditionProviders) {
+			result = result.map(item => {
+				const condition = provider(id, item);
+				return condition ? { ...item, when: ContextKeyExpr.and(item.when, condition) } : item;
+			});
 		}
 		return result;
 	}

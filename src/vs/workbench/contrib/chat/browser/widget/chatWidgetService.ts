@@ -11,6 +11,7 @@ import { isEqual } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ILayoutService } from '../../../../../platform/layout/browser/layoutService.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { EditorsOrder } from '../../../../common/editor.js';
 import { ACTIVE_GROUP, IEditorService, type PreferredGroup } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroup, IEditorGroupsService, isEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
@@ -27,6 +28,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 
 	private _widgets: IChatWidget[] = [];
 	private _lastFocusedWidget: IChatWidget | undefined = undefined;
+	private pendingEditorReveal: Promise<IChatWidget | undefined> | undefined;
 
 	private readonly _onDidAddWidget = this._register(new Emitter<IChatWidget>());
 	readonly onDidAddWidget = this._onDidAddWidget.event;
@@ -78,7 +80,26 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 			return last;
 		}
 
-		return (await this.viewsService.openView<ChatViewPane>(ChatViewId, !preserveFocus))?.widget;
+		if (this.pendingEditorReveal) {
+			return this.pendingEditorReveal;
+		}
+		const pending = this.pendingEditorReveal = this.revealChatEditor(preserveFocus);
+		try {
+			return await pending;
+		} finally {
+			if (this.pendingEditorReveal === pending) { this.pendingEditorReveal = undefined; }
+		}
+	}
+
+	private async revealChatEditor(preserveFocus?: boolean): Promise<IChatWidget | undefined> {
+		// Studio's editor is the single conversation host. Reuse an existing editor
+		// even when no chat widget has been focused since layout restoration.
+		const existing = this.editorService.getEditors(EditorsOrder.MOST_RECENTLY_ACTIVE)
+			.find(item => item.editor instanceof ChatEditorInput);
+		const pane = existing
+			? await this.editorService.openEditor(existing.editor, { pinned: true, preserveFocus }, existing.groupId)
+			: await this.editorService.openEditor({ resource: ChatEditorInput.getNewEditorUri(), options: { pinned: true, preserveFocus } }, ACTIVE_GROUP);
+		return pane instanceof ChatEditor ? pane.widget : undefined;
 	}
 
 	async reveal(widget: IChatWidget, preserveFocus?: boolean): Promise<boolean> {
@@ -111,7 +132,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		this.logService.trace(`[ChatWidgetService] openSession start uri=${sessionResource.toString()} target=${targetKind}`);
 
 		// Reveal if already open unless instructed otherwise
-		if (typeof target === 'undefined' || options?.revealIfOpened) {
+		if (typeof target === 'undefined' || target === ChatViewPaneTarget || options?.revealIfOpened) {
 			const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(sessionResource, options);
 			if (alreadyOpenWidget) {
 				this.logService.trace(`[ChatWidgetService] openSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()} path=reveal`);
@@ -121,27 +142,18 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 			await this.prepareSessionForMove(sessionResource, target);
 		}
 
-		// Load this session in chat view (preferred)
-		if (target === ChatViewPaneTarget || typeof target === 'undefined') {
-			const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, !options?.preserveFocus);
-			if (chatView) {
-				await chatView.loadSession(sessionResource);
-				if (!options?.preserveFocus) {
-					chatView.focusInput();
-				}
-			}
-			this.logService.trace(`[ChatWidgetService] openSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()} path=view`);
-			return chatView?.widget;
-		}
+		// Legacy sidebar targets share the same Studio editor host.
+		const editorTarget = target === ChatViewPaneTarget || target === undefined ? ACTIVE_GROUP : target;
 
 		// Open in chat editor
 		const pane = await this.editorService.openEditor({
 			resource: sessionResource,
 			options: {
+				pinned: true,
 				...options,
 				revealIfOpened: options?.revealIfOpened ?? true // always try to reveal if already opened unless explicitly told not to
 			}
-		}, target);
+		}, editorTarget);
 		this.logService.trace(`[ChatWidgetService] openSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()} path=editor`);
 		return pane instanceof ChatEditor ? pane.widget : undefined;
 	}

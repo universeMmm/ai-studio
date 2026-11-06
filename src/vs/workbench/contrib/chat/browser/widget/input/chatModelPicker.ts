@@ -4,15 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../../base/browser/dom.js';
+import '../media/studioModelMenu.css';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { renderMarkdown } from '../../../../../../base/browser/markdownRenderer.js';
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { getBaseLayerHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegate2.js';
 import { getDefaultHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
+import { IManagedHover } from '../../../../../../base/browser/ui/hover/hover.js';
+import { AnchorAlignment, AnchorPosition } from '../../../../../../base/browser/ui/contextview/contextview.js';
 import { IAction, toAction } from '../../../../../../base/common/actions.js';
 import { IStringDictionary } from '../../../../../../base/common/collections.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { onUnexpectedError } from '../../../../../../base/common/errors.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
@@ -24,6 +28,10 @@ import { ActionListItemKind, IActionListItem } from '../../../../../../platform/
 import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
 import { IActionWidgetDropdownAction } from '../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
+import { IContextViewService, IOpenContextView } from '../../../../../../platform/contextview/browser/contextView.js';
+import { getAIReasoningEfforts } from '../../../../../../platform/ai/common/aiReasoning.js';
+import { getUserAIConfiguration } from '../../../../../../platform/ai/common/aiSecurityConfiguration.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
@@ -828,6 +836,7 @@ type ModelPickerBadge = 'info' | 'warning';
  * Listen for selection changes via `onDidChangeSelection`.
  */
 export class ModelPickerWidget extends Disposable {
+	private static readonly _studioPopovers = new WeakMap<HTMLElement, IOpenContextView>();
 
 	private readonly _onDidChangeSelection = this._register(new Emitter<ILanguageModelChatMetadataAndIdentifier>());
 	readonly onDidChangeSelection: Event<ILanguageModelChatMetadataAndIdentifier> = this._onDidChangeSelection.event;
@@ -841,6 +850,8 @@ export class ModelPickerWidget extends Disposable {
 	private _nameButton: HTMLElement | undefined;
 	private _effortButton: HTMLElement | undefined;
 	private _tokensButton: HTMLElement | undefined;
+	private _effortHover: IManagedHover | undefined;
+	private _studioPopoverOwner: HTMLElement | undefined;
 
 	get selectedModel(): ILanguageModelChatMetadataAndIdentifier | undefined {
 		return this._selectedModel;
@@ -866,6 +877,8 @@ export class ModelPickerWidget extends Disposable {
 		@IUpdateService private readonly _updateService: IUpdateService,
 		@IUriIdentityService private readonly _uriIdentityService: IUriIdentityService,
 		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@IContextViewService private readonly _contextViewService: IContextViewService,
 	) {
 		super();
 
@@ -876,6 +889,25 @@ export class ModelPickerWidget extends Disposable {
 		this._register(this._entitlementService.onDidChangeUsageBasedBilling(() => {
 			this._renderLabel();
 		}));
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('ai.modelName') || e.affectsConfiguration('ai.modelId') || e.affectsConfiguration('ai.apiType') || e.affectsConfiguration('ai.apiBase') || e.affectsConfiguration('ai.reasoningEffort')) {
+				this._renderLabel();
+			}
+		}));
+		this._register({
+			dispose: () => {
+				const owner = this._studioPopoverOwner;
+				if (!owner) { return; }
+				// Menu updates replace toolbar items synchronously. Keep the open control
+				// attached to its composer, but close it when the input itself goes away.
+				queueMicrotask(() => {
+					// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+					if (!owner.isConnected || !owner.querySelector('.studio-model-picker .model-picker-name')) {
+						ModelPickerWidget._studioPopovers.get(owner)?.close();
+					}
+				});
+			}
+		});
 	}
 
 	setCompact(compact: IObservable<boolean>): void {
@@ -907,6 +939,14 @@ export class ModelPickerWidget extends Disposable {
 	}
 
 	render(container: HTMLElement): void {
+		this._studioPopoverOwner = container.closest<HTMLElement>('.interactive-input-part') ?? container;
+		// ActionBar renders each item before attaching it to the input's DOM.
+		queueMicrotask(() => {
+			if (container.isConnected) {
+				this._studioPopoverOwner = container.closest<HTMLElement>('.interactive-input-part') ?? container;
+				this._nameButton?.setAttribute('aria-expanded', String(ModelPickerWidget._studioPopovers.has(this._studioPopoverOwner)));
+			}
+		});
 		this._domNode = dom.append(container, dom.$('div.action-label.model-picker-split'));
 		this._domNode.setAttribute('role', 'group');
 
@@ -942,17 +982,25 @@ export class ModelPickerWidget extends Disposable {
 		this._updateBadge();
 
 		this._renderLabel();
+		if (ModelPickerWidget._studioPopovers.has(this._studioPopoverOwner)) {
+			this._nameButton.setAttribute('aria-expanded', 'true');
+		}
 
-		this._registerButtonAction(this._nameButton, () => this.show());
+		this._registerButtonAction(this._nameButton, keyboard => this.showConfiguration(undefined, keyboard));
+		this._register(dom.addDisposableListener(this._nameButton, dom.EventType.CLICK, e => {
+			// The input toolbar otherwise focuses the editor and immediately closes the popover.
+			if (this._delegate.useStudioModelConfiguration?.()) { dom.EventHelper.stop(e, true); }
+		}));
 		this._registerButtonAction(this._effortButton, () => this._showEffortPicker());
 		this._registerButtonAction(this._tokensButton, () => this._showTokensPicker());
 
 		// Managed hovers for effort and tokens buttons
-		this._register(getBaseLayerHoverDelegate().setupManagedHover(
+		this._effortHover = this._register(getBaseLayerHoverDelegate().setupManagedHover(
 			getDefaultHoverDelegate('mouse'),
 			this._effortButton,
 			localize('chat.modelPicker.effortTooltip', "Set Thinking Effort")
 		));
+		this._renderLabel();
 		this._register(getBaseLayerHoverDelegate().setupManagedHover(
 			getDefaultHoverDelegate('mouse'),
 			this._tokensButton,
@@ -963,21 +1011,145 @@ export class ModelPickerWidget extends Disposable {
 	/**
 	 * Registers mouse-down and Enter/Space key handlers on a button element.
 	 */
-	private _registerButtonAction(element: HTMLElement, action: () => void): void {
+	private _registerButtonAction(element: HTMLElement, action: (keyboard: boolean) => void): void {
 		this._register(dom.addDisposableGenericMouseDownListener(element, e => {
 			if (e.button !== 0) {
 				return;
 			}
 			dom.EventHelper.stop(e, true);
-			action();
+			action(false);
 		}));
 		this._register(dom.addDisposableListener(element, dom.EventType.KEY_DOWN, (e) => {
 			const event = new StandardKeyboardEvent(e);
 			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
 				dom.EventHelper.stop(e, true);
-				action();
+				action(true);
 			}
 		}));
+	}
+
+	showConfiguration(anchor?: HTMLElement, keyboard = true): void {
+		if (this._delegate.useStudioModelConfiguration?.()) { this._showStudioPopover(anchor, keyboard); }
+		else { this.show(anchor); }
+	}
+
+	private _showStudioPopover(anchor?: HTMLElement, keyboard = true): void {
+		const anchorElement = anchor ?? this._nameButton;
+		if (!anchorElement || this._domNode?.classList.contains('disabled')) { return; }
+		const owner = anchorElement.closest<HTMLElement>('.interactive-input-part') ?? this._studioPopoverOwner ?? anchorElement;
+		this._studioPopoverOwner = owner;
+		const existing = ModelPickerWidget._studioPopovers.get(owner);
+		if (existing) { existing.close(); return; }
+		// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+		const currentAnchor = () => anchorElement.isConnected ? anchorElement : owner.querySelector<HTMLElement>('.studio-model-picker .model-picker-name') ?? anchorElement;
+		// eslint-disable-next-line prefer-const -- Close callbacks can run while the context view is being created.
+		let openPopover: IOpenContextView | undefined;
+		let restoreFocus = true;
+		let popup: HTMLElement;
+		let slider: HTMLInputElement;
+		let model: HTMLButtonElement;
+		const close = (restore: boolean) => { restoreFocus = restore; openPopover?.close(); };
+		this._nameButton?.setAttribute('aria-expanded', 'true');
+		openPopover = this._contextViewService.showContextView({
+			getAnchor: currentAnchor,
+			anchorPosition: AnchorPosition.ABOVE,
+			anchorAlignment: AnchorAlignment.RIGHT,
+			render: container => {
+				const disposables = new DisposableStore();
+				popup = dom.append(container, dom.$('div.studio-reasoning-popover', { role: 'dialog', 'aria-label': localize('studio.reasoning.dialog', "模型与推理强度") }));
+				popup.classList.toggle('keyboard-focus', keyboard);
+				const heading = dom.append(popup, dom.$('div.studio-reasoning-heading'));
+				dom.append(heading, renderIcon(Codicon.zap));
+				const level = dom.append(heading, dom.$('strong.studio-reasoning-level'));
+				const reset = dom.append(heading, dom.$<HTMLButtonElement>('button.studio-reasoning-reset', { type: 'button', title: localize('studio.reasoning.reset', "恢复默认推理强度"), 'aria-label': localize('studio.reasoning.reset', "恢复默认推理强度") }));
+				dom.append(reset, renderIcon(Codicon.history));
+				model = dom.append(popup, dom.$<HTMLButtonElement>('button.studio-reasoning-model', { type: 'button' }));
+				const modelName = dom.append(model, dom.$('span'));
+				dom.append(model, renderIcon(Codicon.chevronRight));
+				const control = dom.append(popup, dom.$('div.studio-reasoning-control'));
+				const track = dom.append(control, dom.$('div.studio-reasoning-track', { 'aria-hidden': 'true' }));
+				const ticks = dom.append(track, dom.$('div.studio-reasoning-ticks'));
+				const fill = dom.append(track, dom.$('div.studio-reasoning-fill'));
+				slider = dom.append(control, dom.$<HTMLInputElement>('input.studio-reasoning-slider', { type: 'range', min: '0', step: '1', 'aria-label': localize('studio.reasoning.title', "推理强度") }));
+				const hint = dom.append(popup, dom.$('p.studio-reasoning-unavailable'));
+				let config = this._getConfigProperty('navigation');
+				const preview = () => {
+					const index = Number(slider.value);
+					const label = config?.schema.enumItemLabels?.[index] ?? '';
+					level.textContent = label;
+					slider.setAttribute('aria-valuetext', label);
+					const progress = Number(slider.max) ? index / Number(slider.max) : 0;
+					control.style.setProperty('--studio-reasoning-progress', `${progress * 100}%`);
+					// The native thumb travels between its centres, inset by half its 28px width.
+					control.style.setProperty('--studio-reasoning-thumb-offset', `${14 - progress * 28}px`);
+					control.classList.toggle('has-fill', progress > 0 && !slider.disabled);
+					control.classList.toggle('is-maximum', progress === 1 && !slider.disabled);
+					control.classList.toggle('is-ultra', config?.schema.enum?.[index] === 'ultra' && !slider.disabled);
+					popup.dataset.effort = String(config?.schema.enum?.[index] ?? 'default');
+					// Preserve the current particle position while accelerating the native CSS animation.
+					for (const animation of fill.getAnimations({ subtree: true })) {
+						if (animation instanceof dom.getWindow(fill).CSSAnimation && animation.animationName === 'studio-reasoning-flow') {
+							animation.updatePlaybackRate(12 / (16 - progress * 12));
+						}
+					}
+				};
+				const update = () => {
+					config = this._getConfigProperty('navigation');
+					const values = config?.schema.enum ?? ['default'];
+					slider.max = String(Math.max(0, values.length - 1));
+					slider.value = String(Math.max(0, values.indexOf(config?.value)));
+					slider.disabled = values.length < 2;
+					control.classList.toggle('is-disabled', slider.disabled);
+					dom.clearNode(ticks);
+					if (!slider.disabled) {
+						for (const _value of values) { dom.append(ticks, dom.$('span')); }
+					}
+					reset.disabled = config?.value === 'default';
+					modelName.textContent = this._configurationService.getValue<string>('ai.modelName') || this._configurationService.getValue<string>('ai.modelId') || localize('studio.model.configure', "配置模型");
+					model.title = localize('studio.reasoning.chooseModel', "当前模型：{0}，点击选择模型", modelName.textContent);
+					model.setAttribute('aria-label', model.title);
+					hint.textContent = slider.disabled ? localize('studio.reasoning.unavailable', "此模型尚未声明可调推理强度，使用模型默认值。") : '';
+					hint.hidden = !slider.disabled;
+					preview();
+				};
+				const setEffort = (value: unknown) => { void this._configurationService.updateValue('ai.reasoningEffort', value, ConfigurationTarget.USER).catch(onUnexpectedError); };
+				disposables.add(dom.addDisposableListener(slider, 'input', preview));
+				disposables.add(dom.addDisposableListener(slider, 'change', () => setEffort(config?.schema.enum?.[Number(slider.value)] ?? 'default')));
+				disposables.add(dom.addDisposableListener(reset, 'click', () => setEffort('default')));
+				disposables.add(dom.addDisposableListener(model, 'click', e => { dom.EventHelper.stop(e, true); const nextAnchor = currentAnchor(); close(false); this.show(nextAnchor); }));
+				disposables.add(dom.addDisposableListener(popup, dom.EventType.POINTER_DOWN, () => popup.classList.remove('keyboard-focus')));
+				disposables.add(dom.addDisposableListener(popup, dom.EventType.KEY_DOWN, e => {
+					popup.classList.add('keyboard-focus');
+					if (e.key === 'Escape') { dom.EventHelper.stop(e, true); close(true); }
+					else if (e.key === 'Tab') {
+						const controls = [reset, model, slider].filter(control => !control.disabled);
+						const current = controls.indexOf(popup.ownerDocument.activeElement as HTMLButtonElement | HTMLInputElement);
+						const next = (current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length;
+						dom.EventHelper.stop(e, true);
+						controls[next]?.focus();
+					}
+				}));
+				disposables.add(this._configurationService.onDidChangeConfiguration(e => {
+					if (e.affectsConfiguration('ai')) { update(); this._contextViewService.layout(); }
+					else if (e.affectsConfiguration('workbench.reduceMotion')) { preview(); }
+				}));
+				disposables.add(dom.addDisposableListener(dom.getWindow(popup).matchMedia('(prefers-reduced-motion: reduce)'), 'change', preview));
+				update();
+				return disposables;
+			},
+			focus: () => { if (slider.disabled) { model.focus(); } else { slider.focus(); } },
+			onDOMEvent: e => {
+				if (e.type === 'click' && dom.isHTMLElement(e.target) && !popup.contains(e.target) && !currentAnchor().contains(e.target)) { close(false); }
+				if (e.type === 'focus' && dom.isHTMLElement(e.target) && !popup.contains(e.target) && !currentAnchor().contains(e.target)) { close(false); }
+			},
+			onHide: () => {
+				ModelPickerWidget._studioPopovers.delete(owner);
+				const target = currentAnchor();
+				target.setAttribute('aria-expanded', 'false');
+				if (restoreFocus && target.isConnected) { target.focus(); }
+			},
+		});
+		ModelPickerWidget._studioPopovers.set(owner, openPopover);
 	}
 
 	show(anchor?: HTMLElement): void {
@@ -991,7 +1163,8 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 
-		const previousModel = this._selectedModel;
+		const studio = this._delegate.useStudioModelConfiguration?.() === true;
+		const previousModel = this._getActiveModel();
 
 		const onSelect = (model: ILanguageModelChatMetadataAndIdentifier) => {
 			this._telemetryService.publicLog2<ChatModelChangeEvent, ChatModelChangeClassification>('chat.modelChange', {
@@ -1000,15 +1173,25 @@ export class ModelPickerWidget extends Disposable {
 			});
 			this._selectedModel = model;
 			this._renderLabel();
-			this._onDidChangeSelection.fire(model);
+			if (studio) {
+				// The action bar can replace this view item while its menu is open.
+				// The composer's delegate remains valid for the lifetime of the input.
+				if (this._studioPopoverOwner?.isConnected) { this._delegate.setModel(model); }
+			} else {
+				this._onDidChangeSelection.fire(model);
+			}
 		};
 
 		const models = this._delegate.getModels();
+		if (studio) {
+			this._showStudioModelMenu(anchorElement, models.filter(model => model.metadata.vendor === 'ai-studio'), previousModel?.identifier, onSelect);
+			return;
+		}
 		const isPro = isProUser(this._entitlementService.entitlement);
 		const isUBB = !!this._entitlementService.quotas.usageBasedBilling;
 		const manifest = this._languageModelsService.getModelsControlManifest();
-		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
-		const canShowManageModelsAction = this._delegate.showManageModelsAction() && shouldShowManageModelsAction(this._entitlementService);
+		const controlModelsForTier = studio ? {} : isPro ? manifest.paid : manifest.free;
+		const canShowManageModelsAction = this._delegate.showManageModelsAction() && (studio || shouldShowManageModelsAction(this._entitlementService));
 		const manageModelsAction = canShowManageModelsAction ? createManageModelsAction(this._commandService) : undefined;
 		const logModelPickerInteraction = (interaction: ChatModelPickerInteraction) => {
 			this._telemetryService.publicLog2<ChatModelPickerInteractionEvent, ChatModelPickerInteractionClassification>('chat.modelPickerInteraction', { interaction });
@@ -1027,7 +1210,7 @@ export class ModelPickerWidget extends Disposable {
 
 		const items = buildModelPickerItems(
 			models,
-			this._selectedModel?.identifier,
+			previousModel?.identifier,
 			this._languageModelsService.getRecentlyUsedModelIds().filter(id => !this._languageModelsService.isModelHidden(id)),
 			this._languageModelsService.getPinnedModelIds().filter(id => !this._languageModelsService.isModelHidden(id)),
 			controlModelsForTier,
@@ -1036,11 +1219,11 @@ export class ModelPickerWidget extends Disposable {
 			onSelect,
 			onTogglePin,
 			manageSettingsUrl,
-			this._delegate.useGroupedModelPicker(),
+			!studio && this._delegate.useGroupedModelPicker(),
 			isUBB ? manageModelsAction : undefined,
 			this._entitlementService,
-			this._delegate.showUnavailableFeatured(),
-			this._delegate.showFeatured(),
+			!studio && this._delegate.showUnavailableFeatured(),
+			!studio && this._delegate.showFeatured(),
 			this._languageModelsService,
 			this._openerService,
 			isUBB,
@@ -1114,6 +1297,70 @@ export class ModelPickerWidget extends Disposable {
 		}
 	}
 
+	private _showStudioModelMenu(anchor: HTMLElement, models: ILanguageModelChatMetadataAndIdentifier[], selectedId: string | undefined, onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void): void {
+		// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+		const currentAnchor = () => anchor.isConnected ? anchor : this._studioPopoverOwner?.querySelector<HTMLElement>('.studio-model-picker .model-picker-name') ?? anchor;
+		if (!models.length) {
+			void this._commandService.executeCommand(MODEL_CONFIGURATION_OPEN_COMMAND_ID);
+			return;
+		}
+		const items: IActionListItem<IActionWidgetDropdownAction>[] = [
+			{ kind: ActionListItemKind.Header, label: localize('studio.models.choose', "选择模型") },
+			{ kind: ActionListItemKind.Header, label: localize('studio.models.configured', "已配置模型") },
+			...models.map(model => {
+				const checked = model.identifier === selectedId;
+				const action: IActionWidgetDropdownAction = toAction({
+					id: model.identifier, label: model.metadata.name, enabled: true, checked,
+					run: () => onSelect(model),
+				});
+				return {
+					kind: ActionListItemKind.Action,
+					item: action,
+					label: action.label,
+					group: { title: '', icon: checked ? Codicon.check : Codicon.blank },
+					className: 'studio-model-menu-item',
+				};
+			}),
+			{ kind: ActionListItemKind.Separator },
+			{
+				kind: ActionListItemKind.Action,
+				item: createManageModelsAction(this._commandService),
+				label: localize('studio.models.manage', "管理模型…"),
+				hideIcon: true,
+				showAlways: true,
+				className: 'studio-model-menu-manage',
+			},
+		];
+		const width = Math.max(160, Math.min(320, dom.getWindow(anchor).innerWidth - 40));
+		const accessibility = getModelPickerAccessibilityProvider();
+		anchor.setAttribute('aria-expanded', 'true');
+		this._actionWidgetService.show(
+			'StudioModelPicker', false, items,
+			{
+				onSelect: action => { this._actionWidgetService.hide(); void action.run(); },
+				onHide: () => {
+					const target = currentAnchor();
+					target.setAttribute('aria-expanded', 'false');
+					if (target.isConnected) { target.focus(); }
+				},
+			},
+			anchor, undefined, [],
+			{
+				...accessibility,
+				getRole: item => item.className === 'studio-model-menu-manage' ? 'menuitem' : accessibility.getRole(item),
+				isChecked: item => item.className === 'studio-model-menu-manage' ? undefined : accessibility.isChecked(item),
+			},
+			{
+				minWidth: width, maxWidth: width, actionItemHeight: 36,
+				showFilter: models.length > 8,
+				filterPlaceholder: localize('studio.models.search', "搜索模型"),
+				focusFilterOnOpen: models.length > 8,
+				reserveSubmenuSpace: false,
+				hideDefaultKeybindingTooltip: true,
+			}
+		);
+	}
+
 	private _updateBadge(): void {
 		if (this._badgeIcon) {
 			if (this._badge) {
@@ -1133,44 +1380,67 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 
-		const { name, statusIcon } = this._selectedModel?.metadata || {};
+		const studio = this._delegate.useStudioModelConfiguration?.() === true;
+		this._domNode.classList.toggle('studio-model-picker', studio);
+		const activeModel = this._getActiveModel();
+		const { name, statusIcon } = activeModel?.metadata || {};
 
 		// --- Name section ---
 		const nameChildren: (HTMLElement | string)[] = [];
-		if (statusIcon) {
+		if (studio) {
+			nameChildren.push(renderIcon(Codicon.zap));
+		} else if (statusIcon) {
 			nameChildren.push(renderIcon(statusIcon));
 		}
-		const modelLabel = name ?? (this._delegate.showManageModelsAction() && !this._delegate.getModels().length
+		const configuredName = this._configurationService.getValue<string>('ai.modelName') || this._configurationService.getValue<string>('ai.modelId');
+		const modelLabel = studio ? configuredName || localize('studio.model.configure', "配置模型") : name ?? (this._delegate.showManageModelsAction() && !this._delegate.getModels().length
 			? localize('studio.model.configure', "配置模型")
 			: localize('chat.modelPicker.auto', "Auto"));
 		// In PRU mode, append the config description (e.g. thinking effort) to the button label
 		const isUBB = !!this._entitlementService.quotas.usageBasedBilling;
-		const configDescription = !isUBB && this._selectedModel
+		const configDescription = !studio && !isUBB && this._selectedModel
 			? getModelConfigurationDescription(this._selectedModel, this._languageModelsService)
 			: undefined;
 		const fullLabel = configDescription
 			? `${modelLabel} · ${configDescription}`
 			: modelLabel;
+		const studioEffort = studio ? this._getConfigProperty('navigation') : undefined;
+		const effortIndex = studioEffort?.schema.enum?.indexOf(studioEffort.value) ?? -1;
+		const studioEffortLabel = studioEffort?.schema.enumItemLabels?.[effortIndex] ?? localize('studio.reasoning.default', "默认");
 		nameChildren.push(dom.$('span.chat-input-picker-label', undefined, fullLabel));
+		if (studio) {
+			nameChildren.push(dom.$('span.studio-picker-effort', undefined, studioEffortLabel), renderIcon(Codicon.chevronDown));
+			this._nameButton.classList.toggle('studio-effort-active', studioEffort?.value !== undefined && studioEffort.value !== 'default');
+			this._nameButton.classList.toggle('studio-effort-ultra', studioEffort?.value === 'ultra');
+		}
 		if (this._badgeIcon) {
 			nameChildren.push(this._badgeIcon);
 		}
 		dom.reset(this._nameButton, ...nameChildren);
+		this._nameButton.setAttribute('aria-label', studio ? localize('studio.reasoning.pickerLabel', "模型：{0}，推理强度：{1}", fullLabel, studioEffortLabel) : localize('chat.modelPicker.ariaLabel', "Pick Model, {0}", fullLabel));
+		this._nameButton.setAttribute('aria-haspopup', studio ? 'dialog' : 'true');
+		this._nameButton.title = this._nameButton.getAttribute('aria-label') ?? fullLabel;
 
-		// Effort and tokens buttons are only shown in UBB mode.
-		// In PRU mode, configuration is accessed via per-model toolbar actions in the picker dropdown.
+		// Studio shares the native effort control independently of Copilot billing.
+		// Other providers retain their UBB/PRU model-configuration presentation.
 
 		// --- Effort section (from configurationSchema group 'navigation') ---
-		const effortConfig = isUBB ? this._getConfigProperty('navigation') : undefined;
+		const effortConfig = !studio && isUBB ? this._getConfigProperty('navigation') : undefined;
 		if (effortConfig && this._effortButton) {
 			// Use the localized enumItemLabel from the schema, falling back to the raw value
 			const enumIndex = effortConfig.schema.enum?.indexOf(effortConfig.value) ?? -1;
 			const effortLabel = enumIndex >= 0 && effortConfig.schema.enumItemLabels?.[enumIndex]
 				? effortConfig.schema.enumItemLabels[enumIndex]
 				: String(effortConfig.value);
-			dom.reset(this._effortButton, dom.$('span.chat-input-picker-label', undefined, effortLabel));
+			const supported = (effortConfig.schema.enum?.length ?? 0) > 1;
+			const tooltip = supported ? localize('chat.modelPicker.effortTooltip', "Set Thinking Effort") : localize('studio.reasoning.unavailable', "此模型尚未声明可调推理强度，使用模型默认值。");
+			dom.reset(this._effortButton, dom.$('span.chat-input-picker-label', undefined, studio ? localize('studio.reasoning.label', "推理：{0}", effortLabel) : effortLabel));
 			this._effortButton.style.display = '';
 			this._effortButton.ariaLabel = localize('chat.modelPicker.effortAriaLabel', "Thinking Effort: {0}", effortLabel);
+			this._effortButton.setAttribute('aria-disabled', String(!supported));
+			this._effortButton.setAttribute('aria-haspopup', String(supported));
+			this._effortButton.title = tooltip;
+			this._effortHover?.update(tooltip);
 		} else if (this._effortButton) {
 			this._effortButton.style.display = 'none';
 		}
@@ -1193,11 +1463,28 @@ export class ModelPickerWidget extends Disposable {
 		this._domNode.ariaLabel = localize('chat.modelPicker.ariaLabel', "Pick Model, {0}", fullLabel);
 	}
 
-	private _getConfigProperty(group: string) {
+	private _getConfigProperty(group: string): ReturnType<typeof resolveConfigProperty> {
+		if (group === 'navigation' && this._delegate.useStudioModelConfiguration?.()) {
+			const values = getAIReasoningEfforts(
+				getUserAIConfiguration(this._configurationService, 'ai.apiType', 'openai'),
+				this._configurationService.getValue<string>('ai.modelId') || '',
+				getUserAIConfiguration(this._configurationService, 'ai.apiBase', ''),
+			);
+			const current = getUserAIConfiguration<string>(this._configurationService, 'ai.reasoningEffort', 'default');
+			const labels: Record<string, string> = { default: localize('studio.reasoning.default', "默认"), low: localize('studio.reasoning.low', "低"), medium: localize('studio.reasoning.medium', "中"), high: localize('studio.reasoning.high', "高") };
+			return { key: 'ai.reasoningEffort', value: values.find(value => value === current) ?? 'default', schema: { enum: [...values], enumItemLabels: values.map(value => labels[value]), default: 'default', enumDescriptions: undefined } };
+		}
 		if (!this._selectedModel) {
 			return undefined;
 		}
 		return resolveConfigProperty(this._selectedModel, group, this._languageModelsService);
+	}
+
+	private _getActiveModel(): ILanguageModelChatMetadataAndIdentifier | undefined {
+		if (!this._delegate.useStudioModelConfiguration?.()) { return this._selectedModel; }
+		const name = this._configurationService.getValue<string>('ai.modelName');
+		const id = this._configurationService.getValue<string>('ai.modelId');
+		return this._delegate.getModels().find(model => model.metadata.vendor === 'ai-studio' && model.metadata.name === name && model.metadata.family === id);
 	}
 
 	private _showEffortPicker(): void {
@@ -1205,18 +1492,19 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 		const config = this._getConfigProperty('navigation');
-		if (!config || !this._effortButton || !this._selectedModel) {
+		const studio = this._delegate.useStudioModelConfiguration?.() === true;
+		if (!config || !this._effortButton || (config.schema.enum?.length ?? 0) < 2 || (!studio && !this._selectedModel)) {
 			return;
 		}
 
-		const modelIdentifier = this._selectedModel.identifier;
+		const modelIdentifier = this._selectedModel?.identifier;
 		const enumValues = config.schema.enum ?? [];
 		const enumItemLabels = config.schema.enumItemLabels;
 
 		const items: IActionListItem<IActionWidgetDropdownAction>[] = [
 			{
 				kind: ActionListItemKind.Header,
-				label: localize('chat.effort.header', "Thinking Effort"),
+				label: studio ? localize('studio.reasoning.title', "推理强度") : localize('chat.effort.header', "Thinking Effort"),
 			}
 		];
 
@@ -1224,7 +1512,7 @@ export class ModelPickerWidget extends Disposable {
 			const value = enumValues[index];
 			const label = enumItemLabels?.[index] ?? String(value);
 			const isDefault = value === config.schema.default;
-			const displayLabel = isDefault
+			const displayLabel = isDefault && !studio
 				? localize('models.effortDefault', "{0} (default)", label)
 				: label;
 			items.push({
@@ -1236,8 +1524,9 @@ export class ModelPickerWidget extends Disposable {
 					tooltip: config.schema.enumDescriptions?.[index] ?? '',
 					label: displayLabel,
 					run: () => {
-						this._languageModelsService.setModelConfiguration(
-							modelIdentifier,
+						if (studio) { return this._configurationService.updateValue('ai.reasoningEffort', value, ConfigurationTarget.USER); }
+						return this._languageModelsService.setModelConfiguration(
+							modelIdentifier!,
 							{ [config.key]: value }
 						);
 					}
@@ -1254,7 +1543,7 @@ export class ModelPickerWidget extends Disposable {
 		const delegate = {
 			onSelect: (action: IActionWidgetDropdownAction) => {
 				this._actionWidgetService.hide();
-				action.run();
+				void Promise.resolve(action.run()).catch(onUnexpectedError);
 			},
 			onHide: () => {
 				this._effortButton?.setAttribute('aria-expanded', 'false');
@@ -1282,7 +1571,7 @@ export class ModelPickerWidget extends Disposable {
 				getWidgetRole: () => 'menu' as const,
 			},
 			{
-				footerText: localize('chat.effort.costHint', "Higher levels of thinking may increase costs"),
+				footerText: studio ? localize('studio.reasoning.hint', "更高推理强度可能增加响应时间与用量") : localize('chat.effort.costHint', "Higher levels of thinking may increase costs"),
 			}
 		);
 	}

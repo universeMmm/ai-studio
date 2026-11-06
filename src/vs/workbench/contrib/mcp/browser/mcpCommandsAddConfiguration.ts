@@ -35,6 +35,7 @@ import { allDiscoverySources, DiscoverySource, mcpDiscoverySection, mcpStdioServ
 import { IMcpRegistry } from '../common/mcpRegistryTypes.js';
 import { IMcpService, McpConnectionState } from '../common/mcpTypes.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { isStudioAdvancedMode } from '../../../common/studioMode.js';
 
 export const enum AddConfigurationType {
 	Stdio,
@@ -149,6 +150,12 @@ export class McpAddConfigurationCommand {
 
 	private async getServerType(): Promise<AddConfigurationType | undefined> {
 		type TItem = { kind: AddConfigurationType | 'browse' | 'discovery' } & IQuickPickItem;
+		if (!isStudioAdvancedMode(this._configurationService)) {
+			return (await this._quickInputService.pick([
+				{ kind: AddConfigurationType.HTTP, label: localize('studio.mcp.remote', '连接在线服务'), description: localize('studio.mcp.remoteDescription', '粘贴服务提供的 MCP 地址') },
+				{ kind: AddConfigurationType.Stdio, label: localize('studio.mcp.local', '连接本机工具'), description: localize('studio.mcp.localDescription', '使用工具提供的启动命令') },
+			], { title: localize('studio.mcp.add', '添加 MCP 连接') }))?.kind;
+		}
 		const items: QuickPickInput<TItem>[] = [
 			{ kind: AddConfigurationType.Stdio, label: localize('mcp.serverType.command', "Command (stdio)"), description: localize('mcp.serverType.command.description', "Run a local command that implements the MCP protocol") },
 			{ kind: AddConfigurationType.HTTP, label: localize('mcp.serverType.http', "HTTP (HTTP or Server-Sent Events)"), description: localize('mcp.serverType.http.description', "Connect to a remote HTTP server that implements the MCP protocol") }
@@ -435,7 +442,9 @@ export class McpAddConfigurationCommand {
 
 
 			if (match && server) {
-				if (match.collection.presentation?.origin) {
+				if (!isStudioAdvancedMode(this._configurationService)) {
+					this._notificationService.info(localize('studio.mcp.added', '已添加 MCP 连接：{0}', name));
+				} else if (match.collection.presentation?.origin) {
 					this._editorService.openEditor({
 						resource: match.collection.presentation.origin,
 						options: {
@@ -449,7 +458,8 @@ export class McpAddConfigurationCommand {
 
 				server.start({ promptType: 'all-untrusted' }).then(state => {
 					if (state.state === McpConnectionState.Kind.Error) {
-						server.showOutput();
+						if (isStudioAdvancedMode(this._configurationService)) { server.showOutput(); }
+						else { this._notificationService.error(localize('studio.mcp.connectionError', '无法连接 {0}：{1}', name, state.message)); }
 					}
 				});
 
@@ -505,7 +515,7 @@ export class McpAddConfigurationCommand {
 		}
 
 		// Step 4: Choose configuration target if no configUri provided
-		let target: ConfigurationTarget | IWorkspaceFolder | undefined = this.workspaceFolder;
+		let target: ConfigurationTarget | IWorkspaceFolder | undefined = this.workspaceFolder ?? (!isStudioAdvancedMode(this._configurationService) ? ConfigurationTarget.USER_LOCAL : undefined);
 		if (!target) {
 			target = await this.getConfigurationTarget();
 			if (!target) {

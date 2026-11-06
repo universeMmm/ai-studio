@@ -28,7 +28,8 @@ import { localize } from '../../../nls.js';
 import { IAIModelService } from './aiModelService.js';
 import { IAIIndexService } from './aiIndexService.js';
 import { IAIContextService } from './aiContextService.js';
-import { ConversationMemory } from '../common/conversationMemory.js';
+import { ConversationMemory, mergeArchivedReasoning } from '../common/conversationMemory.js';
+import { agentContextLimits, compactAgentContext } from '../common/contextCompaction.js';
 import { ToolExecutor } from './toolExecutor.js';
 import { MemoryStore } from '../common/memoryStore.js';
 import { IDiffStore } from '../../../workbench/contrib/aiDiffApply/browser/diffStore.js';
@@ -48,7 +49,17 @@ export const IAIAgentService = createDecorator<IAIAgentService>('aiAgentService'
 export interface AgentRunOptions {
 	sessionId?: string;
 	requestId?: string;
-	history?: readonly { userMessage: string; assistantMessage: string }[];
+	sourceUserMessage?: string;
+	/** Explicit images for the current user turn; never reused across unrelated turns. */
+	images?: readonly AIMessageContent[];
+	history?: readonly { userMessage: string; assistantMessage: string; requestId?: string }[];
+	/** Request-scoped adapters. The host retains discovery, trust, approval and transport. */
+	externalTools?: readonly AgentExternalTool[];
+}
+
+export interface AgentExternalTool {
+	readonly definition: AITool;
+	invoke(call: AgentToolCall, signal: AbortSignal): Promise<{ text: string; outcome: ToolOutcome; images?: AIMessageContent[] }>;
 }
 
 export interface CommandApprovalRequest {
@@ -168,8 +179,8 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		const cfgModel = this.configurationService.getValue<string>('ai.modelId');
 		const cfgMaxTokens = this.configurationService.getValue<number>('ai.chat.maxTokens');
 		const options: AIRequestOptions = {
-			model: cfgModel || '', maxTokens: cfgMaxTokens || 16000, temperature: 0,
-			thinking: false, cacheSystemPrompt: true, maxContextTokens: 180000,
+			model: cfgModel || '', temperature: 0, thinking: false, cacheSystemPrompt: true,
+			...agentContextLimits(this.configurationService.getValue<number>('ai.modelContextTokens'), cfgMaxTokens),
 		};
 		const memoryStore = new MemoryStore(root, this.fileService, this.logService);
 		const controller = new AbortController();
@@ -219,12 +230,13 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 
 	private async _runSteps(instruction: string, root: string, memoryStore: MemoryStore, options: AIRequestOptions, signal: AbortSignal, turn: AgentRunOptions, switched: boolean): Promise<void> {
 		const previous = turn.sessionId
-			? (switched || !turn.history ? await memoryStore.loadLatestForChat(turn.sessionId) : undefined)
+			? await memoryStore.loadLatestForChat(turn.sessionId)
 			: (turn.history ? undefined : await memoryStore.loadLastSession());
 		if (signal.aborted) { return; }
 		if (switched && previous?.taskSnapshot) { this.taskManager.restore(previous.taskSnapshot); }
-		for (const t of turn.history ?? previous?.turns ?? []) {
-			this._memory.addTurn(t.userMessage, t.assistantMessage);
+		const history = turn.history ? mergeArchivedReasoning(turn.history, previous?.turns ?? []) : previous?.turns ?? [];
+		for (const t of history) {
+			this._memory.addTurn(t.userMessage, t.assistantMessage, t.reasoningContent, t);
 		}
 
 		if (signal.aborted) { return; }
@@ -260,12 +272,18 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 
 		this._addStep('thought', instruction);
 
-		const messages = await this.contextService.buildContext({
+		let messages = await this.contextService.buildContext({
 			instruction,
 			memory: this._memory,
 			topK: 5,
 		});
 		if (signal.aborted) { return; }
+		if (turn.images?.length) {
+			const current = messages.findLast(message => message.role === 'user');
+			if (current) {
+				current.content = [...(typeof current.content === 'string' ? [{ type: 'text' as const, text: current.content }] : current.content), ...turn.images];
+			}
+		}
 		// Inject relevant code from index
 		if (this.indexService?.isReady) {
 			try {
@@ -291,10 +309,24 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 
 		while (step < this.maxSteps && !signal.aborted && this._status === 'running') {
 			// Recompute tools each iteration so plan-mode restrictions take effect immediately
-			const tools = [...getBuiltInTools(), ...getAgentTools()].filter(t => !this._planMode || allowedInPlan(t.name));
+			const builtIns = [...getBuiltInTools(), ...getAgentTools()];
+			const externalTools = new Map<string, AgentExternalTool>();
+			for (const external of turn.externalTools ?? []) {
+				// Adapters cannot replace built-ins or one another, and are never
+				// exposed in read-only planning based on untrusted server annotations.
+				if (!builtIns.some(tool => tool.name === external.definition.name) && !externalTools.has(external.definition.name)) {
+					externalTools.set(external.definition.name, external);
+				}
+			}
+			const tools = this._planMode ? builtIns.filter(t => allowedInPlan(t.name))
+				: [...builtIns, ...Array.from(externalTools.values(), tool => tool.definition)];
 			step++;
 			let result: AgentTurn;
 			try {
+				messages = await compactAgentContext({
+					messages, tools, options, instruction, signal,
+					summarize: async (history, maxTokens) => (await this._streamToCompletion(history, [], { ...options, maxTokens }, signal)).text,
+				});
 				result = await this._streamToCompletion(messages, tools, options, signal);
 			} catch (err) {
 				if (signal.aborted) { return; }
@@ -331,7 +363,10 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 					this.logService.warn('[AIAgentService] Empty response from model — check apiType, endpoint, and model ID.');
 					this._addStep('thought', '模型返回了空回复。请检查模型设置中的接口类型、服务地址、模型 ID 和 API 密钥。当前模型为 ' + (this.aiModelService.currentModelId || '(未设置)') + '，接口类型为 ' + this.aiModelService.currentProviderId);
 				}
-				this._memory.addTurn(instruction, result.text);
+				this._memory.addTurn(instruction, result.text, result.reasoningContent, {
+					requestId: turn.requestId,
+					sourceUserMessage: turn.sourceUserMessage ?? instruction,
+				});
 				this._setStatus('stopped');
 				break;
 			}
@@ -342,36 +377,20 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 			let planPresented = false;
 			const blocks = await executeToolBatch(result.calls, async call => {
 				const definition = tools.find(t => t.name === call.name);
-				const invalid = definition && validateToolCall(call, definition);
+				const external = externalTools.get(call.name);
+				// MCP accepts full JSON Schema, including unions and references. Do
+				// not run our intentionally smaller built-in schema validator on it.
+				const invalid = call.inputError ?? (definition && !external ? validateToolCall(call, definition) : undefined);
 				let blocked = definition ? undefined : 'Tool was not offered for this turn.';
 				if (planPresented) { blocked = 'Wait for a new model turn after plan review.'; }
 				if (this._planMode && !allowedInPlan(call.name)) { blocked = 'Tool is unavailable during read-only planning.'; }
 				if (!this._planMode && call.name === 'ExitPlanMode') { blocked = 'Enter plan mode before submitting a plan.'; }
-				const block = await this._executeTool(call, root, signal, blocked, invalid);
+				const block = await this._executeTool(call, root, signal, blocked, invalid, external);
 				if (this._planApproval) { planPresented = true; }
 				return block;
 			}, signal);
 			messages.push({ role: 'tool', content: blocks });
 
-			// Compress conversation if approaching context limit
-			if (this._memory.estimatedTokens > (options.maxContextTokens || 180000) * 0.8) {
-				await this._memory.compactWithSummarizer(
-					async (turns) => {
-						const summaryPrompt: AIMessage = {
-							role: 'user',
-							content: 'Summarize the following conversation turns concisely. Focus on what was accomplished, what files were changed, and what remains to be done. Keep it under 500 words.\n\n' +
-								turns.map(t => 'User: ' + t.userMessage.slice(0, 300) + '\nAssistant: ' + t.assistantMessage.slice(0, 300)).join('\n\n'),
-						};
-						const summaryMessages = [messages[0], summaryPrompt];
-						const summaryResult = await this._streamToCompletion(summaryMessages, [], {
-							...options, maxTokens: 1024, temperature: 0,
-						}, signal);
-						return summaryResult.text || 'Prior work completed.';
-					},
-					options.maxContextTokens || 180000,
-					0.8,
-				);
-			}
 			// Phase 3: Pause for plan approval — wait inline so listeners stay alive
 			if (this._planApproval) {
 				const approved = await this._planApproval;
@@ -454,13 +473,15 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		});
 	}
 
-	private async _executeTool(call: AgentToolCall, root: string, signal: AbortSignal, blocked?: string, invalid?: string): Promise<AIMessageContent> {
+	private async _executeTool(call: AgentToolCall, root: string, signal: AbortSignal, blocked?: string, invalid?: string, external?: AgentExternalTool): Promise<AIMessageContent> {
 		this._addStep('tool_use', call.name, call);
 		const images: AIMessageContent[] = [];
-		const result = blocked ? { text: 'Error: ' + blocked, outcome: 'denied' as const }
+		const result: Awaited<ReturnType<AgentExternalTool['invoke']>> = blocked ? { text: 'Error: ' + blocked, outcome: 'denied' as const }
 			: invalid ? { text: invalid, outcome: 'error' as const }
-				: await this._toolExecutor!.executeCall(call.name, call.input,
-					source => images.push({ type: 'image', source }), (command, cwd, childSignal) => this._requestCommandApproval(call.id, command, cwd, childSignal ?? signal));
+				: external ? await external.invoke(call, signal).catch(error => ({ text: error instanceof Error ? error.message : String(error), outcome: signal.aborted ? 'cancelled' as const : 'error' as const }))
+					: await this._toolExecutor!.executeCall(call.name, call.input,
+						source => images.push({ type: 'image', source }), (command, cwd, childSignal) => this._requestCommandApproval(call.id, command, cwd, childSignal ?? signal));
+		if (Array.isArray(result.images)) { images.push(...result.images); }
 		if ((call.name === 'edit_file' || call.name === 'write_file') && result.outcome === 'success') {
 			try { await this.indexService.indexFile(call.input.path as string); }
 			catch (error) { this.logService.warn('[AIAgentService] Incremental indexing failed:', error); }

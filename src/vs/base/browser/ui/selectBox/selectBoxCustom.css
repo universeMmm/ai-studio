@@ -31,6 +31,17 @@
 	text-align: left;
 	width: 1px;
 	overflow: hidden;
+	animation: monaco-select-box-enter 150ms ease-out;
+}
+
+@keyframes monaco-select-box-enter {
+	from { opacity: 0; transform: translateY(4px); }
+	to { opacity: 1; transform: none; }
+}
+
+.monaco-reduce-motion .monaco-select-box-dropdown-container.visible { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+	.monaco-select-box-dropdown-container.visible { animation: none; }
 }
 
 .monaco-select-box-dropdown-container > .select-box-dropdown-list-container {

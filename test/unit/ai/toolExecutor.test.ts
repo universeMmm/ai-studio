@@ -7,7 +7,8 @@
  *  AI Studio - Tool Executor Tests (Safety + Dispatch)
  *--------------------------------------------------------------------------------------------*/
 
-import { chmod, mkdtemp, readFile, rm, stat, unlink, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from 'fs/promises';
+import { spawn } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -16,9 +17,13 @@ import * as assert from 'assert';
 
 import { VSBuffer, encodeBase64 } from '../../../src/vs/base/common/buffer.js';
 import { URI } from '../../../src/vs/base/common/uri.js';
+import { Emitter, Event } from '../../../src/vs/base/common/event.js';
+import { DisposableStore } from '../../../src/vs/base/common/lifecycle.js';
+import { ChannelClient, ChannelServer } from '../../../src/vs/base/parts/ipc/common/ipc.js';
 import { upcastPartial, upcastDeepPartial } from '../../../src/vs/base/test/common/mock.js';
 import { FileService } from '../../../src/vs/platform/files/common/fileService.js';
 import { InMemoryFileSystemProvider } from '../../../src/vs/platform/files/common/inMemoryFilesystemProvider.js';
+import { DiskFileSystemProvider } from '../../../src/vs/platform/files/node/diskFileSystemProvider.js';
 import { NullLogService } from '../../../src/vs/platform/log/common/log.js';
 import type { AIMessageContent } from '../../../src/vs/platform/ai/common/aiTypes.js';
 import { ToolExecutor, isCommandSafe } from '../../../src/vs/platform/ai/browser/toolExecutor.js';
@@ -121,15 +126,18 @@ suite('ToolExecutor — file and network tools', () => {
 	let failDiff: boolean;
 	const log = new NullLogService();
 
-	setup(() => {
+	setup(async () => {
 		files = new FileService(log);
 		disk = new InMemoryFileSystemProvider();
 		files.registerProvider('file', disk);
+		// A link-free fixture still rejects realpath for resources that do not exist.
+		files.realpath = async resource => { await files.stat(resource); return resource; };
+		await Promise.all(roots.map(root => files.createFolder(root)));
 		failDiff = false;
 		controller = new AbortController();
 		tool = new ToolExecutor(files, log, upcastPartial({ addGroup() { if (failDiff) { throw Error('diff failed'); } } }),
 			upcastPartial({}), upcastPartial({}), upcastDeepPartial({ getWorkspace: () => ({ folders: roots.map(uri => ({ uri })) }) }),
-			upcastPartial({ getValue: () => undefined }), controller.signal);
+			upcastPartial({ getValue: () => undefined, inspect: () => ({}) }), controller.signal);
 	});
 	teardown(() => { files.dispose(); disk.dispose(); });
 
@@ -213,6 +221,20 @@ suite('ToolExecutor — file and network tools', () => {
 		for (const args of ['--pre sh x', '--pre=sh x', '--hostname-bin sh x', '--search-zip x', '-f /tmp/pattern', 'needle ../../external']) {
 			assert.match(await tool.execute('search_pattern', { rg_args: args }), /^Error: (?:unsupported ripgrep option|path is outside)/);
 		}
+	});
+
+	test('workspace approval settings cannot relax the user command policy', async () => {
+		const guarded = new ToolExecutor(files, log, upcastPartial({}), upcastPartial({}), upcastPartial({}),
+			upcastDeepPartial({ getWorkspace: () => ({ folders: roots.map(uri => ({ uri })) }) }),
+			upcastPartial({ getValue: () => 'none', inspect: () => ({ userValue: 'all', workspaceValue: 'none', value: 'none' }) }));
+		let confirmations = 0;
+		const result = await guarded.executeCall('run_command', { command: 'echo hello' }, undefined, async () => {
+			confirmations++;
+			return false;
+		});
+		assert.strictEqual(confirmations, 1);
+		assert.strictEqual(result.outcome, 'denied');
+		assert.match(result.text, /declined/);
 	});
 
 	test('searches both roots while keeping dangerous-looking pattern values literal', async () => {
@@ -304,5 +326,201 @@ suite('ToolExecutor — file and network tools', () => {
 			if (original) { Object.defineProperty(globalThis, 'vscode', original); }
 			else { Reflect.deleteProperty(globalThis, 'vscode'); }
 		}
+	});
+});
+
+suite('ToolExecutor — real filesystem boundaries', () => {
+	const log = new NullLogService();
+	let directory: string;
+	let roots: URI[];
+	let outside: string;
+	let files: FileService;
+	let disk: DiskFileSystemProvider;
+	let ipc: DisposableStore;
+	let tool: ToolExecutor;
+	const spawned: { command: string; args: string[]; cwd: string }[] = [];
+	let originalVscode: PropertyDescriptor | undefined;
+
+	setup(async () => {
+		directory = await mkdtemp(join(tmpdir(), 'ai-path-boundaries-'));
+		roots = [URI.file(join(directory, 'one')), URI.file(join(directory, 'two'))];
+		outside = join(directory, 'outside');
+		await Promise.all([...roots.map(root => root.fsPath), outside].map(path => mkdir(path)));
+		files = new FileService(log);
+		disk = new DiskFileSystemProvider(log);
+		files.registerProvider('file', disk);
+		// Exercise the production error serialization used between the native filesystem
+		// and renderer. Direct DiskFileSystemProvider calls retain errno.code and hide this bug.
+		ipc = new DisposableStore();
+		const toServer = ipc.add(new Emitter<VSBuffer>());
+		const toClient = ipc.add(new Emitter<VSBuffer>());
+		const client = ipc.add(new ChannelClient({ onMessage: toClient.event, send: buffer => toServer.fire(buffer) }));
+		const server = ipc.add(new ChannelServer({ onMessage: toServer.event, send: buffer => toClient.fire(buffer) }, undefined));
+		server.registerChannel('disk', {
+			call: async <T>(_context: undefined, command: string, path: unknown): Promise<T> => {
+				assert.strictEqual(command, 'realpath');
+				assert.strictEqual(typeof path, 'string');
+				return await disk.realpath(URI.file(path as string)) as T;
+			},
+			listen: () => Event.None,
+		});
+		files.realpath = async resource => resource.with({ path: await client.getChannel('disk').call<string>('realpath', resource.fsPath) });
+		tool = new ToolExecutor(files, log, upcastPartial({ addGroup() { } }),
+			upcastPartial({ search: async () => [] }), upcastPartial({ read: () => [] }),
+			upcastDeepPartial({ getWorkspace: () => ({ folders: roots.map(uri => ({ uri })) }) }),
+			upcastPartial({ getValue: () => undefined, inspect: () => ({}) }));
+		spawned.length = 0;
+		originalVscode = Object.getOwnPropertyDescriptor(globalThis, 'vscode');
+		Object.defineProperty(globalThis, 'vscode', {
+			configurable: true, value: {
+				ipcRenderer: {
+					invoke(_channel: string, request: (typeof spawned)[number]) {
+						spawned.push(request);
+						return new Promise((resolve, reject) => {
+							const process = spawn(request.command, request.args, { cwd: request.cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+							let stdout = '', stderr = '';
+							process.stdout.on('data', data => { stdout += data; });
+							process.stderr.on('data', data => { stderr += data; });
+							process.on('error', reject);
+							process.on('close', exitCode => resolve({ stdout, stderr, exitCode }));
+						});
+					}
+				}
+			}
+		});
+	});
+
+	teardown(async () => {
+		if (originalVscode) { Object.defineProperty(globalThis, 'vscode', originalVscode); }
+		else { Reflect.deleteProperty(globalThis, 'vscode'); }
+		ipc.dispose(); files.dispose(); disk.dispose();
+		await rm(directory, { recursive: true, force: true });
+	});
+
+	test('rejects external file and directory symlinks across reading, editing, creating and searching', async () => {
+		const external = join(outside, 'target.txt');
+		await writeFile(external, 'external needle');
+		await symlink(external, join(roots[0].fsPath, 'alias.txt'), 'file');
+		await symlink(outside, join(roots[0].fsPath, 'escape'), 'dir');
+		for (const [name, input] of [
+			['read_file', { path: 'alias.txt' }],
+			['edit_file', { path: 'alias.txt', old_string: 'external', new_string: 'changed' }],
+			['write_file', { path: 'escape/new/deep.txt', content: 'should not exist' }],
+			['list_directory', { path: 'escape' }],
+			['search_pattern', { rg_args: 'needle alias.txt' }],
+			['search_pattern', { rg_args: 'needle escape' }],
+			['ExitPlanMode', { planFile: 'alias.txt' }],
+		] as const) {
+			const result = await tool.executeCall(name, input);
+			assert.strictEqual(result.outcome, 'denied', name + ': ' + result.text);
+			assert.match(result.text, /outside the workspace/);
+		}
+		assert.strictEqual(await readFile(external, 'utf8'), 'external needle');
+		await assert.rejects(stat(join(outside, 'new')), { code: 'ENOENT' });
+		assert.strictEqual(spawned.length, 0);
+	});
+
+	test('allows new nested paths and symlinks into another explicitly opened workspace root', async () => {
+		await writeFile(join(roots[1].fsPath, 'target.txt'), 'inside');
+		await symlink(roots[1].fsPath, join(roots[0].fsPath, 'other'), 'dir');
+		assert.match(await tool.execute('read_file', { path: 'other/target.txt' }), /inside/);
+		assert.strictEqual((await tool.executeCall('write_file', { path: 'other/new/deep.txt', content: 'new file' })).outcome, 'success');
+		assert.strictEqual(await readFile(join(roots[1].fsPath, 'new/deep.txt'), 'utf8'), 'new file');
+	});
+
+	test('creates new files after native realpath ENOENT loses its code over IPC', async () => {
+		const resource = URI.joinPath(roots[0], 'new.txt');
+		await assert.rejects(files.realpath(resource), error => {
+			assert.ok(error instanceof Error);
+			assert.strictEqual((error as Error & { code?: string }).code, undefined);
+			assert.match(error.message, /^ENOENT: /);
+			return true;
+		});
+		for (const path of ['new.txt', 'nested/new/deep.txt']) {
+			const result = await tool.executeCall('write_file', { path, content: 'new file' });
+			assert.strictEqual(result.outcome, 'success', result.text);
+			assert.strictEqual(await readFile(join(roots[0].fsPath, path), 'utf8'), 'new file');
+		}
+	});
+
+	test('permission and unknown realpath errors remain closed after IPC serialization', async () => {
+		const realpath = disk.realpath.bind(disk);
+		for (const message of ['EACCES: permission denied, realpath new.txt', 'realpath is unsupported', 'failed after ENOENT: missing path']) {
+			disk.realpath = async resource => {
+				if (resource.fsPath.endsWith('/new.txt')) { throw new Error(message); }
+				return realpath(resource);
+			};
+			const result = await tool.executeCall('write_file', { path: 'new.txt', content: 'must not be written' });
+			assert.strictEqual(result.outcome, 'error');
+			assert.match(result.text, /Error executing/);
+			await assert.rejects(stat(join(roots[0].fsPath, 'new.txt')), { code: 'ENOENT' });
+		}
+	});
+
+	test('canonicalizes a workspace root that itself is a symlink', async () => {
+		const actual = roots[0].fsPath;
+		const alias = join(directory, 'workspace-alias');
+		await writeFile(join(actual, 'target.txt'), 'inside');
+		await symlink(actual, alias, 'dir');
+		roots = [URI.file(alias)];
+		assert.match(await tool.execute('read_file', { path: 'target.txt' }), /inside/);
+		assert.strictEqual((await tool.executeCall('write_file', { path: 'new/deep.txt', content: 'new file' })).outcome, 'success');
+		assert.strictEqual(await readFile(join(actual, 'new/deep.txt'), 'utf8'), 'new file');
+	});
+
+	test('a dangling symlink is not treated as a missing regular file', async () => {
+		const target = join(outside, 'missing.txt');
+		await symlink(target, join(roots[0].fsPath, 'dangling.txt'), 'file');
+		const result = await tool.executeCall('write_file', { path: 'dangling.txt', content: 'must not be written' });
+		assert.notStrictEqual(result.outcome, 'success');
+		await assert.rejects(stat(target), { code: 'ENOENT' });
+	});
+
+	test('a local filesystem without realpath support fails closed', async () => {
+		await writeFile(join(roots[0].fsPath, 'target.txt'), 'inside');
+		files.realpath = async () => undefined;
+		for (const [name, input] of [
+			['read_file', { path: 'target.txt' }], ['write_file', { path: 'new.txt', content: 'blocked' }],
+			['search_pattern', { rg_args: 'inside' }],
+		] as const) {
+			const result = await tool.executeCall(name, input);
+			assert.strictEqual(result.outcome, 'denied');
+			assert.match(result.text, /cannot verify/);
+		}
+		assert.strictEqual(spawned.length, 0);
+	});
+
+	test('direct files and aliases use the same sensitive-file policy as explicit ripgrep operands', async () => {
+		await writeFile(join(roots[0].fsPath, '.env'), 'hidden needle');
+		await symlink(join(roots[0].fsPath, '.env'), join(roots[0].fsPath, 'alias.txt'), 'file');
+		await mkdir(join(roots[0].fsPath, '.git'));
+		await writeFile(join(roots[0].fsPath, '.git/config'), 'hidden needle');
+		for (const path of ['.env', '.git/config', 'alias.txt']) {
+			for (const [name, input] of [
+				['read_file', { path }], ['search_pattern', { rg_args: 'needle ' + path }],
+			] as const) {
+				const result = await tool.executeCall(name, input);
+				assert.strictEqual(result.outcome, 'denied');
+				assert.match(result.text, /sensitive file/);
+			}
+		}
+		assert.strictEqual(spawned.length, 0);
+	});
+
+	test('recursive searches enforce exclusions after caller globs and do not follow external links', async () => {
+		await writeFile(join(roots[0].fsPath, 'visible.txt'), 'visible needle');
+		await writeFile(join(roots[1].fsPath, 'second.txt'), 'second needle');
+		await writeFile(join(roots[0].fsPath, '.env'), 'hidden env needle');
+		await writeFile(join(roots[0].fsPath, 'SECRET.txt'), 'hidden file needle');
+		await mkdir(join(roots[0].fsPath, 'credentials-dir'));
+		await writeFile(join(roots[0].fsPath, 'credentials-dir/config.txt'), 'hidden directory needle');
+		await writeFile(join(outside, 'external.txt'), 'external needle');
+		await symlink(outside, join(roots[0].fsPath, 'escape'), 'dir');
+		const result = await tool.executeCall('search_pattern', { rg_args: '--hidden -g "*" needle' });
+		assert.strictEqual(result.outcome, 'success', result.text);
+		assert.match(result.text, /visible needle/);
+		assert.match(result.text, /second needle/);
+		assert.doesNotMatch(result.text, /hidden|external/);
+		assert.ok(spawned.every(call => call.args.includes('--no-follow')));
 	});
 });

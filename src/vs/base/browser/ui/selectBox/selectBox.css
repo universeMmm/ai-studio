@@ -5,9 +5,21 @@
 
 .monaco-select-box {
 	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	font: inherit;
+	text-align: start;
+	appearance: none;
+	border: 1px solid;
+	padding: 2px 23px 2px 8px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	cursor: pointer;
 	border-radius: var(--vscode-cornerRadius-small);
 }
+
+.monaco-select-box:disabled { cursor: default; opacity: .6; }
 
 .monaco-select-box-dropdown-container {
 	font-size: 13px;

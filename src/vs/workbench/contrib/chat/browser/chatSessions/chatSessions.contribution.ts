@@ -37,9 +37,6 @@ import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { IChatService, ResponseModelState } from '../../common/chatService/chatService.js';
 import { autorun, observableFromEvent } from '../../../../../base/common/observable.js';
 import { IChatRequestVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../common/attachments/chatVariableEntries.js';
-import { IViewsService } from '../../../../services/views/common/viewsService.js';
-import { ChatViewId } from '../chat.js';
-import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { BugIndicatingError, isCancellationError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
@@ -1344,7 +1341,6 @@ export type NewChatSessionOpenOptions = {
 };
 
 export async function openChatSession(accessor: ServicesAccessor, openOptions: NewChatSessionOpenOptions, chatSendOptions?: NewChatSessionSendOptions): Promise<void> {
-	const viewsService = accessor.get(IViewsService);
 	const chatService = accessor.get(IChatService);
 	const chatSessionService = accessor.get(IChatSessionsService);
 	const logService = accessor.get(ILogService);
@@ -1359,16 +1355,8 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 	// Open chat session
 	try {
 		switch (openOptions.position) {
-			case ChatSessionPosition.Sidebar: {
-				const view = await viewsService.openView(ChatViewId) as ChatViewPane;
-				if (openOptions.type === AgentSessionProviders.Local) {
-					await view.widget.clear();
-				} else {
-					await view.loadSession(sessionResource);
-				}
-				view.focus();
-				break;
-			}
+			// Preserve legacy callers' requested session type while using Studio's editor host.
+			case ChatSessionPosition.Sidebar:
 			case ChatSessionPosition.Editor: {
 				const options: IChatEditorOptions = {
 					override: ChatEditorInput.EditorID,

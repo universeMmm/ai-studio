@@ -8,6 +8,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { resolve } from '../../../../base/common/path.js';
+import { isWindows } from '../../../../base/common/platform.js';
+import { extUri, extUriIgnorePathCase } from '../../../../base/common/resources.js';
 import { Queue } from '../../../../base/common/async.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -85,12 +87,12 @@ export class DiffApplyController extends Disposable {
 	private async rejectOne(groupId: string, hunkId: string): Promise<void> {
 		const hunk = this.store.groups.find(g => g.id === groupId)?.hunks.find(h => h.id === hunkId && h.status === 'applied');
 		if (!hunk) { return; }
-		const uri = URI.file(resolve(hunk.filePath));
-		if (!this.workspace.isInsideWorkspace(uri)) { throw new Error('该文件位于当前工作区之外。'); }
-		if (this.textFiles.isDirty(uri)) { throw new Error('请先保存文件中的编辑，再撤销助手的变更。'); }
+		const { uri, editorResources } = await this.resolveWorkspaceFile(URI.file(resolve(hunk.filePath)));
+		const isDirty = () => editorResources.some(resource => this.textFiles.isDirty(resource));
+		if (isDirty()) { throw new Error('请先保存文件中的编辑，再撤销助手的变更。'); }
 
 		const file = await this.files.readFile(uri);
-		if (this.textFiles.isDirty(uri)) { throw conflict(); }
+		if (isDirty()) { throw conflict(); }
 		const content = file.value.toString();
 		if (hunk.kind === 'create') {
 			if (content !== hunk.modifiedText) { throw conflict(); }
@@ -100,7 +102,7 @@ export class DiffApplyController extends Disposable {
 			await this.files.move(uri, captured, false);
 			try {
 				const latest = await this.files.readFile(captured);
-				if (!latest.value.equals(file.value) || this.textFiles.isDirty(uri)) { throw conflict(); }
+				if (!latest.value.equals(file.value) || isDirty()) { throw conflict(); }
 				await this.files.del(captured, { useTrash: this.files.hasCapability(captured, FileSystemProviderCapabilities.Trash) });
 			} catch (error) {
 				try { await this.files.move(captured, uri, false); }
@@ -112,5 +114,28 @@ export class DiffApplyController extends Disposable {
 			await this.files.writeFile(uri, VSBuffer.fromString(previous), { etag: file.etag, mtime: file.mtime });
 		}
 		this.store.rejectHunk(groupId, hunkId);
+	}
+
+	private async resolveWorkspaceFile(resource: URI): Promise<{ uri: URI; editorResources: URI[] }> {
+		const roots = this.workspace.getWorkspace().folders.map(folder => folder.uri);
+		const canonicalPath = async (uri: URI) => {
+			const canonical = await this.files.realpath(uri);
+			if (!canonical || canonical.scheme !== 'file') { throw new Error('无法验证文件的真实路径，不能撤销变更。'); }
+			return canonical;
+		};
+		const [uri, ...canonicalRoots] = await Promise.all([canonicalPath(resource), ...roots.map(canonicalPath)]);
+		const identity = isWindows ? extUriIgnorePathCase : extUri;
+		const editorResources = [resource, uri];
+		let inside = false;
+		for (let i = 0; i < roots.length; i++) {
+			if (identity.isEqualOrParent(uri, canonicalRoots[i])) {
+				inside = true;
+				// Editors may use the workspace alias while tools record the canonical path.
+				const relative = identity.relativePath(canonicalRoots[i], uri);
+				if (relative !== undefined) { editorResources.push(URI.joinPath(roots[i], relative)); }
+			}
+		}
+		if (!inside) { throw new Error('该文件位于当前工作区之外。'); }
+		return { uri, editorResources };
 	}
 }

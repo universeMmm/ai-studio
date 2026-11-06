@@ -114,4 +114,29 @@ suite('ConversationMemory', () => {
 		assert.strictEqual(result, false);
 	});
 
+	test('summary errors preserve every original turn and token count', async () => {
+		for (let i = 0; i < 4; i++) { memory.addTurn('question '.repeat(100), 'answer '.repeat(100)); }
+		const original = [...memory.turns];
+		const tokens = memory.estimatedTokens;
+		await assert.rejects(memory.compactWithSummarizer(async () => { throw new Error('summary unavailable'); }, 100), /summary unavailable/);
+		assert.deepStrictEqual(memory.turns, original);
+		assert.strictEqual(memory.estimatedTokens, tokens);
+	});
+
+	test('rejects empty and larger summaries without dropping turns', async () => {
+		for (let i = 0; i < 4; i++) { memory.addTurn('question '.repeat(100), 'answer '.repeat(100)); }
+		const original = [...memory.turns];
+		for (const summary of ['', 'larger '.repeat(10000)]) {
+			assert.strictEqual(await memory.compactWithSummarizer(async () => summary, 100), false);
+			assert.deepStrictEqual(memory.turns, original);
+		}
+	});
+
+	test('a late summary cannot restore history cleared while it was pending', async () => {
+		for (let i = 0; i < 4; i++) { memory.addTurn('question '.repeat(100), 'answer '.repeat(100)); }
+		assert.strictEqual(await memory.compactWithSummarizer(async () => { memory.clear(); return 'summary'; }, 100), false);
+		assert.strictEqual(memory.turns.length, 0);
+		assert.strictEqual(memory.estimatedTokens, 0);
+	});
+
 });

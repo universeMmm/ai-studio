@@ -23,6 +23,7 @@ import { generateUuid } from '../../../base/common/uuid.js';
 import { hasKey } from '../../../base/common/types.js';
 import { getAIStudioIpcRenderer, type AIStudioCommandResult } from '../common/desktopIpc.js';
 import { assistantToolMessage, collectAgentTurn, executeToolBatch, toolResult, validateToolCall } from '../common/toolRuntime.js';
+import { agentContextLimits, compactAgentContext } from '../common/contextCompaction.js';
 
 import { IAIModelService } from './aiModelService.js';
 import { IAIIndexService } from './aiIndexService.js';
@@ -154,12 +155,13 @@ export class SubAgentManager implements ISubAgentManager {
 			}
 			const allowed = TOOL_SETS[config.subagent_type];
 			const tools = getBuiltInTools().filter(tool => !allowed.length || allowed.includes(tool.name));
-			const messages: AIMessage[] = [
+			let messages: AIMessage[] = [
 				{ role: 'system', content: SYSTEM_PROMPTS[config.subagent_type] + (worktreePath ? '\nWorking directory: ' + worktreePath : '') },
 				{ role: 'user', content: config.prompt || config.description },
 			];
 			const options: AIRequestOptions = {
-				model: '', maxTokens: 8000, temperature: 0, thinking: false, cacheSystemPrompt: true, maxContextTokens: 100000,
+				model: '', temperature: 0, thinking: false, cacheSystemPrompt: true,
+				...agentContextLimits(this.configurationService.getValue<number>('ai.modelContextTokens'), 8000),
 			};
 			const { ToolExecutor } = await import('./toolExecutor.js');
 			const executor = new ToolExecutor(
@@ -169,6 +171,10 @@ export class SubAgentManager implements ISubAgentManager {
 			);
 			for (let step = 0; step < 10; step++) {
 				messages.push(...inbox.splice(0));
+				messages = await compactAgentContext({
+					messages, tools, options, instruction: config.prompt || config.description, signal: abort.signal,
+					summarize: async (history, maxTokens) => (await collectAgentTurn(this.aiModelService, history, [], { ...options, maxTokens }, abort.signal)).text,
+				});
 				const turn = await collectAgentTurn(this.aiModelService, messages, tools, options, abort.signal);
 				if (!turn.calls.length) {
 					result.status = 'completed';

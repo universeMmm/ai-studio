@@ -125,6 +125,7 @@ export class MockConfigurationService implements Partial<IConfigurationService> 
 	getValue<T>(key: string, defaultValue?: T): T | undefined {
 		return (this._values[key] as T) ?? defaultValue;
 	}
+	inspect<T>(key: string) { return { userValue: this._values[key] as T, value: this._values[key] as T }; }
 
 	onDidChangeConfiguration = new Emitter<any>().event;
 	updateValue = async () => { };
@@ -137,6 +138,9 @@ export class MockFileService implements Partial<IFileService> {
 	private _files = new Map<string, string>();
 
 	setFile(path: string, content: string): void { this._files.set(path, content); }
+
+	// This fixture has no symbolic links; its virtual resources are already canonical.
+	async realpath(uri: URI): Promise<URI> { return uri; }
 
 	async readFile(uri: any): Promise<{ value: { toString(): string } }> {
 		const path = uri.fsPath || uri.path || String(uri);

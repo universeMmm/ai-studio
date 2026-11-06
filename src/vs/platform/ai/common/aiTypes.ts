@@ -8,6 +8,8 @@
  *  All AI platform types in one place for consistent use across all modules.
  *--------------------------------------------------------------------------------------------*/
 
+import type { AIReasoningEffort } from './aiReasoning.js';
+
 /**
  * Supported LLM provider identifiers.
  */
@@ -44,6 +46,8 @@ export interface AIMessageContent {
 export interface AIMessage {
 	role: AIMessageRole;
 	content: string | AIMessageContent[];
+	/** Provider reasoning required for tool-call continuation; never render it as answer text. */
+	reasoningContent?: string;
 	toolCallId?: string;
 	name?: string;
 }
@@ -79,6 +83,7 @@ export interface AIRequestOptions {
 	maxTokens: number;
 	temperature: number;
 	thinking: boolean;
+	reasoningEffort?: AIReasoningEffort;
 	cacheSystemPrompt: boolean;
 	maxContextTokens: number;
 }
@@ -93,6 +98,8 @@ export type StopReason = 'end_turn' | 'max_tokens' | 'tool_use' | 'stop_sequence
  */
 export interface AIStreamCallbacks {
 	onToken(token: string): void;
+	/** A reasoning fragment retained for provider protocol continuity, separate from visible output. */
+	onReasoning?(token: string): void;
 	onToolUse(toolName: string, toolInput: Record<string, unknown>, toolCallId: string, inputError?: string): void;
 	onToolResult(toolCallId: string, result: string, isError: boolean): void;
 	onError(error: Error): void;
@@ -178,6 +185,11 @@ export interface Task {
 export interface ConversationTurn {
 	userMessage: string;
 	assistantMessage: string;
+	/** Stable native-chat identity; source text excludes attachment augmentation. */
+	requestId?: string;
+	sourceUserMessage?: string;
+	/** Hidden provider continuation data; not part of the displayed assistant message. */
+	reasoningContent?: string;
 	timestamp: number;
 }
 

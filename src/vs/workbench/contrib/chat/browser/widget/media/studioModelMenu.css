@@ -1,0 +1,86 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Keep native ActionList selection, keyboard navigation, filtering and scrolling. */
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) {
+	--studio-model-menu-surface: #f7f7f7;
+	--studio-model-menu-border: #00000016;
+	--studio-model-menu-hover: #e8e8e8;
+	--studio-model-menu-foreground: #353535;
+	--studio-model-menu-muted: #777777;
+	--vscode-focusBorder: #8b74ce;
+	--vscode-menu-selectionBorder: transparent;
+	border-color: var(--studio-model-menu-border) !important;
+	border-radius: 20px;
+	background: var(--studio-model-menu-surface);
+	color: var(--studio-model-menu-foreground);
+	padding: 8px;
+	box-shadow: 0 8px 24px #0000001f, 0 1px 3px #0000000a;
+	animation: studio-model-menu-enter 160ms ease-out;
+	transform-origin: bottom right;
+}
+@keyframes studio-model-menu-enter {
+	from { opacity: 0; transform: translateY(5px); }
+	to { opacity: 1; transform: none; }
+}
+.monaco-reduce-motion .action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+	.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) { animation: none; }
+}
+.studio-dark .action-widget:has(.studio-model-menu-item, .studio-model-menu-manage),
+.vs-dark .action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) {
+	--studio-model-menu-surface: #2c2c2c;
+	--studio-model-menu-border: #ffffff13;
+	--studio-model-menu-hover: #3a3a3a;
+	--studio-model-menu-foreground: #ededed;
+	--studio-model-menu-muted: #aaaaaa;
+	--vscode-focusBorder: #b280f5;
+	box-shadow: 0 12px 32px #00000038, 0 1px 4px #0000001f;
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list .monaco-list-row {
+	box-sizing: border-box;
+	padding-inline: 10px;
+	border-radius: 10px;
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list-row.group-header {
+	color: var(--studio-model-menu-muted) !important;
+	margin-top: 0;
+	font-size: 11px;
+	font-weight: 400;
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list-row.group-header:first-child {
+	font-size: 13px;
+}
+.action-widget .monaco-list-row.studio-model-menu-item {
+	font-size: 15px;
+	color: var(--studio-model-menu-foreground);
+}
+.action-widget .monaco-list-row.studio-model-menu-item > .title {
+	flex: 1;
+	min-width: 0;
+	order: 1;
+}
+.action-widget .monaco-list-row.studio-model-menu-item > .codicon {
+	order: 2;
+	flex: 0 0 16px;
+	font-size: 16px;
+	color: var(--studio-model-menu-foreground);
+}
+.action-widget .monaco-list-row.studio-model-menu-manage {
+	font-size: 12px;
+	color: var(--studio-model-menu-muted);
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list .monaco-list-row.action.focused:not(.option-disabled),
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list .monaco-list-row.action:hover:not(.option-disabled) {
+	background: var(--studio-model-menu-hover) !important;
+	color: var(--studio-model-menu-foreground);
+	outline: none;
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .monaco-list-row.separator {
+	border-top-color: var(--studio-model-menu-border);
+}
+.action-widget:has(.studio-model-menu-item, .studio-model-menu-manage) .action-list-filter {
+	background: transparent;
+}

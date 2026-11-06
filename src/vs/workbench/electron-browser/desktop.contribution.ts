@@ -28,7 +28,6 @@ import { NativeWindow } from './window.js';
 import { ModifierKeyEmitter } from '../../base/browser/dom.js';
 import { applicationConfigurationNodeBase, securityConfigurationNodeBase } from '../common/configuration.js';
 import { MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../../platform/window/electron-browser/window.js';
-import product from '../../platform/product/common/product.js';
 
 // Actions
 (function registerActions(): void {
@@ -267,23 +266,11 @@ import product from '../../platform/product/common/product.js';
 			},
 			'window.menuStyle': {
 				'type': 'string',
-				'enum': ['custom', 'native', 'inherit'],
-				'markdownEnumDescriptions': isMacintosh ?
-					[
-						localize(`window.menuStyle.custom.mac`, "Use the custom context menu."),
-						localize(`window.menuStyle.native.mac`, "Use the native context menu."),
-						localize(`window.menuStyle.inherit.mac`, "Matches the context menu style to the title bar style defined in {0}.", '`#window.titleBarStyle#`'),
-					] :
-					[
-						localize(`window.menuStyle.custom`, "Use the custom menu."),
-						localize(`window.menuStyle.native`, "Use the native menu. This is ignored when {0} is set to {1}.", '`#window.titleBarStyle#`', '`custom`'),
-						localize(`window.menuStyle.inherit`, "Matches the menu style to the title bar style defined in {0}.", '`#window.titleBarStyle#`'),
-					],
-				'default': product.quality !== 'stable' ? 'inherit' : (isMacintosh ? 'native' : 'inherit'), // TODO@bpasero figure out the default
+				'enum': ['custom'],
+				'markdownEnumDescriptions': [localize('studio.window.menuStyle.custom', "Use application-drawn menus.")],
+				'default': 'custom',
 				'scope': ConfigurationScope.APPLICATION,
-				'markdownDescription': isMacintosh ?
-					localize('window.menuStyle.mac', "Adjust the context menu appearances to either be native by the OS, custom, or inherited from the title bar style defined in {0}.", '`#window.titleBarStyle#`') :
-					localize('window.menuStyle', "Adjust the menu style to either be native by the OS, custom, or inherited from the title bar style defined in {0}. This also affects the context menu appearance. Changes require a full restart to apply.", '`#window.titleBarStyle#`'),
+				'markdownDescription': localize('studio.window.menuStyle', "Application dropdowns and context menus always use the application-drawn style. Previously saved native or inherit values are ignored. The macOS menu bar is unchanged."),
 				agentsWindow: { default: 'custom' },
 			},
 			'window.dialogStyle': {

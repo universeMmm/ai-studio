@@ -4,6 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 /* Desktop navigation remains native to the workbench, including its drag region. */
+.studio-desktop.studio-light { color-scheme: light; }
+.studio-desktop.studio-dark { color-scheme: dark; }
+
 .monaco-workbench .studio-home,
 .monaco-workbench .studio-review {
 	position: relative;
@@ -34,7 +37,8 @@
 	outline-offset: -1px;
 }
 
-.monaco-workbench .studio-wordmark { font-size: 12px; font-weight: 650; letter-spacing: -.3px; }
+.monaco-workbench .studio-wordmark { font-size: 13px; font-weight: 650; letter-spacing: -.4px; }
+.monaco-workbench .studio-home-icon { display: none; }
 .monaco-workbench .studio-mark {
 	display: inline-block;
 	width: 18px;
@@ -43,24 +47,107 @@
 }
 
 .monaco-workbench .studio-review { font-size: 12px; margin-inline: 6px; border-color: var(--vscode-widget-border); }
-.studio-desktop .part.titlebar { box-shadow: none; }
-.studio-desktop .part.titlebar .command-center .action-item.command-center-center { border-radius: 7px; }
+
+/* Always available, including before a workspace or conversation is opened. */
+.studio-desktop .studio-theme-switch {
+	position: relative;
+	z-index: 2500;
+	-webkit-app-region: no-drag;
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 3px;
+	height: 28px;
+	box-sizing: border-box;
+	margin-inline: 6px;
+}
+
+.studio-desktop .studio-theme-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	font: inherit;
+	font-size: 11px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.studio-desktop .studio-theme-button > .codicon { font-size: 16px; }
+.studio-desktop .studio-theme-button:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+.studio-desktop .studio-theme-button:focus:not(:focus-visible) { outline: none; }
+.studio-desktop .studio-theme-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+.studio-desktop .studio-theme-button[aria-busy="true"] { cursor: progress; }
+
+.studio-desktop .studio-settings-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--vscode-titleBar-activeForeground);
+	font: inherit;
+	font-size: 12px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.studio-desktop .studio-settings-button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.studio-desktop .studio-settings-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container { display: none; }
+
+.studio-desktop .part.titlebar {
+	box-shadow: none;
+	border-bottom: 1px solid var(--vscode-titleBar-border);
+	box-sizing: border-box;
+}
+.studio-desktop .part.titlebar .titlebar-right { flex-shrink: 0; }
+.studio-desktop .part.titlebar .command-center .action-item.command-center-center {
+	border-radius: 7px;
+	background: var(--vscode-editor-background);
+}
+.studio-desktop .part.activitybar { box-shadow: none; }
+.studio-desktop .part.activitybar .action-item .action-label {
+	border-radius: 9px;
+	background-position: center;
+}
+.studio-desktop .part.activitybar .action-item.checked .action-label {
+	color: var(--vscode-activityBar-foreground);
+}
 .studio-desktop .part.sidebar > .title,
-.studio-desktop .part.auxiliarybar > .title { padding-inline: 10px; }
+.studio-desktop .part.auxiliarybar > .title { padding-inline: 14px; }
 .studio-desktop .part.sidebar .pane-header .title,
 .studio-desktop .part.auxiliarybar .pane-header .title { font-weight: 600; text-transform: none; }
 .studio-desktop .part.sidebar .monaco-list-row,
-.studio-desktop .part.auxiliarybar .monaco-list-row { border-radius: 4px; }
+.studio-desktop .part.auxiliarybar .monaco-list-row { border-radius: 6px; }
 .studio-desktop .quick-input-widget { border-radius: 12px; overflow: hidden; }
 .studio-desktop .monaco-menu-container .monaco-menu { border-radius: 8px; }
 .studio-desktop .part.editor .tabs-container > .tab .tab-label { font-size: 12px; }
 @media (max-width: 850px) {
 	.monaco-workbench .studio-review .studio-review-label { display: none; }
 	.monaco-workbench .studio-review { border-color: transparent; }
+	.studio-desktop .studio-theme-switch { margin-inline: 3px; }
 }
 
 @media (max-width: 620px) {
 	.monaco-workbench .studio-home .studio-wordmark { display: none; }
+	.studio-desktop .studio-settings-label { display: none; }
 }
 
 /* System-drawn buttons overlay the web contents in a windowed macOS title bar. */
@@ -71,4 +158,110 @@
 }
 .monaco-workbench.mac:not(.web):not(.fullscreen) .part.titlebar .titlebar-right > .window-controls-container {
 	width: var(--studio-mac-controls-width, 86px);
+}
+
+/* Basic mode has a single desktop header, followed directly by the conversation.
+ * Its dimensions mirror the navigation column; editor contents are still laid out
+ * by the workbench, rather than shifted over hidden toolbars with CSS. */
+.studio-desktop .studio-window-navigation { display: none; }
+.studio-desktop.studio-basic .studio-window-navigation {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	flex: 0 0 auto;
+	-webkit-app-region: no-drag;
+	z-index: 2500;
+}
+.studio-desktop .studio-window-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--vscode-titleBar-activeForeground);
+	cursor: pointer;
+}
+.studio-desktop .studio-window-button > .codicon { font-size: 16px; }
+.studio-desktop .studio-window-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.studio-desktop .studio-window-button:disabled { color: var(--vscode-disabledForeground); cursor: default; opacity: .65; }
+.studio-desktop .studio-window-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.monaco-workbench.studio-basic .studio-home {
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	margin-left: 2px;
+	color: var(--vscode-titleBar-activeForeground);
+}
+.monaco-workbench.studio-basic .studio-home .studio-mark,
+.monaco-workbench.studio-basic .studio-home .studio-wordmark { display: none; }
+.monaco-workbench.studio-basic .studio-home .studio-home-icon { display: block; font-size: 16px; }
+.monaco-workbench.studio-basic .part.titlebar { border-bottom: 0; }
+.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-left {
+	width: max(220px, var(--studio-sidebar-width, 340px));
+	flex: 0 0 max(220px, var(--studio-sidebar-width, 340px));
+	box-sizing: border-box;
+	justify-content: flex-start;
+}
+.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-center {
+	width: auto;
+	max-width: none;
+	min-width: 0;
+	flex: 1;
+	justify-content: flex-start;
+	margin: 0;
+	padding: 0 14px;
+	box-sizing: border-box;
+}
+.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-right {
+	width: auto;
+	flex: 0 0 auto;
+	min-width: 0;
+	padding-right: 8px;
+}
+.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-center > .window-title {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 10px;
+	min-width: 0;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--vscode-titleBar-activeForeground);
+}
+.monaco-workbench.studio-basic .studio-title-icon { flex: 0 0 auto; font-size: 15px; opacity: .85; }
+.monaco-workbench.studio-basic .studio-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monaco-workbench.studio-basic .studio-title-dirty { font-size: 9px; flex-shrink: 0; }
+.monaco-workbench.studio-basic .studio-settings-button { width: 28px; padding: 0; }
+.monaco-workbench.studio-basic .studio-settings-label { display: none; }
+.monaco-workbench.studio-basic .studio-review {
+	height: 28px;
+	margin-inline: 2px;
+	padding-inline: 8px;
+	border-color: transparent;
+	font-size: 12px;
+}
+.monaco-workbench .part.sidebar > .title.studio-hidden-title,
+.monaco-workbench .part.auxiliarybar > .title.studio-hidden-title { display: none; }
+.monaco-workbench.studio-basic .part.editor .editor-group-container > .title { border-bottom: 0; }
+
+/* Pointer clicks should not inherit the workbench's generic button focus box.
+ * Keyboard focus remains visible through each control's :focus-visible rule. */
+.monaco-workbench.studio-desktop :is(.studio-home, .studio-review, .studio-window-button, .studio-settings-button, .studio-theme-button):focus:not(:focus-visible),
+.monaco-workbench.studio-desktop .studio-session-navigation button:focus:not(:focus-visible) {
+	outline: none;
+}
+
+@media (max-width: 760px) {
+	.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-left {
+		width: 208px;
+		flex-basis: 208px;
+	}
+	.monaco-workbench.studio-desktop.studio-basic .part.titlebar > .titlebar-container > .titlebar-center { padding-inline: 8px; }
+	.monaco-workbench.studio-basic .studio-review-label { display: none; }
 }

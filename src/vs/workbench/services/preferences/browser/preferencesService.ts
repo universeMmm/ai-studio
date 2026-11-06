@@ -16,6 +16,7 @@ import { IModelService } from '../../../../editor/common/services/model.js';
 import { ITextModelService } from '../../../../editor/common/services/resolverService.js';
 import * as nls from '../../../../nls.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { Extensions, getDefaultValue, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { FileOperationError, FileOperationResult } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
@@ -49,6 +50,7 @@ import { compareIgnoreCase } from '../../../../base/common/strings.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
 import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
+import { isStudioAdvancedMode, STUDIO_SETTINGS_COMMAND } from '../../../common/studioMode.js';
 
 const emptyEditableSettingsContent = '{\n}';
 
@@ -93,6 +95,7 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IProgressService private readonly progressService: IProgressService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 		// The default keybindings.json updates based on keyboard layouts, so here we make sure
@@ -204,10 +207,16 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	openRawDefaultSettings(): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings();
+		}
 		return this.editorService.openEditor({ resource: this.defaultSettingsRawResource });
 	}
 
 	openRawUserSettings(): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings();
+		}
 		return this.editorService.openEditor({ resource: this.userSettingsResource });
 	}
 
@@ -216,7 +225,21 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	async openPreferences(): Promise<void> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			await this.openStudioSettings();
+			return;
+		}
 		await this.editorService.openEditor(this.instantiationService.createInstance(PreferencesEditorInput), undefined, MODAL_GROUP);
+	}
+
+	private openStudioSettings(options?: IOpenSettingsOptions): Promise<IEditorPane | undefined> {
+		const query = `${options?.query ?? ''} ${options?.revealSetting?.key ?? ''}`;
+		const section = /ai\.commandApproval/i.test(query) ? 'approval'
+			: /theme|appearance|colorTheme/i.test(query) ? 'appearance'
+				: /ai\.(?:model|api|provider)|modelConfiguration/i.test(query) ? 'models'
+					: /proxy|network/i.test(query) ? 'network'
+						: /aiStudio\.advancedMode/i.test(query) ? 'advanced' : undefined;
+		return this.commandService.executeCommand<IEditorPane | undefined>(STUDIO_SETTINGS_COMMAND, section);
 	}
 
 	openSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
@@ -244,6 +267,9 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	private open(settingsResource: URI, options: IOpenSettingsOptions): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings(options);
+		}
 		options = {
 			...options,
 			jsonEditor: options.jsonEditor ?? this.shouldOpenJsonByDefault()
@@ -296,6 +322,9 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	async openRemoteSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings(options);
+		}
 		const environment = await this.remoteAgentService.getEnvironment();
 		if (environment) {
 			options = {
@@ -309,6 +338,9 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	openWorkspaceSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings(options);
+		}
 		if (!this.workspaceSettingsResource) {
 			this.notificationService.info(nls.localize('openFolderFirst', "Open a folder or workspace first to create workspace or folder settings."));
 			return Promise.reject(null);
@@ -322,6 +354,9 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	async openFolderSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings(options);
+		}
 		options = {
 			...options,
 			target: ConfigurationTarget.WORKSPACE_FOLDER
@@ -340,6 +375,10 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	async openGlobalKeybindingSettings(textual: boolean, options?: IOpenKeybindingsEditorOptions): Promise<void> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			await this.openStudioSettings();
+			return;
+		}
 		options = { pinned: true, revealIfOpened: true, ...options };
 		if (textual) {
 			const emptyContents = '// ' + nls.localize('emptyKeybindingsHeader', "Place your key bindings in this file to override the defaults") + '\n[\n]';
@@ -370,6 +409,9 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	openDefaultKeybindingsFile(): Promise<IEditorPane | undefined> {
+		if (!isStudioAdvancedMode(this.configurationService)) {
+			return this.openStudioSettings();
+		}
 		return this.editorService.openEditor({ resource: this.defaultKeybindingsResource, label: nls.localize('defaultKeybindings', "Default Keybindings") });
 	}
 

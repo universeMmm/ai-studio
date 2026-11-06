@@ -2,7 +2,10 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { $, isHTMLInputElement, isHTMLTextAreaElement, reset } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, isHTMLInputElement, isHTMLTextAreaElement, reset } from '../../../../base/browser/dom.js';
+import { ContextView, ContextViewDOMPosition, IContextViewProvider } from '../../../../base/browser/ui/contextview/contextview.js';
+import { SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
+import { defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { createStyleSheet } from '../../../../base/browser/domStylesheets.js';
 import { Button, ButtonWithDropdown, unthemedButtonStyles } from '../../../../base/browser/ui/button/button.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
@@ -47,6 +50,12 @@ interface SearchResult {
 	state?: string;
 }
 
+interface IssueSelectOption {
+	readonly value: string;
+	readonly text: string;
+	readonly isDisabled?: boolean;
+}
+
 enum IssueSource {
 	VSCode = 'vscode',
 	Extension = 'extension',
@@ -74,6 +83,8 @@ export class BaseIssueReporterService extends Disposable {
 	private createAction: Action;
 	private previewAction: Action;
 	private privateAction: Action;
+	private readonly selectContextView: ContextView;
+	private readonly selectControls = new Map<string, { selectBox: SelectBox; items: readonly IssueSelectOption[]; selectedIndex: number; button: HTMLButtonElement }>();
 
 	constructor(
 		public disableExtensions: boolean,
@@ -95,6 +106,10 @@ export class BaseIssueReporterService extends Disposable {
 		@IOpenerService public readonly openerService: IOpenerService
 	) {
 		super();
+		// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+		this.selectContextView = this._register(new ContextView(window.document.querySelector<HTMLElement>('.monaco-workbench') ?? window.document.body, ContextViewDOMPosition.FIXED));
+		this._register(addDisposableListener(window, 'resize', () => this.selectContextView.layout()));
+		this._register(addDisposableListener(window.document, 'scroll', () => this.selectContextView.layout(), true));
 		const targetExtension = data.extensionId ? data.enabledExtensions.find(extension => extension.id.toLocaleLowerCase() === data.extensionId?.toLocaleLowerCase()) : undefined;
 		this.issueReporterModel = new IssueReporterModel({
 			...data,
@@ -515,23 +530,14 @@ export class BaseIssueReporterService extends Disposable {
 			return 0;
 		});
 
-		const makeOption = (extension: IOption, selectedExtension?: IssueReporterExtensionData): HTMLOptionElement => {
-			const selected = selectedExtension && extension.id === selectedExtension.id;
-			return $<HTMLOptionElement>('option', {
-				'value': extension.id,
-				'selected': selected || ''
-			}, extension.name);
-		};
-
 		// eslint-disable-next-line no-restricted-syntax
-		const extensionsSelector = this.getElementById<HTMLSelectElement>('extension-selector');
-		if (extensionsSelector) {
+		const extensionsContainer = this.getElementById('extension-selector-container');
+		if (extensionsContainer) {
 			const { selectedExtension } = this.issueReporterModel.getData();
-			reset(extensionsSelector, this.makeOption('', localize('selectExtension', "Select extension"), true), ...extensionOptions.map(extension => makeOption(extension, selectedExtension)));
-
-			if (!selectedExtension) {
-				extensionsSelector.selectedIndex = 0;
-			}
+			this.setSelectOptions('extension-selector', [
+				{ value: '', text: localize('selectExtension', "Select extension"), isDisabled: true },
+				...extensionOptions.map(extension => ({ value: extension.id, text: extension.name })),
+			], selectedExtension ? extensionOptions.findIndex(extension => extension.id === selectedExtension.id) + 1 : 0);
 
 			this.addEventListener('extension-selector', 'change', async (e: Event) => {
 				this.clearExtensionData();
@@ -724,7 +730,7 @@ export class BaseIssueReporterService extends Disposable {
 				hide(lengthValidationMessage);
 			}
 			// eslint-disable-next-line no-restricted-syntax
-			const issueSource = this.getElementById<HTMLSelectElement>('issue-source');
+			const issueSource = this.getElementById<HTMLButtonElement>('issue-source');
 			if (!issueSource || issueSource.value === '') {
 				return;
 			}
@@ -1008,37 +1014,55 @@ export class BaseIssueReporterService extends Disposable {
 		}
 	}
 
-	private setUpTypes(): void {
-		const makeOption = (issueType: IssueType, description: string) => $('option', { 'value': issueType.valueOf() }, escape(description));
-
+	private setSelectOptions(id: string, items: readonly IssueSelectOption[], selectedIndex: number): void {
+		selectedIndex = Math.max(0, Math.min(selectedIndex, items.length - 1));
+		const existing = this.selectControls.get(id);
+		if (existing) {
+			existing.items = items;
+			existing.selectedIndex = selectedIndex;
+			existing.selectBox.setOptions([...items], selectedIndex);
+			existing.button.value = items[selectedIndex]?.value ?? '';
+			return;
+		}
+		// Keep the existing field IDs and change events for validation and issue routing.
 		// eslint-disable-next-line no-restricted-syntax
-		const typeSelect = this.getElementById('issue-type')! as HTMLSelectElement;
+		const container = this.getElementById(`${id}-container`)!;
+		const context: IContextViewProvider = {
+			showContextView: delegate => this.selectContextView.show(delegate),
+			hideContextView: () => this.selectContextView.hide(),
+			layout: () => this.selectContextView.layout(),
+		};
+		const selectBox = this._register(new SelectBox([...items], selectedIndex, context, defaultSelectBoxStyles));
+		selectBox.render(container);
+		// eslint-disable-next-line no-restricted-syntax -- Integrate with an existing widget whose DOM nodes are not exposed as handles.
+		const button = container.querySelector<HTMLButtonElement>('.monaco-select-box')!;
+		button.id = id;
+		button.classList.add('inline-form-control');
+		button.value = items[selectedIndex]?.value ?? '';
+		if (id !== 'issue-type') { button.setAttribute('aria-required', 'true'); }
+		const control = { selectBox, items, selectedIndex, button };
+		this.selectControls.set(id, control);
+		this._register(selectBox.onDidSelect(({ index }) => {
+			control.selectedIndex = index;
+			button.value = control.items[index]?.value ?? '';
+			button.dispatchEvent(new Event('change', { bubbles: true }));
+		}));
+	}
+
+	private setUpTypes(): void {
 		const { issueType } = this.issueReporterModel.getData();
-		reset(typeSelect,
-			makeOption(IssueType.Bug, localize('bugReporter', "Bug Report")),
-			makeOption(IssueType.FeatureRequest, localize('featureRequest', "Feature Request")),
-			makeOption(IssueType.PerformanceIssue, localize('performanceIssue', "Performance Issue (freeze, slow, crash)"))
-		);
-
-		typeSelect.value = issueType.toString();
-
+		const types = [
+			{ value: IssueType.Bug.toString(), text: localize('bugReporter', "Bug Report") },
+			{ value: IssueType.FeatureRequest.toString(), text: localize('featureRequest', "Feature Request") },
+			{ value: IssueType.PerformanceIssue.toString(), text: localize('performanceIssue', "Performance Issue (freeze, slow, crash)") },
+		];
+		this.setSelectOptions('issue-type', types, types.findIndex(option => option.value === issueType.toString()));
 		this.setSourceOptions();
 	}
 
-	public makeOption(value: string, description: string, disabled: boolean): HTMLOptionElement {
-		const option: HTMLOptionElement = document.createElement('option');
-		option.disabled = disabled;
-		option.value = value;
-		option.textContent = description;
-
-		return option;
-	}
-
 	public setSourceOptions(): void {
-		// eslint-disable-next-line no-restricted-syntax
-		const sourceSelect = this.getElementById('issue-source')! as HTMLSelectElement;
 		const { issueType, fileOnExtension, selectedExtension, fileOnMarketplace, fileOnProduct } = this.issueReporterModel.getData();
-		let selected = sourceSelect.selectedIndex;
+		let selected = this.selectControls.get('issue-source')?.selectedIndex ?? -1;
 		if (selected === -1) {
 			if (fileOnExtension !== undefined) {
 				selected = fileOnExtension ? 2 : 1;
@@ -1050,26 +1074,23 @@ export class BaseIssueReporterService extends Disposable {
 				selected = 1;
 			}
 		}
-
-		sourceSelect.innerText = '';
-		sourceSelect.append(this.makeOption('', localize('selectSource', "Select source"), true));
-		sourceSelect.append(this.makeOption(IssueSource.VSCode, localize('vscode', "Visual Studio Code"), false));
-		sourceSelect.append(this.makeOption(IssueSource.Extension, localize('extension', "A VS Code extension"), false));
+		const options: IssueSelectOption[] = [
+			{ value: '', text: localize('selectSource', "Select source"), isDisabled: true },
+			{ value: IssueSource.VSCode, text: localize('vscode', "Visual Studio Code") },
+			{ value: IssueSource.Extension, text: localize('extension', "A VS Code extension") },
+		];
 		if (this.product.reportMarketplaceIssueUrl) {
-			sourceSelect.append(this.makeOption(IssueSource.Marketplace, localize('marketplace', "Extensions Marketplace"), false));
+			options.push({ value: IssueSource.Marketplace, text: localize('marketplace', "Extensions Marketplace") });
 		}
-
 		if (issueType !== IssueType.FeatureRequest) {
-			sourceSelect.append(this.makeOption(IssueSource.Unknown, localize('unknown', "Don't know"), false));
+			options.push({ value: IssueSource.Unknown, text: localize('unknown', "Don't know") });
 		}
-
-		if (selected !== -1 && selected < sourceSelect.options.length) {
-			sourceSelect.selectedIndex = selected;
-		} else {
-			sourceSelect.selectedIndex = 0;
+		if (selected === -1 || selected >= options.length) {
+			selected = 0;
 			// eslint-disable-next-line no-restricted-syntax
 			hide(this.getElementById('problem-source-help-text'));
 		}
+		this.setSelectOptions('issue-source', options, selected);
 	}
 
 	public async renderBlocks(): Promise<void> {

@@ -27,6 +27,8 @@ export interface IModelPickerDelegate {
 	showManageModelsAction(): boolean;
 	showUnavailableFeatured(): boolean;
 	showFeatured(): boolean;
+	/** Local AI Studio requests use the shared ai.* configuration, not a Copilot selection. */
+	useStudioModelConfiguration?(): boolean;
 }
 
 /**
@@ -91,7 +93,7 @@ export class ModelPickerActionItem extends BaseActionViewItem {
 	}
 
 	private _showPicker(): void {
-		this._pickerWidget.show(this._getAnchorElement());
+		this._pickerWidget.showConfiguration(this._getAnchorElement());
 	}
 
 	private _updateTooltip(): void {

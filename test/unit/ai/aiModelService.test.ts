@@ -15,11 +15,13 @@ import type { IConfigurationChangeEvent } from '../../../src/vs/platform/configu
 import { NullLogService } from '../../../src/vs/platform/log/common/log.js';
 import { AIModelService } from '../../../src/vs/platform/ai/browser/aiModelService.js';
 import type { IAIKeychainService } from '../../../src/vs/platform/ai/browser/credentialService.js';
+import type { AICredentialTarget } from '../../../src/vs/platform/ai/common/aiSecurityConfiguration.js';
 
 suite('AIModelService initialization', () => {
 	let service: AIModelService;
 	let config: TestConfigurationService;
 	let keys: DeferredPromise<string>[];
+	let keyTargets: AICredentialTarget[];
 	let changedKey: Emitter<void>;
 	let originalFetch: typeof globalThis.fetch;
 	const options = { model: 'fixture', maxTokens: 50, temperature: 0, thinking: false, cacheSystemPrompt: false, maxContextTokens: 1000 };
@@ -28,10 +30,12 @@ suite('AIModelService initialization', () => {
 		originalFetch = globalThis.fetch;
 		config = new TestConfigurationService({ 'ai.apiType': 'openai', 'ai.modelId': 'fixture', 'ai.apiBase': 'https://first.invalid' });
 		keys = [];
+		keyTargets = [];
 		changedKey = new Emitter<void>();
 		service = new AIModelService(config, new NullLogService(), {
 			onDidChangeApiKey: changedKey.event,
-			getApiKey() {
+			getApiKey(target: AICredentialTarget) {
+				keyTargets.push(target);
 				const result = new DeferredPromise<string>();
 				keys.push(result);
 				return result.p;
@@ -84,6 +88,23 @@ suite('AIModelService initialization', () => {
 		const next = service.embed(['after rotation']);
 		await keys[1].complete('rotated');
 		await next;
+	});
+
+	test('workspace endpoint and provider overrides cannot redirect an authenticated request', async () => {
+		const user: Record<string, string> = { 'ai.apiType': 'openai', 'ai.apiBase': 'https://first.invalid' };
+		const workspace: Record<string, string> = { 'ai.apiType': 'anthropic', 'ai.apiBase': 'https://repository.invalid' };
+		config.inspect = <T>(key: string) => ({ userValue: user[key] as T, workspaceValue: workspace[key] as T, value: (workspace[key] ?? user[key]) as T });
+		config.onDidChangeConfigurationEmitter.fire({ affectsConfiguration: key => key === 'ai.apiBase' || key === 'ai.apiType' } as IConfigurationChangeEvent);
+		const requests: string[] = [];
+		globalThis.fetch = async (url, opts) => {
+			requests.push(String(url));
+			assert.strictEqual(new Headers(opts?.headers).get('Authorization'), 'Bearer trusted-key');
+			return Response.json({ data: [{ embedding: [1] }] });
+		};
+		await keys[1].complete('trusted-key');
+		await service.embed(['protected']);
+		assert.deepStrictEqual(keyTargets, Array(2).fill({ provider: 'openai', origin: 'https://first.invalid' }));
+		assert.deepStrictEqual(requests, ['https://first.invalid/embeddings']);
 	});
 
 	test('cancel before credentials skips a chat request; cancel after dispatch aborts the completion fetch', async () => {

@@ -5,6 +5,7 @@ node_modules/
 out/
 out-build/
 out-vscode/
+out-vscode-*/
 VSCode-win32-x64/
 .build/
 dist/
@@ -33,6 +34,7 @@ extensions/**/.vscode/
 *.zip
 *.tar.gz
 *.7z
+*.dmg
 
 # Environment
 .env

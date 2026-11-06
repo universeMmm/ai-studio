@@ -34,6 +34,7 @@ import { localize2 } from '../../../../nls.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
 import { Extensions } from '../../panecomposite.js';
+import { isStudioAdvancedMode, STUDIO_ADVANCED_MODE_CONFIG } from '../../../common/studioMode.js';
 
 export class SidebarPart extends AbstractPaneCompositePart {
 
@@ -84,9 +85,10 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IMenuService menuService: IMenuService,
 	) {
+		const partOptions = { hasTitle: true, trailingSeparator: false, borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0 };
 		super(
 			Parts.SIDEBAR_PART,
-			{ hasTitle: true, trailingSeparator: false, borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0 },
+			partOptions,
 			SidebarPart.activeViewletSettingsKey,
 			ActiveViewletContext.bindTo(contextKeyService),
 			SidebarFocusContext.bindTo(contextKeyService),
@@ -110,6 +112,23 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			extensionService,
 			menuService,
 		);
+
+		// Studio supplies its own navigation header. Updating the actual part option
+		// removes the title's 35px allocation as well as its DOM, so splitters and
+		// scroll heights stay correct. Other views and advanced mode retain theirs.
+		const updateStudioTitle = () => {
+			const hasTitle = isStudioAdvancedMode(configurationService) || this.getActivePaneComposite()?.getId() !== 'workbench.view.aiStudioSessions';
+			partOptions.hasTitle = hasTitle;
+			this.titleArea?.classList.toggle('studio-hidden-title', !hasTitle);
+			if (this.dimension && this.contentPosition) {
+				this.layout(this.dimension.width, this.dimension.height, this.contentPosition.top, this.contentPosition.left);
+			}
+		};
+		this._register(this.onDidPaneCompositeOpen(updateStudioTitle));
+		this._register(this.onDidPaneCompositeClose(updateStudioTitle));
+		this._register(configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(STUDIO_ADVANCED_MODE_CONFIG)) { updateStudioTitle(); }
+		}));
 
 		// Track visible view containers for auto-hide
 		this.visibleViewContainersTracker = this._register(instantiationService.createInstance(VisibleViewContainersTracker, ViewContainerLocation.Sidebar));

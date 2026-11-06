@@ -21,6 +21,7 @@ import { ISharedWebContentExtractorService } from '../../../../../platform/webCo
 import { IExtensionService, isProposedApiEnabled } from '../../../../services/extensions/common/extensions.js';
 import { extractSCMHistoryItemDropData } from '../../../scm/browser/scmHistoryChatContext.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { AI_STUDIO_VENDOR_ID } from '../../common/languageModels.js';
 import { IChatWidget } from '../chat.js';
 import { ChatAttachmentModel } from '../attachments/chatAttachmentModel.js';
 import { IChatAttachmentResolveService, ImageTransferData } from '../attachments/chatAttachmentResolveService.js';
@@ -108,8 +109,18 @@ export class ChatDragAndDrop extends Themable {
 		overlayContainer.appendChild(overlay);
 
 		const disposable = new DragAndDropObserver(target, {
+			onDragEnter: e => {
+				if (this.disableOverlay || !this.isDragEventSupported(e)) { return; }
+				// The editor group claims dragenter before dragover. Claim supported
+				// attachments here so its file-opening overlay never covers the chat.
+				e.stopPropagation();
+				e.preventDefault();
+				if (this.currentActiveTarget && this.currentActiveTarget !== target) { this.setOverlay(this.currentActiveTarget, undefined); }
+				this.currentActiveTarget = target;
+				this.onDragEnter(e, target);
+			},
 			onDragOver: (e) => {
-				if (this.disableOverlay) {
+				if (this.disableOverlay || !this.isDragEventSupported(e)) {
 					return;
 				}
 
@@ -134,10 +145,15 @@ export class ChatDragAndDrop extends Themable {
 					return;
 				}
 				if (target === this.currentActiveTarget) {
+					e.stopPropagation();
 					this.currentActiveTarget = undefined;
 				}
 
 				this.onDragLeave(e, target);
+			},
+			onDragEnd: () => {
+				if (target === this.currentActiveTarget) { this.currentActiveTarget = undefined; }
+				this.setOverlay(target, undefined);
 			},
 			onDrop: (e) => {
 				if (this.disableOverlay) {
@@ -169,16 +185,19 @@ export class ChatDragAndDrop extends Themable {
 
 	private onDrop(e: DragEvent, target: HTMLElement): void {
 		this.updateDropFeedback(e, target, undefined);
-		this.drop(e);
+		void this.drop(e).catch(error => this.logService.error('Failed to attach dropped content:', error));
 	}
 
 	private async drop(e: DragEvent): Promise<void> {
+		const widget = this.widgetRef();
+		const viewModel = widget?.viewModel;
 		const contexts = await this.resolveAttachmentsFromDragEvent(e);
-		if (contexts.length === 0) {
+		if (contexts.length === 0 || this._store.isDisposed || this.widgetRef() !== widget || widget?.viewModel !== viewModel) {
 			return;
 		}
 
 		this.attachmentModel.addContext(...contexts);
+		widget?.focusInput();
 	}
 
 	private updateDropFeedback(e: DragEvent, target: HTMLElement, dropType: ChatDragAndDropType | undefined): void {
@@ -197,7 +216,7 @@ export class ChatDragAndDrop extends Themable {
 		} else if (containsDragType(e, CodeDataTransfers.SCM_HISTORY_ITEM)) {
 			return ChatDragAndDropType.SCM_HISTORY_ITEM;
 		} else if (containsImageDragType(e)) {
-			return this.extensionService.extensions.some(ext => isProposedApiEnabled(ext, 'chatReferenceBinaryData')) ? ChatDragAndDropType.IMAGE : undefined;
+			return this.isStudioChat() || this.extensionService.extensions.some(ext => isProposedApiEnabled(ext, 'chatReferenceBinaryData')) ? ChatDragAndDropType.IMAGE : undefined;
 		} else if (containsDragType(e, 'text/html')) {
 			return ChatDragAndDropType.HTML;
 		} else if (containsDragType(e, CodeDataTransfers.SYMBOLS)) {
@@ -219,6 +238,11 @@ export class ChatDragAndDrop extends Themable {
 		// if guessed drop type is undefined, it means the drop is not supported
 		const dropType = this.guessDropType(e);
 		return dropType !== undefined;
+	}
+
+	private isStudioChat(): boolean {
+		const widget = this.widgetRef();
+		return !!widget?.domNode.closest('.studio-chat-editor') || widget?.input.selectedLanguageModel.get()?.metadata.vendor === AI_STUDIO_VENDOR_ID;
 	}
 
 	private getDropTypeName(type: ChatDragAndDropType): string {
@@ -267,6 +291,11 @@ export class ChatDragAndDrop extends Themable {
 		const editorDragData = extractEditorsDropData(e);
 		if (editorDragData.length > 0) {
 			return coalesce(await Promise.all(editorDragData.map(editorInput => {
+				// Studio's built-in provider already supports explicit image attachments;
+				// it does not depend on an extension declaring a proposed chat API.
+				if (this.isStudioChat() && editorInput.resource && /\.(png|jpe?g|gif|bmp|webp)$/i.test(editorInput.resource.path)) {
+					return this.attachmentModel.asImageVariableEntry(editorInput.resource);
+				}
 				return this.chatAttachmentResolveService.resolveEditorAttachContext(editorInput);
 			})));
 		}

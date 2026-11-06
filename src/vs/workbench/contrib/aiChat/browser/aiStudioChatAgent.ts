@@ -12,7 +12,9 @@
 
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { disposableTimeout } from '../../../../base/common/async.js';
+import { waitForState } from '../../../../base/common/observable.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IAIAgentService } from '../../../../platform/ai/browser/aiAgentService.js';
@@ -35,6 +37,13 @@ import { IChatTodoListService } from '../../chat/common/tools/chatTodoListServic
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IDiffStore } from '../../aiDiffApply/browser/diffStore.js';
 import { URI } from '../../../../base/common/uri.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { resolveStudioAttachments } from './studioAttachments.js';
+import { createStudioMcpTools } from './studioMcpTools.js';
+import { ILanguageModelToolsService } from '../../chat/common/tools/languageModelToolsService.js';
+import { ILanguageModelsService } from '../../chat/common/languageModels.js';
+import { IMcpService } from '../../mcp/common/mcpTypes.js';
+import './studioCapabilities.js';
 
 const AI_STUDIO_AGENT_ID = 'ai-studio.chat';
 
@@ -47,16 +56,20 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 		@IDiffStore private readonly diffStore: IDiffStore,
 		@IChatTodoListService private readonly todos: IChatTodoListService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@IFileService private readonly fileService: IFileService,
+		@ILanguageModelToolsService private readonly languageModelTools: ILanguageModelToolsService,
+		@ILanguageModelsService private readonly languageModels: ILanguageModelsService,
+		@IMcpService private readonly mcpService: IMcpService,
 	) { super(); this._registerAgent(); }
 
 	private _registerAgent(): void {
 		const data: IChatAgentData = {
 			id: AI_STUDIO_AGENT_ID, name: 'AI Studio', fullName: 'AI Studio',
-			description: localize('studio.agent', '自主编码助手'),
+			description: localize('studio.agent', '帮助你完成任务的智能助手'),
 			isDefault: true, isCore: true,
 			extensionId: new ExtensionIdentifier('ai-studio'), extensionVersion: '1.0.0',
 			extensionPublisherId: 'ai-studio', extensionDisplayName: 'AI Studio', publisherDisplayName: 'AI Studio',
-			metadata: { themeIcon: ThemeIcon.fromId('terminal'), sampleRequest: localize('studio.sample', '帮我实现一个函数'), isSticky: false },
+			metadata: { themeIcon: ThemeIcon.fromId('sparkle'), sampleRequest: localize('studio.sample', '帮我整理这个项目的资料'), isSticky: false },
 			slashCommands: [], locations: [ChatAgentLocation.Chat, ChatAgentLocation.EditorInline, ChatAgentLocation.Terminal],
 			modes: [ChatModeKind.Agent, ChatModeKind.Ask, ChatModeKind.Edit],
 			disambiguation: [{ category: 'ai_studio', description: 'AI Studio coding assistant', examples: ['write a function', 'fix this bug', 'explain this code'] }],
@@ -80,13 +93,32 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 			return { errorDetails: { message: localize('studio.busy', '智能体正在另一个会话中执行任务。请等待完成，或先停止该任务。') } };
 		}
 
-		const files = request.variables.variables.flatMap(entry => {
-			if (entry.range || !entry.value) { return []; }
-			if (URI.isUri(entry.value)) { return [entry.value.fsPath]; }
-			if (entry.kind === 'file' && typeof entry.value === 'string') { return [entry.value]; }
-			return [];
+		const attachments = await resolveStudioAttachments(request.variables.variables, this.fileService, token).catch(error => {
+			if (token.isCancellationRequested) { return undefined; }
+			throw error;
 		});
-		const instruction = files.length ? request.message + '\n\n' + localize('studio.attached', '附加文件') + '\n' + files.map(file => '- ' + file).join('\n') : request.message;
+		if (!attachments || token.isCancellationRequested) { return {}; }
+		// Reuse native discovery/autostart. Trust and authentication prompts remain
+		// in MCP management; an unavailable extension must not stall every chat.
+		const discovery = new CancellationTokenSource(token);
+		const discoveryTimeout = disposableTimeout(() => discovery.cancel(), 10_000);
+		try {
+			const state = await waitForState(this.mcpService.autostart(discovery.token), state => !state.working, undefined, discovery.token);
+			if (state.serversRequiringInteraction.length) {
+				progress([{ kind: 'warning', content: new MarkdownString(localize('studio.mcp.setup', '部分 MCP 连接需要确认或登录。请在「设置 → 能力 → MCP」中完成连接。')) }]);
+			}
+		} catch {
+			if (!token.isCancellationRequested) { progress([{ kind: 'warning', content: new MarkdownString(localize('studio.mcp.timeout', '部分 MCP 连接尚未就绪，将使用当前可用的能力。')) }]); }
+		} finally { discoveryTimeout.dispose(); discovery.dispose(true); }
+		if (token.isCancellationRequested) { return {}; }
+		const externalTools = createStudioMcpTools(request, this.languageModelTools, this.languageModels);
+		const externalToolNames = new Set(externalTools.map(tool => tool.definition.name));
+		// Attachment reads yield; another composer may have started the shared agent meanwhile.
+		if (agent.isRunning) {
+			return { errorDetails: { message: localize('studio.busy', '智能体正在另一个会话中执行任务。请等待完成，或先停止该任务。') } };
+		}
+		for (const warning of attachments.warnings) { progress([{ kind: 'warning', content: new MarkdownString(warning) }]); }
+		const instruction = request.message + attachments.text;
 		const subscriptions = new DisposableStore();
 		const tools = subscriptions.add(new StudioToolProgress(request.requestId, progress));
 		let firstThought = true;
@@ -99,8 +131,10 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 					if (!echo) { progress([{ kind: 'markdownContent', content: new MarkdownString(step.content) }]); }
 					break;
 				}
-				case 'tool_use': tools.start(step); break;
-				case 'tool_result': tools.finish(step); break;
+				// The native tool service already renders MCP progress and approval
+				// cards in this request. Do not create a second generic tool card.
+				case 'tool_use': if (!externalToolNames.has(step.toolName ?? '')) { tools.start(step); } break;
+				case 'tool_result': if (!externalToolNames.has(step.toolName ?? '')) { tools.finish(step); } break;
 				case 'error': errorMessage = step.content; break;
 			}
 		}));
@@ -132,10 +166,11 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 		try {
 			const sessionId = request.sessionResource.toString();
 			const turns = history.filter(entry => entry.request.sessionResource.toString() === sessionId).map(entry => ({
+				requestId: entry.request.requestId,
 				userMessage: entry.request.message,
 				assistantMessage: entry.response.map(part => part.kind === 'markdownContent' ? part.content.value : '').filter(Boolean).join('\n'),
 			}));
-			await agent.run(instruction, { history: turns, sessionId, requestId: request.requestId });
+			await agent.run(instruction, { history: turns, sessionId, requestId: request.requestId, sourceUserMessage: request.message, images: attachments.images, externalTools });
 			if (token.isCancellationRequested) { return {}; }
 			this.reportChanges(request, progress);
 			return errorMessage ? { errorDetails: { message: errorMessage } } : {};

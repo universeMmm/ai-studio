@@ -35,7 +35,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 	//#region IView
 
 	override get minimumHeight(): number {
-		if (!isMacintosh) {
+		if (!isMacintosh || this.isStudioBasicTitlebar) {
 			return super.minimumHeight;
 		}
 

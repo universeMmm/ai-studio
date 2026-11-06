@@ -107,6 +107,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 				ChatAgentLocation.Chat,
 				undefined,
 				{
+					dndContainer: parent,
 					autoScroll: mode => mode !== ChatModeKind.Ask,
 					renderFollowups: true,
 					supportsFileReferences: true,

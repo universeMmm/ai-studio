@@ -1,0 +1,12 @@
+{
+  "name": "ai-studio-opencode-validation",
+  "private": true,
+  "type": "module",
+  "description": "Isolated validation of the published OpenCode V2 runtime; not a production dependency.",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "@opencode/sdk": "2.2.5"
+  }
+}

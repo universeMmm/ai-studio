@@ -441,6 +441,8 @@ function getKeyboardNavigationLabel<T>(item: IActionListItem<T>): string | undef
  * Options for configuring the action list.
  */
 export interface IActionListOptions {
+	/** Preferred side of the anchor. The list scrolls within the available space. */
+	readonly anchorPosition?: AnchorPosition;
 	/**
 	 * When true, shows a filter input.
 	 */
@@ -488,6 +490,8 @@ export interface IActionListOptions {
 	 * instead of aligned to the right.
 	 */
 	readonly inlineDescription?: boolean;
+	/** Height in px for single-line action items. Defaults to 24. */
+	readonly actionItemHeight?: number;
 
 	/**
 	 * Height (in px) used for action items that have a `detail` line.
@@ -591,7 +595,7 @@ export class ActionListWidget<T> extends Disposable {
 		if (this._options?.inlineDescription) {
 			this.domNode.classList.add('inline-description');
 		}
-		this._actionLineHeight = 24;
+		this._actionLineHeight = this._options?.actionItemHeight ?? 24;
 
 		// Create submenu container appended to domNode
 		this._submenuContainer = document.createElement('div');
@@ -1795,6 +1799,7 @@ export class ActionList<T> extends Disposable {
 	) {
 		super();
 		this._anchor = anchor;
+		this._showAbove = options?.anchorPosition === undefined ? undefined : options.anchorPosition === AnchorPosition.ABOVE;
 
 		this._widget = this._register(instantiationService.createInstance(
 			ActionListWidget<T>,
@@ -1852,7 +1857,7 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private hasDynamicHeight(): boolean {
-		return this._widget.hasDynamicHeight;
+		return this._showAbove !== undefined || this._widget.hasDynamicHeight;
 	}
 
 	private computeActionWidgetVerticalChromeHeight(): number {

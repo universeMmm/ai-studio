@@ -56,20 +56,20 @@ export class ChatAttachmentModel extends Disposable {
 		return new Set(this._attachments.keys());
 	}
 
-	async addFile(uri: URI, range?: IRange) {
+	async addFile(uri: URI, range?: IRange, shouldAttach: () => boolean = () => true) {
 		if (/\.(png|jpe?g|gif|bmp|webp)$/i.test(uri.path)) {
 			const context = await this.asImageVariableEntry(uri);
-			if (context) {
+			if (context && shouldAttach()) {
 				this.addContext(context);
 			}
 			return;
 		} else if (uri.scheme === Schemas.vscodeBrowser) {
 			const entry = await this.chatAttachmentResolveService.resolveEditorAttachContext({ resource: uri });
-			if (entry) {
+			if (entry && shouldAttach()) {
 				this.addContext(entry);
 			}
 			return;
-		} else {
+		} else if (shouldAttach()) {
 			this.addContext(this.asFileVariableEntry(uri, range));
 		}
 	}
