@@ -14,6 +14,18 @@
   "contributes": {
     "themes": [
       {
+        "id": "Studio Light",
+        "label": "AI Studio · 浅色",
+        "uiTheme": "vs",
+        "path": "./themes/studio-light.json"
+      },
+      {
+        "id": "Studio Dark",
+        "label": "AI Studio · 深色",
+        "uiTheme": "vs-dark",
+        "path": "./themes/studio-dark.json"
+      },
+      {
         "id": "Light 2026",
         "label": "%light2026ThemeLabel%",
         "uiTheme": "vs",

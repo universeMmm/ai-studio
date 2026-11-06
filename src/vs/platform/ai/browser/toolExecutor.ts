@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - Tool Executor
  *  Runtime implementation of the 11 built-in tools. All subprocess calls are
  *  async (spawn-based) to avoid blocking the Electron render thread.
@@ -7,111 +12,64 @@
  *
  *  NOTE: This code runs in Electron's sandboxed renderer process where
  *  Node.js built-in modules (child_process, path, fs) are NOT available.
- *  We use inline polyfills for path operations and IPC for subprocess execution.
+ *  We use VS Code's browser-compatible path utilities and IPC for subprocess execution.
  *--------------------------------------------------------------------------------------------*/
 
-import { URI } from "../../../base/common/uri.js";
-import { VSBuffer, encodeBase64 } from "../../../base/common/buffer.js";
-import { IFileService } from "../../../platform/files/common/files.js";
-import { ILogService } from "../../../platform/log/common/log.js";
-import { IConfigurationService } from "../../../platform/configuration/common/configuration.js";
-import { MarkerSeverity, IMarkerService } from "../../../platform/markers/common/markers.js";
-import { IWorkspaceContextService } from "../../../platform/workspace/common/workspace.js";
-import type { AskUserQuestionInput } from "../common/aiTypes.js";
-import { BuiltInToolName } from "../common/aiTypes.js";
-import { IAIIndexService } from "./aiIndexService.js";
-import { IDiffStore } from "../../../workbench/contrib/aiDiffApply/browser/diffStore.js";
-import type { DiffGroup, DiffHunk } from "../../../workbench/contrib/aiDiffApply/common/diffTypes.js";
+import { URI } from '../../../base/common/uri.js';
+import { VSBuffer, encodeBase64 } from '../../../base/common/buffer.js';
+import { extUri, extUriIgnorePathCase } from '../../../base/common/resources.js';
+import { isAbsolute, resolve } from '../../../base/common/path.js';
+import { isWindows } from '../../../base/common/platform.js';
+import { generateUuid } from '../../../base/common/uuid.js';
+import { FileOperationResult, IFileContent, IFileService, toFileOperationResult } from '../../../platform/files/common/files.js';
+import { ILogService } from '../../../platform/log/common/log.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
+import { MarkerSeverity, IMarkerService } from '../../../platform/markers/common/markers.js';
+import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { BuiltInToolName, type AIMessageContent, type AskUserQuestionInput, type SubAgentConfig } from '../common/aiTypes.js';
+import { IAIIndexService } from './aiIndexService.js';
+import { IDiffStore } from '../../../workbench/contrib/aiDiffApply/browser/diffStore.js';
+import type { DiffHunk } from '../../../workbench/contrib/aiDiffApply/common/diffTypes.js';
 import { ITaskManager } from '../common/taskManager.js';
 import { ISubAgentManager } from '../common/subAgentManager.js';
+import type { CommandApprovalHandler, ToolOutcome } from '../common/toolRuntime.js';
 import { IUserMemoryStore } from '../common/userMemoryStore.js';
+import { getAIStudioIpcRenderer } from '../common/desktopIpc.js';
 
-// --- Inline path polyfill ---------------------------------------------------
-// Electron sandboxed renderer cannot access Node.js "path" module.
-// Pure-string implementations of the subset we need.
-
-const _sep = (typeof process !== 'undefined' && process.platform === 'win32') ? '\\' : '/';
-const _isWin = _sep === '\\';
-
-function _normalizePath(p: string): string {
-	if (!p) return '.';
-	let isAbs = false;
-	let prefix = '';
-	if (_isWin) {
-		const m = p.match(/^([a-zA-Z]:)([\\/]?)/);
-		if (m) { prefix = m[1]; p = p.slice(m[0].length); isAbs = true; }
-	} else if (p.startsWith('/')) {
-		isAbs = true;
-	}
-	const parts = p.replace(/\\/g, '/').split('/').filter(s => s !== '' && s !== '.');
-	const resolved: string[] = [];
-	for (const part of parts) {
-		if (part === '..') { resolved.pop(); continue; }
-		resolved.push(part);
-	}
-	let result = resolved.join('/');
-	if (_isWin) {
-		result = prefix + (result ? '\\' + result.replace(/\//g, '\\') : '\\');
-	} else if (isAbs) {
-		result = '/' + result;
-	}
-	return result || (isAbs ? (_isWin ? prefix + '\\' : '/') : '.');
+class ToolFailure extends Error {
+	constructor(message: string, readonly outcome: ToolOutcome = 'error') { super(message); }
 }
 
-function _resolvePath(...segments: string[]): string {
-	let result = '';
-	for (let i = segments.length - 1; i >= 0; i--) {
-		if (!segments[i]) continue;
-		result = result ? _join(segments[i], result) : segments[i];
-		if (_isAbsolute(result)) break;
-	}
-	return _normalizePath(result);
-}
-
-function _join(...segments: string[]): string {
-	return _normalizePath(segments.filter(Boolean).join('/'));
-}
-
-function _isAbsolute(p: string): boolean {
-	if (_isWin) return /^[a-zA-Z]:[\\/]/.test(p);
-	return p.startsWith('/');
-}
-
-function _relative(from: string, to: string): string {
-	const a = _normalizePath(_resolvePath(from)).replace(/\\/g, '/').split('/').filter(Boolean);
-	const b = _normalizePath(_resolvePath(to)).replace(/\\/g, '/').split('/').filter(Boolean);
-	let i = 0;
-	while (i < a.length && i < b.length && a[i] === b[i]) i++;
-	const ups = Array(a.length - i).fill('..');
-	return [...ups, ...b.slice(i)].join('/');
-}
-
-
-// Safe command patterns — auto-approved when ai.commandApproval is "unsafe"
+// Auto-approval accepts a single read-only invocation with known options. Anything
+// requiring shell expansion, redirection, or an unfamiliar flag goes to approval.
 const SAFE_COMMAND_PATTERNS = [
-    /^\s*(dir|ls|pwd)(\s|$)/i,
-    /^\s*(cat|type)(\s|$)/i,
-    /^\s*(echo|print)(\s|$)/i,
-    /^\s*get-content\s/i,
-    /^\s*git\s+(status|log|diff|branch|show|stash\s+list|remote\s+-v|rev-parse|config\s+--list|ls-files|describe|tag\s+-l|shortlog)\b/i,
-    /^\s*npm\s+(list|ls|view|outdated|audit|config\s+list)\b/i,
-    /^\s*(where|which|whereis|type)\s/i,
-    /^\s*(node|python|python3)\s+--version\b/i,
-    /^\s*(rg|grep|findstr)\s/i,
-    /^\s*wc\s/i,
-    /^\s*head\s/i,
-    /^\s*tail\s/i,
-    /^\s*sort\s/i,
-    /^\s*uniq\s/i,
-    /^\s*du\s/i,
-    /^\s*diff\s/i,
+	/^(?:git (?:status|log|show|diff|ls-files|describe|rev-parse|shortlog)|rg|grep|findstr)(?: (?:[\w./~@][\w./~@-]*|--|-[inrsl]+|-\d+|--(?:short|oneline|stat|name-only|name-status|color|all|tags|heads|pretty=oneline)))*$/u,
+	/^(?:git (?:branch(?: (?:-a|-r|--all|--remotes|--show-current|--list))?|stash list|remote -v|config --list|tag -l)|npm (?:list|ls|outdated|audit|config list))$/u,
+	/^(?:node|python|python3) --version$/u,
+	/^(?:dir|ls|pwd|cat|type|echo|where|which|whereis|wc|head|tail|du|diff)(?: (?:[\w./~@][\w./~@-]*|--|-[alhnr]+|-\d+))*$/u,
 ];
 
-function isCommandSafe(command: string): boolean {
-	return SAFE_COMMAND_PATTERNS.some(p => p.test(command));
+export function isCommandSafe(command: string): boolean {
+	if (/[\r\n]/.test(command)) {
+		return false;
+	}
+	const normalized = command.trim().replace(/[ \t]+/g, ' ');
+	const args = normalized.split(' ').slice(1);
+	if (args.some(arg => arg.startsWith('/') || arg.startsWith('~') || arg.split('/').includes('..') || isSensitiveFile(arg))) {
+		return false;
+	}
+	return SAFE_COMMAND_PATTERNS.some(pattern => pattern.test(normalized));
 }
 
+const RG_SHORT_OPTIONS: Record<string, string> = {
+	'-e': '--regexp', '-g': '--glob', '-t': '--type', '-T': '--type-not', '-m': '--max-count',
+	'-C': '--context', '-A': '--after-context', '-B': '--before-context',
+};
+
+type ImageSource = NonNullable<AIMessageContent['source']>;
+
 const SENSITIVE_FILE_PATTERNS = [
+	/(?:^|[\\/])\.git(?:[\\/]|$)/i,
 	/\.env(\..*)?$/,
 	/\.pem$/,
 	/\.key$/,
@@ -194,25 +152,25 @@ function hasShellInjection(command: string): boolean {
  */
 function parseSimpleArgs(input: string): string[] | null {
 	const args: string[] = [];
-	let current = "";
-	let quote: '"' | "'" | null = null;
+	let current = '';
+	let quote: '"' | '\'' | null = null;
 	for (let i = 0; i < input.length; i++) {
 		const ch = input[i];
 		if (quote) {
-			if (ch === quote) quote = null;
-			else current += ch;
+			if (ch === quote) { quote = null; }
+			else { current += ch; }
 			continue;
 		}
-		if (ch === '"' || ch === "'") { quote = ch; continue; }
+		if (ch === '"' || ch === '\'') { quote = ch; continue; }
 		if (/\s/.test(ch)) {
-			if (current) { args.push(current); current = ""; }
+			if (current) { args.push(current); current = ''; }
 			continue;
 		}
-		if (/[;&|<>`$]/.test(ch)) return null;
+		if (/[;&|<>`$]/.test(ch)) { return null; }
 		current += ch;
 	}
-	if (quote) return null;
-	if (current) args.push(current);
+	if (quote) { return null; }
+	if (current) { args.push(current); }
 	return args;
 }
 
@@ -221,7 +179,7 @@ function parseSimpleArgs(input: string): string[] | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Runtime execution engine for the 8 built-in AI tools.
+ * Runtime execution engine for AI tools.
  *
  * Each tool method receives plain input values parsed from the AI's JSON
  * tool-call and returns a human-readable result string.
@@ -255,73 +213,60 @@ export class ToolExecutor {
 		private readonly onEnterPlanMode?: () => void,
 		private readonly onExitPlanMode?: (planFile: string, content: string) => void,
 		private readonly cwdOverride?: string,
+		private readonly turn?: { sessionId?: string; requestId?: string },
 	) { }
 
 	/**
 	 * Entry point for tool dispatch. Routes `toolName` to the matching
 	 * private method and returns the tool's string result.
 	 */
-	async execute(toolName: string, input: Record<string, unknown>): Promise<string> {
-		if (this.abortSignal?.aborted) { return "Tool execution cancelled"; }
+	async execute(toolName: string, input: Record<string, unknown>, onImage?: (source: ImageSource) => void): Promise<string> {
+		return (await this.executeCall(toolName, input, onImage)).text;
+	}
+
+	async executeCall(toolName: string, input: Record<string, unknown>, onImage?: (source: ImageSource) => void, approve?: CommandApprovalHandler): Promise<{ text: string; outcome: ToolOutcome }> {
+		const fileMutation = toolName === BuiltInToolName.WriteFile || toolName === BuiltInToolName.EditFile;
 		try {
-			switch (toolName) {
-				case BuiltInToolName.ReadFile:        return await this._readFile(input);
-				case BuiltInToolName.WriteFile:       return await this._writeFile(input);
-				case BuiltInToolName.EditFile:        return await this._editFile(input);
-				case BuiltInToolName.SearchContent:   return await this._searchContent(input);
-				case BuiltInToolName.SearchFiles:     return await this._searchFiles(input);
-				case BuiltInToolName.RunCommand:      return await this._runCommand(input);
-				case BuiltInToolName.ListDirectory:   return await this._listDirectory(input);
-				case BuiltInToolName.ReadLints:       return await this._readLints(input);
-				case BuiltInToolName.SearchPattern:  return await this._searchPattern(input);
-				case BuiltInToolName.WebFetch:       return await this._webFetch(input);
-				case BuiltInToolName.WebSearch:      return await this._webSearch(input);
-				case 'TaskCreate':
-				case 'TaskUpdate':
-				case 'TaskList':
-				case 'TaskGet':
-				case 'Agent':
-				case 'SendMessage':
-				case 'LocalMemoryRecall':
-				case 'AskUserQuestion':
-				case 'EnterPlanMode':
-				case 'ExitPlanMode':
-					return await this._executeAgentTool(toolName, input);
-				default:                              return "Error: unknown tool \"" + toolName + "\"";
-			}
+			this.abortSignal?.throwIfAborted();
+			const text = await this._dispatch(toolName, input, onImage, approve);
+			// Once the write and its review record exist, report the committed change even if the turn was stopped.
+			if (!fileMutation) { this.abortSignal?.throwIfAborted(); }
+			return { text, outcome: 'success' };
 		} catch (err) {
-			this.logService.error("[ToolExecutor] " + toolName + ":", err);
-			return "Error executing " + toolName + ": " + (err instanceof Error ? err.message : String(err));
+			if (this.abortSignal?.aborted && (!fileMutation || err === this.abortSignal.reason)) { return { text: 'Tool execution cancelled', outcome: 'cancelled' }; }
+			if (err instanceof ToolFailure) { return { text: err.message, outcome: err.outcome }; }
+			this.logService.error('[ToolExecutor] ' + toolName + ':', err);
+			return { text: 'Error executing ' + toolName + ': ' + (err instanceof Error ? err.message : String(err)), outcome: 'error' };
 		}
 	}
 
-	// -- Snapshot / Rollback --------------------------------------------------
-
-	private _snapshots: Map<string, VSBuffer> = new Map();
-
-	async createSnapshot(files: string[]): Promise<void> {
-		this._snapshots.clear();
-		for (const fp of files) {
-			try {
-				const uri = URI.file(this._resolvePath(fp));
-				const content = await this.fileService.readFile(uri);
-				this._snapshots.set(fp, content.value);
-			} catch { /* may not exist */ }
+	private async _dispatch(toolName: string, input: Record<string, unknown>, onImage?: (source: ImageSource) => void, approve?: CommandApprovalHandler): Promise<string> {
+		switch (toolName) {
+			case BuiltInToolName.ReadFile: return await this._readFile(input, onImage);
+			case BuiltInToolName.WriteFile: return await this._writeFile(input);
+			case BuiltInToolName.EditFile: return await this._editFile(input);
+			case BuiltInToolName.SearchContent: return await this._searchContent(input);
+			case BuiltInToolName.SearchFiles: return await this._searchFiles(input);
+			case BuiltInToolName.RunCommand: return this._runCommand(input, approve);
+			case BuiltInToolName.ListDirectory: return await this._listDirectory(input);
+			case BuiltInToolName.ReadLints: return await this._readLints(input);
+			case BuiltInToolName.SearchPattern: return await this._searchPattern(input);
+			case BuiltInToolName.WebFetch: return await this._webFetch(input);
+			case BuiltInToolName.WebSearch: return await this._webSearch(input);
+			case 'TaskCreate':
+			case 'TaskUpdate':
+			case 'TaskList':
+			case 'TaskGet':
+			case 'Agent':
+			case 'SendMessage':
+			case 'LocalMemoryRecall':
+			case 'AskUserQuestion':
+			case 'EnterPlanMode':
+			case 'ExitPlanMode':
+				return this._executeAgentTool(toolName, input, approve);
+			default: throw new ToolFailure('Error: unknown tool "' + toolName + '"');
 		}
 	}
-
-	async rollbackAll(): Promise<string> {
-		if (!this._snapshots.size) return "Nothing to rollback.";
-		let r = 0;
-		for (const [fp, content] of this._snapshots) {
-			try { await this.fileService.writeFile(URI.file(this._resolvePath(fp)), content); r++; }
-			catch (e) { this.logService.error("[ToolExecutor] rollback " + fp + ":", e); }
-		}
-		this._snapshots.clear();
-		return "Rolled back " + r + " file(s).";
-	}
-
-	commitSnapshot(): void { this._snapshots.clear(); }
 
 	// -- Path helpers ---------------------------------------------------------
 
@@ -331,27 +276,34 @@ export class ToolExecutor {
 	 *
 	 * @throws If no workspace is open, or if the path escapes the workspace.
 	 */
+	private _roots(): readonly URI[] {
+		return this.cwdOverride ? [URI.file(this.cwdOverride)] : this.workspaceContextService.getWorkspace().folders.map(folder => folder.uri);
+	}
+
+	private _contains(root: URI, filePath: string): boolean {
+		return (isWindows ? extUriIgnorePathCase : extUri).isEqualOrParent(URI.file(filePath), root);
+	}
+
 	private _resolvePath(filePath: string): string {
-		const root = this.cwdOverride || this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath;
-		if (!root) { throw new Error("No workspace folder is open."); }
-		const resolved = _resolvePath(root, filePath);
-		const rel = _relative(root, resolved);
-		if (rel.startsWith("..") || _isAbsolute(rel)) {
-			throw new Error("Path is outside the workspace: " + filePath);
+		const roots = this._roots();
+		if (!roots.length) { throw new Error('No workspace folder is open.'); }
+		const resolved = resolve(roots[0].fsPath, filePath);
+		if (!roots.some(root => this._contains(root, resolved))) {
+			throw new Error('Path is outside the workspace: ' + filePath);
 		}
 		return resolved;
 	}
 
 	private _getCwd(): string {
-		if (this.cwdOverride) return this.cwdOverride;
-		return this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || ".";
+		if (this.cwdOverride) { return this.cwdOverride; }
+		return this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || '.';
 	}
 
 	// -- Tool implementations -------------------------------------------------
 
-	private async _readFile(input: Record<string, unknown>): Promise<string> {
+	private async _readFile(input: Record<string, unknown>, onImage?: (source: ImageSource) => void): Promise<string> {
 		const fp = this._resolvePath(input.path as string);
-		if (isSensitiveFile(fp)) { return "Error: cannot read sensitive file: " + (input.path as string); }
+		if (isSensitiveFile(fp)) { throw new ToolFailure('Error: cannot read sensitive file: ' + (input.path as string)); }
 
 		// Handle image files — read as binary, base64-encode, return structured result
 		if (isImageFile(fp)) {
@@ -359,8 +311,12 @@ export class ToolExecutor {
 			const mimeType = getImageMimeType(fp);
 			const base64Data = encodeBase64(content.value);
 			const size = content.value.byteLength;
-			const preview = base64Data.slice(0, 100);
-			return `[IMAGE: ${input.path} | ${mimeType} | ${size} bytes | base64 data: ${preview}...]`;
+			const summary = `[IMAGE: ${input.path} | ${mimeType} | ${size} bytes]`;
+			if (onImage) {
+				onImage({ type: 'base64', media_type: mimeType, data: base64Data });
+				return summary;
+			}
+			return `${summary} data:${mimeType};base64,${base64Data}`;
 		}
 
 		// Handle PDF files — read as binary, indicate limited text extraction capability
@@ -370,226 +326,297 @@ export class ToolExecutor {
 			return `[PDF: ${input.path} | ${size} bytes | PDF text extraction requires the main-process PDF handler]`;
 		}
 
-		if (isBinaryFile(fp)) { return "Error: cannot read binary file: " + (input.path as string); }
+		if (isBinaryFile(fp)) { throw new ToolFailure('Error: cannot read binary file: ' + (input.path as string)); }
 		const offset = (input.offset as number) || 0;
 		const limit = (input.limit as number) || undefined;
 		const content = await this.fileService.readFile(URI.file(fp));
-		const lines = content.value.toString().split("\n");
+		const lines = content.value.toString().split('\n');
 		const start = offset > 0 ? offset - 1 : 0;
 		const end = limit ? start + limit : lines.length;
-		return lines.slice(start, end).map((line: string, i: number) => String(start + i + 1).padStart(4, " ") + "| " + line).join("\n");
+		return lines.slice(start, end).map((line: string, i: number) => String(start + i + 1).padStart(4, ' ') + '| ' + line).join('\n');
 	}
 
 	private async _writeFile(input: Record<string, unknown>): Promise<string> {
-		const fp = this._resolvePath(input.path as string);
-		if (isSensitiveFile(fp)) { return "Error: cannot write to sensitive file: " + (input.path as string); }
-		const content = input.content as string;
-		let originalContent = "";
-		try { originalContent = (await this.fileService.readFile(URI.file(fp))).value.toString(); } catch { /* new file */ }
-		await this.fileService.writeFile(URI.file(fp), VSBuffer.fromString(content));
-
-		const origLines = originalContent.split("\n");
-		const newLines = content.split("\n");
-		const hunk: DiffHunk = {
-			id: "hunk_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			filePath: fp,
-			originalStartLine: 1, originalEndLine: origLines.length || 1,
-			modifiedStartLine: 1, modifiedEndLine: newLines.length || 1,
-			originalText: originalContent, modifiedText: content, status: "applied",
-		};
-		const group: DiffGroup = {
-			id: "group_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			chatMessageId: "", hunks: [hunk], createdAt: Date.now(),
-		};
-		this.diffStore.addGroup(group);
-		return "File written: " + (input.path as string);
+		const uri = URI.file(this._resolvePath(input.path as string));
+		if (isSensitiveFile(uri.fsPath)) { throw new ToolFailure('Error: cannot write to sensitive file: ' + input.path); }
+		let original: IFileContent | undefined;
+		try { original = await this.fileService.readFile(uri); }
+		catch (err) {
+			if (toFileOperationResult(err) !== FileOperationResult.FILE_NOT_FOUND) { throw err; }
+		}
+		const before = original?.value.toString() ?? '';
+		const after = input.content as string;
+		await this._applyFileChange(uri, original, after, {
+			id: generateUuid(), filePath: uri.fsPath, status: 'applied',
+			kind: original ? 'write' : 'create', modifiedStartColumn: 1,
+			originalStartLine: 1, originalEndLine: before.split('\n').length,
+			modifiedStartLine: 1, modifiedEndLine: after.split('\n').length,
+			originalText: before, modifiedText: after,
+		});
+		return 'File written: ' + input.path;
 	}
 
 	private async _editFile(input: Record<string, unknown>): Promise<string> {
-		const fp = this._resolvePath(input.path as string);
+		const uri = URI.file(this._resolvePath(input.path as string));
+		if (isSensitiveFile(uri.fsPath)) { throw new ToolFailure('Error: cannot edit sensitive file: ' + input.path); }
 		const oldStr = input.old_string as string;
 		const newStr = input.new_string as string;
-		const replaceAll = !!(input.replace_all as boolean);
+		if (!oldStr) { throw new ToolFailure('Error: old_string must not be empty'); }
 
-		if (!oldStr) { return "Error: old_string must not be empty"; }
+		const original = await this.fileService.readFile(uri);
+		const text = original.value.toString();
+		const index = text.indexOf(oldStr);
+		if (index < 0) { throw new ToolFailure('Error: old_string not found in ' + input.path); }
+		const after = input.replace_all ? text.split(oldStr).join(newStr) : text.slice(0, index) + newStr + text.slice(index + oldStr.length);
+		// A replace-all can edit distant spans. Store one before/after snapshot for that operation.
+		const wholeFile = !!input.replace_all && text.indexOf(oldStr, index + oldStr.length) !== -1;
+		const prefix = wholeFile ? '' : text.slice(0, index);
+		const startLine = prefix.split('\n').length;
+		const originalText = wholeFile ? text : oldStr;
+		const modifiedText = wholeFile ? after : newStr;
+		await this._applyFileChange(uri, original, after, {
+			id: generateUuid(), filePath: uri.fsPath, status: 'applied', kind: wholeFile ? 'write' : 'edit',
+			modifiedStartColumn: prefix.length - prefix.lastIndexOf('\n'),
+			originalStartLine: startLine, originalEndLine: startLine + originalText.split('\n').length - 1,
+			modifiedStartLine: startLine, modifiedEndLine: startLine + modifiedText.split('\n').length - 1,
+			originalText, modifiedText,
+			beforeAnchor: wholeFile ? undefined : prefix.slice(-64),
+			afterAnchor: wholeFile ? undefined : after.slice(index + modifiedText.length, index + modifiedText.length + 64),
+		});
+		return 'File edited: ' + input.path;
+	}
 
-		const uri = URI.file(fp);
-		const content = (await this.fileService.readFile(uri)).value.toString();
-		if (!replaceAll && content.indexOf(oldStr) === -1) { return "Error: old_string not found in " + (input.path as string); }
-
-		let origStart = 0, origEnd = 0;
-		const idx = content.indexOf(oldStr);
-		if (idx >= 0) {
-			const before = content.slice(0, idx);
-			origStart = before.split("\n").length;
-			origEnd = origStart + oldStr.split("\n").length - 1;
+	private async _applyFileChange(uri: URI, original: IFileContent | undefined, text: string, hunk: DiffHunk): Promise<void> {
+		this.abortSignal?.throwIfAborted();
+		const updated = VSBuffer.fromString(text);
+		if (original) {
+			await this.fileService.writeFile(uri, updated, { etag: original.etag, mtime: original.mtime });
+		} else {
+			await this.fileService.createFile(uri, updated, { overwrite: false });
 		}
-		const newContent = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
-		await this.fileService.writeFile(uri, VSBuffer.fromString(newContent));
-
-		const newLines = newStr.split("\n");
-		const hunk: DiffHunk = {
-			id: "hunk_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			filePath: fp,
-			originalStartLine: origStart, originalEndLine: origEnd,
-			modifiedStartLine: origStart, modifiedEndLine: origStart + newLines.length - 1,
-			originalText: oldStr, modifiedText: newStr, status: "applied",
-		};
-		const group: DiffGroup = {
-			id: "group_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
-			chatMessageId: "", hunks: [hunk], createdAt: Date.now(),
-		};
-		this.diffStore.addGroup(group);
-		return "File edited: " + (input.path as string);
+		try {
+			this.abortSignal?.throwIfAborted();
+			this.diffStore.addGroup({ id: generateUuid(), chatMessageId: this.turn?.requestId ?? '', sessionId: this.turn?.sessionId, hunks: [hunk], createdAt: Date.now() });
+		} catch (err) {
+			// Move first: pending writes to the public path must not be overwritten
+			// just because they have the same length as the agent's last write.
+			const recovery = URI.joinPath(uri, '..', '.ai-studio-rollback-' + generateUuid());
+			await this.fileService.move(uri, recovery, false);
+			try {
+				const captured = await this.fileService.readFile(recovery);
+				const isOurWrite = captured.value.equals(updated);
+				if (isOurWrite && !original) {
+					await this.fileService.del(recovery);
+				} else {
+					if (isOurWrite && original) {
+						// Updating the captured inode preserves executable bits and ownership.
+						await this.fileService.writeFile(recovery, original.value);
+					}
+					const ipc = getAIStudioIpcRenderer();
+					if (ipc) {
+						await ipc.invoke('vscode:ai-studio:restoreRollback', recovery.fsPath, uri.fsPath);
+						await this.fileService.del(recovery);
+					} else {
+						await this.fileService.move(recovery, uri, false);
+					}
+				}
+			} catch (recoveryError) {
+				throw new Error('Recovery file: ' + recovery.fsPath + '. Could not restore: ' + recoveryError + '. Original error: ' + err);
+			}
+			throw err;
+		}
 	}
 
 	private async _searchContent(input: Record<string, unknown>): Promise<string> {
 		const pattern = input.pattern as string;
+		if (this.cwdOverride) {
+			const result = await this._spawn('rg', ['--no-config', '--line-number', '--fixed-strings', '--', pattern, '.'], this.cwdOverride, 15000, 5 * 1024 * 1024);
+			if (result.exitCode === 1) { return 'No matches.'; }
+			if (result.exitCode !== 0) { throw new ToolFailure('Search error: ' + result.stderr); }
+			return result.stdout;
+		}
 		try {
 			const results = await this.indexService.search(pattern, 10);
-			if (!results.length) { return "No results for \"" + pattern + "\"."; }
-			return results.map(r => r.filePath + ":" + r.startLine + "\n" + r.content).join("\n---\n");
-		} catch (err) { return "Search error: " + (err instanceof Error ? err.message : String(err)); }
+			if (!results.length) { return 'No results for "' + pattern + '".'; }
+			return results.map(r => r.filePath + ':' + r.startLine + '\n' + r.content).join('\n---\n');
+		} catch (err) { throw new ToolFailure('Search error: ' + (err instanceof Error ? err.message : String(err))); }
 	}
 
 	private async _searchPattern(input: Record<string, unknown>): Promise<string> {
-		const rawArgs = input.rg_args as string;
-		const args = parseSimpleArgs(rawArgs);
-		if (!args) {
-			return "Error: ripgrep arguments contain unsupported shell syntax.";
-		}
-		if (args.some(arg => arg === "--replace" || arg === "--files-without-match" || arg === "--type-list" || arg === "-r" || arg.startsWith("--replace="))) {
-			return "Error: ripgrep flags --replace, -r (replace mode), --files-without-match, and --type-list are not allowed.";
-		}
-		const cwd = this._getCwd();
-		try {
-			const result = await this._spawn("rg", args, cwd, 15_000, 5 * 1024 * 1024);
-			if (result.exitCode !== 0 && !result.stdout) {
-				return result.stderr || "No matches found.";
+		const words = parseSimpleArgs(input.rg_args as string);
+		if (!words) { throw new ToolFailure('Error: ripgrep arguments contain unsupported shell syntax.'); }
+		const options = ['--no-config'];
+		const operands: string[] = [];
+		let explicitPattern = false;
+		let endOfOptions = false;
+		for (let i = 0; i < words.length; i++) {
+			const word = words[i];
+			if (endOfOptions || !word.startsWith('-')) { operands.push(word); continue; }
+			if (word === '--') { endOfOptions = true; continue; }
+			if (/^-[ilnsSHvFwxoc]+$/.test(word) || /^--(?:line-number|files-with-matches|count|count-matches|fixed-strings|ignore-case|smart-case|case-sensitive|word-regexp|line-regexp|hidden|multiline|no-heading|with-filename|only-matching|invert-match)$/.test(word)) {
+				options.push(word);
+				continue;
 			}
-			const lines = result.stdout.trim().split('\n').slice(0, 100);
-			return lines.join('\n') || "No matches found.";
-		} catch (e) {
-			return "Search error: " + (e instanceof Error ? e.message : String(e));
+			// Accept only options that describe a search. Flags such as --file and --pre
+			// would read arbitrary files or execute an external program.
+			const option = /^(--(?:regexp|glob|iglob|type|type-not|max-count|context|before-context|after-context)|-[egtTmCAB])(?:=(.*))?$/.exec(word);
+			if (!option) { throw new ToolFailure('Error: unsupported ripgrep option: ' + word); }
+			const value = option[2] ?? words[++i];
+			if (value === undefined) { throw new ToolFailure('Error: missing value for ' + option[1]); }
+			options.push((RG_SHORT_OPTIONS[option[1]] ?? option[1]) + '=' + value);
+			if (option[1] === '-e' || option[1] === '--regexp') { explicitPattern = true; }
 		}
+		if (!explicitPattern) {
+			const pattern = operands.shift();
+			if (pattern === undefined) { throw new ToolFailure('Error: a search pattern is required.'); }
+			options.push('--regexp=' + pattern);
+		}
+		const roots = this._roots();
+		if (!roots.length) { throw new ToolFailure('Error: no workspace folder is open.'); }
+		const output: string[] = [];
+		for (const root of roots) {
+			const paths: string[] = [];
+			for (const operand of operands) {
+				const path = resolve(root.fsPath, operand);
+				if (this._contains(root, path)) { paths.push(path); }
+				else if (!isAbsolute(operand) || !roots.some(other => this._contains(other, path))) {
+					throw new ToolFailure('Error: path is outside the workspace: ' + operand);
+				}
+			}
+			if (operands.length && !paths.length) { continue; }
+			const result = await this._spawn('rg', [...options, '--', ...(paths.length ? paths : ['.'])], root.fsPath, 15_000, 5 * 1024 * 1024);
+			if (result.exitCode !== 0 && result.exitCode !== 1) { throw new ToolFailure('Search error: ' + result.stderr); }
+			const text = result.stdout.trim();
+			if (text) { output.push(roots.length > 1 ? root.fsPath + ':\n' + text : text); }
+		}
+		return output.join('\n').split('\n').slice(0, 100).join('\n') || 'No matches found.';
 	}
 
 	private async _searchFiles(input: Record<string, unknown>): Promise<string> {
 		const pattern = input.pattern as string;
-		const cwd = this._getCwd();
-		// Try ripgrep first
-		try {
-			const result = await this._spawn("rg", ["--files", "--glob", pattern], cwd, 10_000, 5 * 1024 * 1024);
-			if (result.exitCode === 0 && result.stdout.trim()) {
-				const files = result.stdout.trim().split("\n").filter(Boolean);
-				return files.length ? files.slice(0, 50).join("\n") : "No files matching \"" + pattern + "\".";
+		const roots = this._roots();
+		if (!roots.length) { throw new ToolFailure('Error: no workspace folder is open.'); }
+		const files: string[] = [];
+		for (const root of roots) {
+			let paths: string[];
+			try {
+				const result = await this._spawn('rg', ['--no-config', '--files', '--glob=' + pattern], root.fsPath, 10_000, 5 * 1024 * 1024);
+				if (result.exitCode < 0) { throw new Error(result.stderr); }
+				paths = result.stdout.trim().split('\n').filter(Boolean);
+			} catch (err) {
+				if (this.abortSignal?.aborted) { throw err; }
+				paths = await this._walkFiles(root, pattern);
 			}
-		} catch { /* rg unavailable, fall through */ }
-		// Fallback: walk filesystem via IFileService
-		try {
-			const results: string[] = [];
-			const excludeDirs = new Set([".git", "node_modules", ".ai-studio", "out", "dist", ".build"]);
-			const globToRegex = (g: string): RegExp => {
-				const escaped = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
-				return new RegExp('^' + escaped + '$', 'i');
-			};
-			const regex = globToRegex(pattern);
-			const walked = new Set<string>();
-			async function walk(dir: string, fileService: IFileService) {
-				if (walked.has(dir)) return;
-				walked.add(dir);
-				try {
-					const stat = await fileService.resolve(URI.file(dir));
-					if (!stat.children) return;
-					for (const c of stat.children) {
-						const full = _join(dir, c.name);
-						if (c.isDirectory) { if (!excludeDirs.has(c.name)) await walk(full, fileService); }
-						else if (regex.test(c.name)) results.push(full);
-					}
-				} catch { /* permission denied */ }
+			for (const path of paths) {
+				files.push(roots.length === 1 ? path : resolve(root.fsPath, path));
+				if (files.length === 50) { return files.join('\n'); }
 			}
-			await walk(cwd, this.fileService);
-			return results.length ? results.slice(0, 50).join("\n") : "No files matching \"" + pattern + "\".";
-		} catch {
-			return "No files matching \"" + pattern + "\".";
 		}
+		return files.length ? files.join('\n') : 'No files matching "' + pattern + '".';
 	}
 
-	private async _runCommand(input: Record<string, unknown>): Promise<string> {
+	private async _walkFiles(root: URI, pattern: string): Promise<string[]> {
+		const files: string[] = [];
+		const excluded = new Set(['.git', 'node_modules', '.ai-studio', 'out', 'dist', '.build']);
+		const pending = [root];
+		const match = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+		while (pending.length && files.length < 50) {
+			this.abortSignal?.throwIfAborted();
+			const dir = pending.pop()!;
+			const children = (await this.fileService.resolve(dir)).children;
+			for (const child of children ?? []) {
+				if (child.isDirectory) {
+					if (!child.isSymbolicLink && !excluded.has(child.name)) { pending.push(child.resource); }
+				} else if (match.test(child.name)) { files.push(child.resource.fsPath); }
+			}
+		}
+		return files;
+	}
+
+	private async _runCommand(input: Record<string, unknown>, approve?: CommandApprovalHandler): Promise<string> {
 		const cmd = input.command as string;
 		if (hasShellInjection(cmd)) {
-			return "[BLOCKED] Command contains potentially unsafe shell constructs: " + cmd.slice(0, 80);
+			throw new ToolFailure('[BLOCKED] Command contains potentially unsafe shell constructs: ' + cmd.slice(0, 80), 'denied');
 		}
 		const timeout = (input.timeout as number) || 120_000;
 		const cwd = this._getCwd();
 
 		// Check approval policy
-		const approval = this.configurationService.getValue<string>("ai.commandApproval") || "unsafe";
-		if (approval === "all") {
-			return "[REQUIRES_APPROVAL] Command: " + cmd + "\nSet ai.commandApproval to \"unsafe\" or \"none\" to auto-execute.";
-		}
-		if (approval === "unsafe" && !isCommandSafe(cmd)) {
-			return "[REQUIRES_APPROVAL] Unsafe command: " + cmd + "\nThis command does not match known safe patterns. Set ai.commandApproval to \"none\" to auto-execute all commands.";
-		}
+		const approval = this.configurationService.getValue<string>('ai.commandApproval') || 'unsafe';
+		const checkApproval = async () => {
+			if (!approve) { throw new ToolFailure('[REQUIRES_APPROVAL] Command: ' + cmd, 'denied'); }
+			const allowed = await approve(cmd, cwd, this.abortSignal);
+			this.abortSignal?.throwIfAborted();
+			if (!allowed) { throw new ToolFailure('Command declined by user.', 'denied'); }
+		};
+		const safe = isCommandSafe(cmd);
+		if (approval !== 'none' && (approval !== 'unsafe' || !safe)) { await checkApproval(); }
 
 		try {
-			const result = await this._execShell(cmd, cwd, timeout, 10 * 1024 * 1024);
-			if (result.exitCode === 0) {
-				return result.stdout || "(no output)";
+			let result;
+			if (approval === 'unsafe' && safe && /^git\s/.test(cmd.trim())) {
+				const [subcommand, ...args] = cmd.trim().split(/\s+/).slice(1);
+				const gitOptions = ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
+				if (['status', 'log', 'show', 'diff'].includes(subcommand)) {
+					// Inspect only config names: clean/process filters may run even on read-only Git operations.
+					const filters = await this._spawn('git', [...gitOptions, 'config', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$'], cwd, timeout, 4096);
+					if (filters.exitCode !== 1) { await checkApproval(); }
+				}
+				if (['log', 'show', 'diff'].includes(subcommand)) { args.unshift('--no-ext-diff', '--no-textconv'); }
+				result = await this._spawn('git', [...gitOptions, subcommand, ...args], cwd, timeout, 10 * 1024 * 1024);
+			} else {
+				result = await this._spawn(cmd, [], cwd, timeout, 10 * 1024 * 1024, true);
 			}
-			return "Command failed (exit " + result.exitCode + "): " + (result.stderr || result.stdout || "unknown error");
+			if (result.exitCode === 0) {
+				return result.stdout || '(no output)';
+			}
+			throw new ToolFailure('Command failed (exit ' + result.exitCode + '): ' + (result.stderr || result.stdout || 'unknown error'));
 		} catch (err) {
-			return "Command error: " + (err instanceof Error ? err.message : String(err));
+			if (err instanceof ToolFailure) { throw err; }
+			throw new ToolFailure('Command error: ' + (err instanceof Error ? err.message : String(err)));
 		}
 	}
 
 	private async _listDirectory(input: Record<string, unknown>): Promise<string> {
 		const fp = this._resolvePath(input.path as string);
 		const stat = await this.fileService.resolve(URI.file(fp));
-		if (!stat.children) { return "(empty) " + (input.path as string); }
-		return stat.children.map((c: any) => (c.isDirectory ? "[DIR] " : "[FILE] ") + c.name).join("\n");
+		if (!stat.children) { return '(empty) ' + (input.path as string); }
+		return stat.children.map(c => (c.isDirectory ? '[DIR] ' : '[FILE] ') + c.name).join('\n');
 	}
 
 	private async _readLints(input: Record<string, unknown>): Promise<string> {
 		const fp = input.path as string | undefined;
 		if (fp) {
 			const markers = this.markerService.read({ resource: URI.file(this._resolvePath(fp)) });
-			if (!markers.length) { return "No issues for " + fp; }
-			return markers.map((m: any) => {
-				const s = m.severity === MarkerSeverity.Error ? "ERROR" : m.severity === MarkerSeverity.Warning ? "WARN" : "INFO";
-				return "[" + s + "] " + fp + ":" + m.startLineNumber + ":" + m.startColumn + " " + m.message;
-			}).join("\n");
+			if (!markers.length) { return 'No issues for ' + fp; }
+			return markers.map(m => {
+				const s = m.severity === MarkerSeverity.Error ? 'ERROR' : m.severity === MarkerSeverity.Warning ? 'WARN' : 'INFO';
+				return '[' + s + '] ' + fp + ':' + m.startLineNumber + ':' + m.startColumn + ' ' + m.message;
+			}).join('\n');
 		}
-		const all = this.markerService.read({ take: 50 });
-		return all.length ? all.map((m: any) => {
-			const s = m.severity === MarkerSeverity.Error ? "ERROR" : m.severity === MarkerSeverity.Warning ? "WARN" : "INFO";
-			return "[" + s + "] " + m.resource.fsPath + ":" + m.startLineNumber + " " + m.message;
-		}).join("\n") : "No issues workspace-wide.";
+		const all = this.cwdOverride
+			? this.markerService.read().filter(marker => this._contains(URI.file(this.cwdOverride!), marker.resource.fsPath)).slice(0, 50)
+			: this.markerService.read({ take: 50 });
+		return all.length ? all.map(m => {
+			const s = m.severity === MarkerSeverity.Error ? 'ERROR' : m.severity === MarkerSeverity.Warning ? 'WARN' : 'INFO';
+			return '[' + s + '] ' + m.resource.fsPath + ':' + m.startLineNumber + ' ' + m.message;
+		}).join('\n') : 'No issues workspace-wide.';
 	}
 
 	// -- Web tools --------------------------------------------------------------
 
 	private async _webFetch(input: Record<string, unknown>): Promise<string> {
 		const url = input.url as string;
-		if (!url) { return "Error: url is required"; }
+		if (!url) { throw new ToolFailure('Error: url is required'); }
 		// Basic URL validation
-		try { new URL(url); } catch { return "Error: invalid URL: " + url; }
+		try { new URL(url); } catch { throw new ToolFailure('Error: invalid URL: ' + url); }
 		// Only allow http/https
 		if (!url.startsWith('http://') && !url.startsWith('https://')) {
-			return "Error: only http/https URLs are supported";
+			throw new ToolFailure('Error: only http/https URLs are supported');
 		}
-		const cwd = this._getCwd();
 		const prompt = (input.prompt as string) || 'Summarize the content';
 		try {
-			// Use the IPC exec bridge with curl
-			const result = await this._execShell(
-				`curl -sL --max-time 15 -H "User-Agent: AI-Studio/1.0" "${url}"`,
-				cwd, 20_000, 500 * 1024,
-			);
-			if (result.exitCode !== 0) {
-				return "Error fetching URL: " + (result.stderr || "HTTP error");
-			}
-			const html = result.stdout;
+			const html = await this._invokeCancellable<string>('vscode:ai-studio:webFetch', { url });
 			// Strip HTML tags and return text
 			const text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
 				.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -605,121 +632,48 @@ export class ToolExecutor {
 				.slice(0, 8000);
 			return `## Web Content from ${url}\n\nExtraction prompt: ${prompt}\n\n${text}`;
 		} catch (err) {
-			return "Web fetch error: " + (err instanceof Error ? err.message : String(err));
+			throw new ToolFailure('Error fetching URL: ' + (err instanceof Error ? err.message : String(err)));
 		}
 	}
 
 	private async _webSearch(input: Record<string, unknown>): Promise<string> {
-		const query = input.query as string;
-		if (!query) { return "Error: query is required"; }
-		const numResults = Math.min((input.num_results as number) || 5, 10);
-		const cwd = this._getCwd();
-		try {
-			// Use DuckDuckGo Lite (no API key needed) for search via curl
-			const encoded = encodeURIComponent(query);
-			const result = await this._execShell(
-				`curl -sL --max-time 15 -H "User-Agent: AI-Studio/1.0" "https://lite.duckduckgo.com/lite/?q=${encoded}"`,
-				cwd, 20_000, 500 * 1024,
-			);
-			if (result.exitCode !== 0) {
-				return "Error searching: " + (result.stderr || "HTTP error");
-			}
-			const html = result.stdout;
-			// Parse DuckDuckGo Lite results — each result has a link and description
-			const links: string[] = [];
-			const liteLinkRegex = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([^<]+)<\/a>/g;
-			let match;
-			while ((match = liteLinkRegex.exec(html)) !== null && links.length < numResults) {
-				if (!match[1].includes('duckduckgo.com') && !match[1].includes('javascript:')) {
-					links.push(`- [${match[2].trim()}](${match[1]})`);
-				}
-			}
-
-			if (!links.length) {
-				return "No search results found for: " + query;
-			}
-			return `## Web Search: ${query}\n\n${links.join('\n')}`;
-		} catch (err) {
-			return "Web search error: " + (err instanceof Error ? err.message : String(err));
-		}
+		const text = await this._invokeCancellable<string>('vscode:ai-studio:webSearch', { query: input.query, num_results: input.num_results });
+		if (text.startsWith('Error searching:')) { throw new ToolFailure(text); }
+		return text;
 	}
 
 	// -- Subprocess execution (IPC via vscode sandbox globals) -----------------
 
-	/**
-	 * Spawn a child process via the main-process IPC bridge.
-	 * Falls back to an informative error message when IPC is unavailable.
-	 */
-	private async _spawn(
-		command: string,
-		args: string[],
-		cwd: string,
-		timeoutMs: number,
-		maxBuffer: number,
-	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-		try {
-			const vscodeWin = (globalThis as any).vscode;
-			if (vscodeWin?.ipcRenderer?.invoke) {
-				const result = await vscodeWin.ipcRenderer.invoke(
-					'vscode:ai-studio:exec',
-					{ command, args, cwd, timeout: timeoutMs, signal: this.abortSignal }
-				);
-				if (result && typeof result === 'object') {
-					return {
-						stdout: String(result.stdout || '').slice(0, maxBuffer),
-						stderr: String(result.stderr || '').slice(0, maxBuffer),
-						exitCode: result.exitCode ?? result.code ?? 0,
-					};
-				}
-			}
-		} catch { /* IPC unavailable, return fallback below */ }
-
-		return {
-			stdout: '',
-			stderr: `Cannot spawn "${command}" — subprocess execution requires the AI Studio main-process handler to be registered.`,
-			exitCode: -1,
-		};
+	private async _spawn(command: string, args: string[], cwd: string, timeout: number, maxBuffer: number, shell = false): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+		return this._invokeCancellable('vscode:ai-studio:exec', { command, args, cwd, timeout, maxBuffer, shell });
 	}
 
-	/**
-	 * Execute a shell command string via the main-process IPC bridge.
-	 */
-	private async _execShell(
-		cmd: string,
-		cwd: string,
-		timeoutMs: number,
-		maxBuffer: number,
-	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-		try {
-			const vscodeWin = (globalThis as any).vscode;
-			if (vscodeWin?.ipcRenderer?.invoke) {
-				const result = await vscodeWin.ipcRenderer.invoke(
-					'vscode:ai-studio:exec',
-					{ shell: true, command: cmd, cwd, timeout: timeoutMs, signal: this.abortSignal }
-				);
-				if (result && typeof result === 'object') {
-					return {
-						stdout: String(result.stdout || '').slice(0, maxBuffer),
-						stderr: String(result.stderr || '').slice(0, maxBuffer),
-						exitCode: result.exitCode ?? result.code ?? 0,
-					};
-				}
-			}
-		} catch { /* fallback below */ }
-
-		return {
-			stdout: '',
-			stderr: `Cannot execute shell command — the AI Studio IPC exec handler is not registered in the main process.`,
-			exitCode: -1,
+	private async _invokeCancellable<T>(channel: string, options: Record<string, unknown>): Promise<T> {
+		if (this.abortSignal?.aborted) {
+			throw new Error('Tool execution cancelled');
+		}
+		const ipc = getAIStudioIpcRenderer();
+		if (!ipc?.invoke) {
+			throw new Error('This tool requires the AI Studio desktop process.');
+		}
+		const requestId = generateUuid();
+		const onAbort = () => {
+			void ipc.invoke('vscode:ai-studio:cancelExec', requestId).catch((err: unknown) => this.logService.warn('[ToolExecutor] cancelling command:', err));
 		};
+		this.abortSignal?.addEventListener('abort', onAbort, { once: true });
+		try {
+			return await ipc.invoke<T>(channel, { ...options, requestId });
+		} finally {
+			this.abortSignal?.removeEventListener('abort', onAbort);
+		}
 	}
 
 	// -- Agent orchestration tools (Phase 2) ----------------------------------
 
-	private async _executeAgentTool(toolName: string, input: Record<string, unknown>): Promise<string> {
+	private async _executeAgentTool(toolName: string, input: Record<string, unknown>, approve?: CommandApprovalHandler): Promise<string> {
 		switch (toolName) {
 			case 'TaskCreate': {
-				if (!this.taskManager) return 'Error: TaskManager not available';
+				if (!this.taskManager) { throw new ToolFailure('Error: TaskManager not available'); }
 				try {
 					const task = this.taskManager.create(
 						input.subject as string,
@@ -730,34 +684,34 @@ export class ToolExecutor {
 						input.metadata as Record<string, unknown> | undefined,
 					);
 					return `Task created: ${task.id} \u2014 "${task.subject}"`;
-				} catch (err: any) {
-					return `Error creating task: ${err.message}`;
+				} catch (err) {
+					throw new ToolFailure(`Error creating task: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}
 
 			case 'TaskUpdate': {
-				if (!this.taskManager) return 'Error: TaskManager not available';
+				if (!this.taskManager) { throw new ToolFailure('Error: TaskManager not available'); }
 				try {
-					const patch: any = {};
-					if (input.status !== undefined) patch.status = input.status;
-					if (input.owner !== undefined) patch.owner = input.owner;
-					if (input.subject !== undefined) patch.subject = input.subject;
-					if (input.description !== undefined) patch.description = input.description;
-					if (input.activeForm !== undefined) patch.activeForm = input.activeForm;
-					if (input.addBlocks !== undefined) patch.addBlocks = input.addBlocks;
-					if (input.addBlockedBy !== undefined) patch.addBlockedBy = input.addBlockedBy;
+					const patch: Parameters<ITaskManager['update']>[1] = {};
+					if (input.status !== undefined) { patch.status = input.status as NonNullable<typeof patch.status>; }
+					if (input.owner !== undefined) { patch.owner = input.owner as string; }
+					if (input.subject !== undefined) { patch.subject = input.subject as string; }
+					if (input.description !== undefined) { patch.description = input.description as string; }
+					if (input.activeForm !== undefined) { patch.activeForm = input.activeForm as string; }
+					if (input.addBlocks !== undefined) { patch.addBlocks = input.addBlocks as string[]; }
+					if (input.addBlockedBy !== undefined) { patch.addBlockedBy = input.addBlockedBy as string[]; }
 					const updated = this.taskManager.update(input.id as string, patch);
-					if (!updated) return `Error: Task "${input.id}" not found`;
+					if (!updated) { throw new ToolFailure(`Error: Task "${input.id}" not found`); }
 					return `Task "${updated.id}" updated \u2014 status: ${updated.status}`;
-				} catch (err: any) {
-					return `Error updating task: ${err.message}`;
+				} catch (err) {
+					throw new ToolFailure(`Error updating task: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}
 
 			case 'TaskList': {
-				if (!this.taskManager) return 'Error: TaskManager not available';
+				if (!this.taskManager) { throw new ToolFailure('Error: TaskManager not available'); }
 				const tasks = this.taskManager.list();
-				if (!tasks.length) return 'No tasks.';
+				if (!tasks.length) { return 'No tasks.'; }
 				return tasks.map(t =>
 					`- [${t.status}] ${t.id}: ${t.subject}` +
 					(t.owner ? ` (owner: ${t.owner})` : '') +
@@ -767,35 +721,37 @@ export class ToolExecutor {
 			}
 
 			case 'TaskGet': {
-				if (!this.taskManager) return 'Error: TaskManager not available';
+				if (!this.taskManager) { throw new ToolFailure('Error: TaskManager not available'); }
 				const task = this.taskManager.get(input.id as string);
-				if (!task) return `Task "${input.id}" not found`;
+				if (!task) { throw new ToolFailure(`Task "${input.id}" not found`); }
 				return JSON.stringify(task, null, 2);
 			}
 
 			case 'Agent': {
-				if (!this.subAgentManager) return 'Error: SubAgentManager not available';
-				const configs = [{
-					subagent_type: (input.subagent_type as any) || 'general-purpose',
+				if (!this.subAgentManager) { throw new ToolFailure('Error: SubAgentManager not available'); }
+				const configs: SubAgentConfig[] = [{
+					subagent_type: (input.subagent_type as SubAgentConfig['subagent_type'] | undefined) || 'general-purpose',
 					description: (input.description as string) || 'No description',
 					prompt: input.prompt as string,
 					name: input.name as string | undefined,
 					run_in_background: !!(input.run_in_background as boolean),
-					mode: (input.mode as any) || 'default',
+					mode: (input.mode as SubAgentConfig['mode'] | undefined) || 'default',
 					isolation: input.isolation as 'worktree' | undefined,
 				}];
 				try {
-					const results = await this.subAgentManager.execute(configs);
+					const results = await this.subAgentManager.execute(configs, { ...this.turn, signal: this.abortSignal, approve });
 					const r = results[0];
-					if (r.status === 'error') return `Sub-agent "${r.name}" error: ${r.error}`;
+					if (r.status === 'aborted') { throw new ToolFailure('Tool execution cancelled', 'cancelled'); }
+					if (r.status === 'error') { throw new ToolFailure(`Sub-agent "${r.name}" error: ${r.error}`); }
 					return `Sub-agent "${r.name}" completed. Tool calls: ${r.toolCalls}\n\n${r.text}`;
-				} catch (err: any) {
-					return `Sub-agent error: ${err.message}`;
+				} catch (err) {
+					if (err instanceof ToolFailure) { throw err; }
+					throw new ToolFailure(`Sub-agent error: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}
 
 			case 'SendMessage': {
-				if (!this.subAgentManager) return 'Error: SubAgentManager not available';
+				if (!this.subAgentManager) { throw new ToolFailure('Error: SubAgentManager not available'); }
 				const to = input.to as string;
 				const summary = (input.summary as string) || '';
 				const message = input.message as string;
@@ -804,55 +760,54 @@ export class ToolExecutor {
 			}
 
 			case 'LocalMemoryRecall': {
-				if (!this.userMemoryStore) return 'Error: UserMemoryStore not available';
+				if (!this.userMemoryStore) { throw new ToolFailure('Error: UserMemoryStore not available'); }
 				const query = (input.query as string || '').toLowerCase();
 				const entries = await this.userMemoryStore.list();
-				if (!entries.length) return 'No memories found.';
+				if (!entries.length) { return 'No memories found.'; }
 				const matched = entries.filter(e =>
 					e.name.toLowerCase().includes(query) ||
 					e.description.toLowerCase().includes(query)
 				);
-				if (!matched.length) return `No memories matching "${input.query}".`;
+				if (!matched.length) { return `No memories matching "${input.query}".`; }
 				return matched.map(e => `## ${e.name} (${e.type})\n${e.description}\n\n${e.content}`).join('\n\n---\n\n');
 			}
 
 			case 'AskUserQuestion': {
-				if (!this.onAskUserQuestion) return 'Error: AskUserQuestion not available';
+				if (!this.onAskUserQuestion) { throw new ToolFailure('Error: AskUserQuestion not available'); }
 				const qInput: AskUserQuestionInput = {
 					question: input.question as string,
 					header: input.header as string | undefined,
-					options: (input.options as any[]) || [],
+					options: (input.options as AskUserQuestionInput['options'] | undefined) || [],
 					multiSelect: !!(input.multiSelect as boolean),
 				};
 				try {
 					const answer = await this.onAskUserQuestion(qInput);
 					return answer;
-				} catch (err: any) {
-					return `Error: ${err.message}`;
+				} catch (err) {
+					throw new ToolFailure(`Error: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}
 
 			case 'EnterPlanMode': {
 				this.onEnterPlanMode?.();
-				return 'Entered plan mode. Tools restricted to read-only. Explore the codebase, write your implementation plan to a plan file, then call ExitPlanMode.';
+				return 'Entered plan mode. Explore using read-only tools, then submit the plan text with ExitPlanMode.';
 			}
 
 			case 'ExitPlanMode': {
-				const planFile = input.planFile as string;
-				if (!planFile) return 'Error: planFile is required';
-				let content = '';
-				try {
-					const raw = (await this.fileService.readFile(URI.file(planFile))).value.toString();
-					content = raw;
-				} catch {
-					content = `(Plan file not readable: ${planFile})`;
+				const planFile = typeof input.planFile === 'string' ? input.planFile : undefined;
+				let content = typeof input.content === 'string' ? input.content.trim() : '';
+				if (!content && planFile) {
+					const path = this._resolvePath(planFile);
+					if (isSensitiveFile(path)) { throw new ToolFailure('Cannot present a sensitive file.', 'denied'); }
+					content = (await this.fileService.readFile(URI.file(path))).value.toString();
 				}
-				this.onExitPlanMode?.(planFile, content);
+				if (!content) { throw new ToolFailure('Error: a nonempty plan is required'); }
+				this.onExitPlanMode?.(planFile ?? '', content);
 				return 'Plan presented for approval. Waiting for user decision.';
 			}
 
 			default:
-				return `Error: unknown agent tool "${toolName}`;
+				throw new ToolFailure(`Error: unknown agent tool "${toolName}"`);
 		}
 	}
 }

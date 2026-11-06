@@ -1,57 +1,58 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - Agent Service Tests
  *  Uses typed mock factory from testMocks.ts for compile-time safety.
  *--------------------------------------------------------------------------------------------*/
 
-import * as assert from "assert";
-import { AIAgentService } from "../../../src/vs/platform/ai/browser/aiAgentService.js";
-import { createAgentDeps, MockAIModelService } from "./helpers/testMocks.js";
+import * as assert from 'assert';
+import { AIAgentService } from '../../../src/vs/platform/ai/browser/aiAgentService.js';
+import { createTestAgent } from './helpers/testMocks.js';
 
-suite("AIAgentService", () => {
+suite('AIAgentService', () => {
 	let agent: AIAgentService;
 
-	beforeEach(() => {
-		const deps = createAgentDeps();
-		agent = new AIAgentService(
-			deps.aiModelService, deps.indexService, deps.contextService,
-			deps.fileService, deps.logService, deps.configurationService,
-			deps.diffStore, deps.markerService, deps.workspaceContextService,
-		);
+	setup(() => {
+		agent = createTestAgent();
 	});
 
-	test("initial status is idle", () => {
-		assert.strictEqual(agent.status, "idle");
+	test('initial status is idle', () => {
+		assert.strictEqual(agent.status, 'idle');
 	});
 
-	test("initial steps are empty", () => {
+	test('initial steps are empty', () => {
 		assert.strictEqual(agent.steps.length, 0);
 	});
 
-	test("maxSteps defaults to 20", () => {
+	test('maxSteps defaults to 20', () => {
 		assert.strictEqual(agent.maxSteps, 20);
 	});
 
-	test("stop changes status to stopped", () => {
+	test('stop changes status to stopped', () => {
 		agent.stop();
-		assert.strictEqual(agent.status, "stopped");
+		assert.strictEqual(agent.status, 'stopped');
 	});
 
-	test("clearHistory resets steps", () => {
+	test('clearHistory resets steps', () => {
 		agent.clearHistory();
 		assert.strictEqual(agent.steps.length, 0);
 	});
 
-	test("clearHistory resets plan to null", () => {
+	test('clearHistory clears a populated conversation', () => {
+		agent.memory.addTurn('question', 'answer');
 		agent.clearHistory();
-		assert.strictEqual(agent.plan, null);
-	});
-
-	test("memory is accessible", () => {
-		assert.ok(agent.memory, "memory should exist");
 		assert.strictEqual(agent.memory.messageCount, 0);
 	});
 
-	test("status events fire on state change", (done) => {
+	test('memory is accessible', () => {
+		assert.ok(agent.memory, 'memory should exist');
+		assert.strictEqual(agent.memory.messageCount, 0);
+	});
+
+	test('status events fire on state change', (done) => {
 		let fired = false;
 		agent.onDidChangeStatus((status) => {
 			if (!fired) { fired = true; done(); }
@@ -59,16 +60,11 @@ suite("AIAgentService", () => {
 		agent.stop();
 	});
 
-	test("fresh agent is idle after stop", () => {
+	test('fresh agent is idle after stop', () => {
 		agent.stop();
-		assert.strictEqual(agent.status, "stopped");
-		const deps = createAgentDeps();
-		const fresh = new AIAgentService(
-			deps.aiModelService, deps.indexService, deps.contextService,
-			deps.fileService, deps.logService, deps.configurationService,
-			deps.diffStore, deps.markerService, deps.workspaceContextService,
-		);
-		assert.strictEqual(fresh.status, "idle");
+		assert.strictEqual(agent.status, 'stopped');
+		const fresh = createTestAgent();
+		assert.strictEqual(fresh.status, 'idle');
 	});
 
 });

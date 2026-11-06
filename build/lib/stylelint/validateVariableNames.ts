@@ -24,8 +24,11 @@ export interface IValidator {
 	(value: string, report: (message: string) => void): void;
 }
 
-export function getVariableNameValidator(): IValidator {
-	const allVariables = getKnownVariableNames();
+export function getVariableNameValidator(stylesheet = ''): IValidator {
+	// Custom properties declared by this stylesheet are valid alongside theme tokens.
+	// Ignore comments so a commented-out declaration does not hide a misspelling.
+	const declarations = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|[;{])\s*(--[\w.-]+)\s*:/gm);
+	const allVariables = new Set([...getKnownVariableNames(), ...Array.from(declarations, match => match[1])]);
 	return (value: string, report: (unknwnVariable: string) => void) => {
 		RE_VAR_PROP.lastIndex = 0; // reset lastIndex just to be sure
 		let match;

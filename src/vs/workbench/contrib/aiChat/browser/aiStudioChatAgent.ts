@@ -1,61 +1,68 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - Chat Agent with Tool-Use Loop
  *  Registers as VS Code's default chat agent. Delegates the agent loop to
  *  IAIAgentService so there is one canonical implementation shared across
  *  the Chat panel, the status bar, and any other surface.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from "../../../../base/common/lifecycle.js";
-import { ExtensionIdentifier } from "../../../../platform/extensions/common/extensions.js";
-import { CancellationToken } from "../../../../base/common/cancellation.js";
-import { IInstantiationService } from "../../../../platform/instantiation/common/instantiation.js";
-import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from "../../../../workbench/common/contributions.js";
-import { IAIAgentService } from "../../../../platform/ai/browser/aiAgentService.js";
-import type { AgentStep } from "../../../../platform/ai/common/aiTypes.js";
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { IAIAgentService } from '../../../../platform/ai/browser/aiAgentService.js';
+import type { AgentStep, AskUserQuestionInput } from '../../../../platform/ai/common/aiTypes.js';
 import {
 	IChatAgentService,
 	type IChatAgentData,
 	type IChatAgentImplementation,
 	type IChatAgentRequest,
+	type IChatAgentHistoryEntry,
 	type IChatAgentResult,
-} from "../../../../workbench/contrib/chat/common/participants/chatAgents.js";
-import type { IChatProgress } from "../../../../workbench/contrib/chat/common/chatService/chatService.js";
-import { ChatModeKind, ChatAgentLocation } from "../../../../workbench/contrib/chat/common/constants.js";
-import { ThemeIcon } from "../../../../base/common/themables.js";
-import { MarkdownString } from "../../../../base/common/htmlContent.js";
-import { ILogService } from "../../../../platform/log/common/log.js";
-import { IQuickInputService } from "../../../../platform/quickinput/common/quickInput.js";
-import type { AskUserQuestionInput } from "../../../../platform/ai/common/aiTypes.js";
-import { IDiffStore } from "../../aiDiffApply/browser/diffStore.js";
-import { URI } from "../../../../base/common/uri.js";
+} from '../../../../workbench/contrib/chat/common/participants/chatAgents.js';
+import type { IChatProgress } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatModeKind, ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { localize } from '../../../../nls.js';
+import { StudioToolProgress } from './studioToolProgress.js';
+import { IChatTodoListService } from '../../chat/common/tools/chatTodoListService.js';
+import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { IDiffStore } from '../../aiDiffApply/browser/diffStore.js';
+import { URI } from '../../../../base/common/uri.js';
 
-const AI_STUDIO_AGENT_ID = "ai-studio.chat";
+const AI_STUDIO_AGENT_ID = 'ai-studio.chat';
 
 class AIStudioChatAgentContribution extends Disposable implements IWorkbenchContribution {
-	static readonly ID = "vs.contrib.aiStudioChatAgent";
+	static readonly ID = 'vs.contrib.aiStudioChatAgent';
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
-		@ILogService private readonly logService: ILogService,
 		@IDiffStore private readonly diffStore: IDiffStore,
+		@IChatTodoListService private readonly todos: IChatTodoListService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 	) { super(); this._registerAgent(); }
 
 	private _registerAgent(): void {
 		const data: IChatAgentData = {
-			id: AI_STUDIO_AGENT_ID, name: "AI Studio", fullName: "AI Studio Agent",
-			description: "AI Studio - self-hosted coding assistant",
+			id: AI_STUDIO_AGENT_ID, name: 'AI Studio', fullName: 'AI Studio',
+			description: localize('studio.agent', '自主编码助手'),
 			isDefault: true, isCore: true,
-			extensionId: new ExtensionIdentifier("ai-studio"), extensionVersion: "1.0.0",
-			extensionPublisherId: "ai-studio", extensionDisplayName: "AI Studio", publisherDisplayName: "AI Studio",
-			metadata: { themeIcon: ThemeIcon.fromId("robot"), sampleRequest: "Help me write a function", isSticky: false },
+			extensionId: new ExtensionIdentifier('ai-studio'), extensionVersion: '1.0.0',
+			extensionPublisherId: 'ai-studio', extensionDisplayName: 'AI Studio', publisherDisplayName: 'AI Studio',
+			metadata: { themeIcon: ThemeIcon.fromId('terminal'), sampleRequest: localize('studio.sample', '帮我实现一个函数'), isSticky: false },
 			slashCommands: [], locations: [ChatAgentLocation.Chat, ChatAgentLocation.EditorInline, ChatAgentLocation.Terminal],
 			modes: [ChatModeKind.Agent, ChatModeKind.Ask, ChatModeKind.Edit],
-			disambiguation: [{ category: "ai_studio", description: "AI Studio coding assistant", examples: ["write a function", "fix this bug", "explain this code"] }],
+			disambiguation: [{ category: 'ai_studio', description: 'AI Studio coding assistant', examples: ['write a function', 'fix this bug', 'explain this code'] }],
 		};
 		const impl: IChatAgentImplementation = {
-			invoke: (req: any, prog: any, _hist: any, tok: any) => this._invoke(req, prog, tok),
+			invoke: (request, progress, history, token) => this._invoke(request, progress, history, token),
 		};
 		this._register(this.chatAgentService.registerAgent(AI_STUDIO_AGENT_ID, data));
 		this._register(this.chatAgentService.registerAgentImplementation(AI_STUDIO_AGENT_ID, impl));
@@ -64,187 +71,116 @@ class AIStudioChatAgentContribution extends Disposable implements IWorkbenchCont
 	private async _invoke(
 		request: IChatAgentRequest,
 		progress: (parts: IChatProgress[]) => void,
+		history: IChatAgentHistoryEntry[],
 		token: CancellationToken,
 	): Promise<IChatAgentResult> {
-		try {
-			const agentService = this.instantiationService.invokeFunction(
-				a => a.get(IAIAgentService));
+		const agent = this.instantiationService.invokeFunction(a => a.get(IAIAgentService));
+		if (token.isCancellationRequested) { return {}; }
+		if (agent.isRunning) {
+			return { errorDetails: { message: localize('studio.busy', '智能体正在另一个会话中执行任务。请等待完成，或先停止该任务。') } };
+		}
 
-			this.logService.info('[AIStudioChatAgent] _invoke called, message:', request.message.slice(0, 100));
-
-			// Convert agent steps into chat progress as they arrive.
-			// Skip the initial echo (step whose content matches the user's message).
-			let firstThought = true;
-			const stepListener = agentService.onDidAddStep((step: AgentStep) => {
-				this.logService.info('[AIStudioChatAgent] onDidAddStep type=' + step.type + ' content=' + step.content.slice(0, 80));
-				switch (step.type) {
-					case "thought":
-						if (firstThought && step.content === request.message) {
-							this.logService.info('[AIStudioChatAgent] Skipping first thought (echo of user message)');
-							firstThought = false;
-							return;
-						}
-						firstThought = false;
-						this.logService.info('[AIStudioChatAgent] Calling progress() with markdownContent, length=' + step.content.length);
-						progress([{ content: new MarkdownString(step.content), kind: "markdownContent" }]);
-						this.logService.info('[AIStudioChatAgent] progress() returned');
-						break;
-					case "tool_use":
-						progress([{ kind: "progressMessage", content: new MarkdownString("Tool: **" + (step.toolName || "?") + "**") }]);
-						break;
-					case "tool_result":
-						// Diff content should persist as markdown in the chat response
-						if (step.content.startsWith("### Edited:") || step.content.includes("```diff")) {
-							progress([{ kind: "markdownContent", content: new MarkdownString(step.content) }]);
-						} else {
-							progress([{ kind: "progressMessage", content: new MarkdownString(step.content.slice(0, 500)) }]);
-						}
-						break;
-					case "error":
-						progress([{ kind: "progressMessage", content: new MarkdownString("**Error:** " + step.content) }]);
-						break;
-				}
-			});
-
-			// Render task progress as a markdown checklist
-			const taskListener = agentService.onDidChangeTasks((tasks) => {
-				if (!tasks || !tasks.length) return;
-				const total = tasks.filter(t => t.status !== 'deleted').length;
-				const completed = tasks.filter(t => t.status === 'completed').length;
-				const inProgress = tasks.filter(t => t.status === 'in_progress').length;
-				let md = '## Tasks (' + completed + '/' + total + ' done';
-				if (inProgress > 0) md += ', ' + inProgress + ' in progress';
-				md += ')\n';
-				for (const t of tasks) {
-					if (t.status === 'deleted') continue;
-					const icon = t.status === 'completed' ? '- [x]' : t.status === 'in_progress' ? '- [>]' : '- [ ]';
-					let label = t.subject;
-					if (t.owner) label += ' _(owner: ' + t.owner + ')_';
-					md += icon + ' **' + label + '**';
-					if (t.description) md += ': ' + t.description;
-					md += '\n';
-				}
-				progress([{ content: new MarkdownString(md), kind: 'markdownContent' }]);
-			});
-
-		// Phase 3: Plan approval — present plan review via QuickPick
-		const planListener = agentService.onDidEnterPlanMode(({ planFile, content }) => {
-			progress([{
-				kind: 'markdownContent',
-				content: new MarkdownString('## Implementation Plan\n\n' + content.slice(0, 3000) + (content.length > 3000 ? '\n\n*(truncated)*' : '')),
-			}]);
-			this.quickInputService.pick([
-				{ label: '$(check) Approve', description: 'Approve the plan and start implementing', id: 'approve' },
-				{ label: '$(close) Reject', description: 'Reject the plan and stop', id: 'reject' },
-			], {
-				title: 'Approve Implementation Plan',
-				placeHolder: 'Plan written to ' + planFile,
-			}).then((selected) => {
-				agentService.approvePlan(selected?.id === 'approve');
-			});
+		const files = request.variables.variables.flatMap(entry => {
+			if (entry.range || !entry.value) { return []; }
+			if (URI.isUri(entry.value)) { return [entry.value.fsPath]; }
+			if (entry.kind === 'file' && typeof entry.value === 'string') { return [entry.value]; }
+			return [];
 		});
-
-		const cancelListener = token.onCancellationRequested(() => agentService.stop());
-
-			// Phase 3: AskUserQuestion — present QuickPick to user and return answer
-			const questionListener = agentService.onDidAskQuestion((qInput: AskUserQuestionInput) => {
-				const picks = qInput.options.map((o, i) => ({
-					label: o.label,
-					description: o.description,
-					id: String(i),
-				}));
-				if (!qInput.multiSelect) {
-					picks.push({ label: '$(edit) Other (custom answer)...', description: 'Type your own answer', id: '__custom__' });
+		const instruction = files.length ? request.message + '\n\n' + localize('studio.attached', '附加文件') + '\n' + files.map(file => '- ' + file).join('\n') : request.message;
+		const subscriptions = new DisposableStore();
+		const tools = subscriptions.add(new StudioToolProgress(request.requestId, progress));
+		let firstThought = true;
+		let errorMessage: string | undefined;
+		subscriptions.add(agent.onDidAddStep((step: AgentStep) => {
+			switch (step.type) {
+				case 'thought': {
+					const echo = firstThought && step.content === instruction;
+					firstThought = false;
+					if (!echo) { progress([{ kind: 'markdownContent', content: new MarkdownString(step.content) }]); }
+					break;
 				}
-				this.quickInputService.pick(picks, {
-					title: qInput.header || qInput.question,
-					placeHolder: qInput.question,
-							canPickMany: qInput.multiSelect as any,
-				}).then((selected) => {
-					if (!selected) {
-						agentService.answerQuestion('(user cancelled)');
-						return;
-					}
-					if (qInput.multiSelect && Array.isArray(selected)) {
-						agentService.answerQuestion(selected.map(s => s.label).join(', '));
-					} else if (!Array.isArray(selected) && (selected as any).id === '__custom__') {
-						this.quickInputService.input({
-							title: 'Answer',
-							placeHolder: 'Type your answer...',
-						}).then((value) => {
-							agentService.answerQuestion(value || '(no answer)');
-						});
-					} else {
-						const sel = Array.isArray(selected) ? selected[0] : selected;
-						agentService.answerQuestion(sel.label);
-					}
-				});
-			});
-
-			try {
-				// Extract implicit file attachments from request variables
-				let userMessage = request.message;
-				const vars = (request as any).variables?.variables as any[] | undefined;
-				if (vars && vars.length > 0) {
-					const implicitFiles = vars.filter((v: any) =>
-						(v.kind === 'file' || (v.value && typeof v.value === 'object' && v.value.fsPath)) &&
-						!v.range
-					);
-					if (implicitFiles.length > 0) {
-						let fileBlock = '\n\n## Attached Files\n';
-						for (const f of implicitFiles) {
-							const uri = f.value;
-							const fp = (typeof uri === 'object' && uri.fsPath) ? uri.fsPath :
-								(typeof uri === 'object' && uri.path) ? uri.path : String(uri || f.name || 'unknown');
-							fileBlock += `- ${fp}\n`;
-						}
-						userMessage += fileBlock;
-					}
-				}
-				await agentService.run(userMessage);
-				this.logService.info('[AIStudioChatAgent] agentService.run() completed');
-
-				// Build multiDiffData from the diffStore to show an interactive file change list
-				const appliedHunks = this.diffStore.getAllAppliedHunks();
-				if (appliedHunks.length > 0) {
-					const fileMap = new Map<string, { added: number; removed: number }>();
-					for (const h of appliedHunks) {
-						const entry = fileMap.get(h.filePath) || { added: 0, removed: 0 };
-						if (h.originalText) entry.removed += h.originalText.split('\n').length;
-						if (h.modifiedText) entry.added += h.modifiedText.split('\n').length;
-						fileMap.set(h.filePath, entry);
-					}
-
-					const resources = Array.from(fileMap.entries()).map(([filePath, stats]) => ({
-						modifiedUri: URI.file(filePath),
-						goToFileUri: URI.file(filePath),
-						added: stats.added,
-						removed: stats.removed,
-					}));
-
-					progress([{
-						kind: "multiDiffData",
-						multiDiffData: {
-							title: `Changed ${fileMap.size} file(s)`,
-							resources,
-						},
-						collapsed: false,
-					} as any]);
-				}
-			} finally {
-				stepListener.dispose();
-				taskListener.dispose();
-				questionListener.dispose();
-				planListener.dispose();
-				cancelListener.dispose();
+				case 'tool_use': tools.start(step); break;
+				case 'tool_result': tools.finish(step); break;
+				case 'error': errorMessage = step.content; break;
 			}
+		}));
+		subscriptions.add(token.onCancellationRequested(() => agent.stop()));
+		subscriptions.add(agent.onDidChangeTasks(tasks => {
+			this.todos.setTodos(request.sessionResource, tasks.flatMap((task, index) => task.status === 'deleted' ? [] : [{
+				id: index + 1,
+				title: task.subject,
+				status: task.status === 'completed' ? 'completed' : task.status === 'in_progress' ? 'in-progress' : 'not-started',
+			}]));
+		}));
+		subscriptions.add(agent.onDidRequestCommandApproval(async command => {
+			const allowed = await tools.approve(command, token);
+			agent.respondToCommandApproval(command.requestId, allowed);
+		}));
+		subscriptions.add(agent.onDidEnterPlanMode(async ({ content }) => {
+			progress([{ kind: 'markdownContent', content: new MarkdownString('## ' + localize('studio.plan', '实施计划') + '\n\n' + content) }]);
+			const choice = await this.quickInputService.pick([
+				{ label: localize('studio.planAccept', '批准计划并开始执行'), approved: true },
+				{ label: localize('studio.planReject', '拒绝计划'), approved: false },
+			], { title: localize('studio.planTitle', '审查实施计划') }, token);
+			if (!subscriptions.isDisposed && !token.isCancellationRequested) { agent.approvePlan(choice?.approved === true); }
+		}));
+		subscriptions.add(agent.onDidAskQuestion(async question => {
+			const answer = await this.ask(question, token);
+			if (!subscriptions.isDisposed && !token.isCancellationRequested) { agent.answerQuestion(answer); }
+		}));
 
-			return {};
-		} catch (err: any) {
-			progress([{ kind: "progressMessage", content: new MarkdownString("**AI Studio Error:** " + (err?.message || String(err))) }]);
-			return { errorDetails: { message: err?.message || String(err) } };
+		try {
+			const sessionId = request.sessionResource.toString();
+			const turns = history.filter(entry => entry.request.sessionResource.toString() === sessionId).map(entry => ({
+				userMessage: entry.request.message,
+				assistantMessage: entry.response.map(part => part.kind === 'markdownContent' ? part.content.value : '').filter(Boolean).join('\n'),
+			}));
+			await agent.run(instruction, { history: turns, sessionId, requestId: request.requestId });
+			if (token.isCancellationRequested) { return {}; }
+			this.reportChanges(request, progress);
+			return errorMessage ? { errorDetails: { message: errorMessage } } : {};
+		} catch (err) {
+			return token.isCancellationRequested ? {} : { errorDetails: { message: err instanceof Error ? err.message : String(err) } };
+		} finally {
+			subscriptions.dispose();
+		}
+	}
+
+	private async ask(question: AskUserQuestionInput, token: CancellationToken): Promise<string> {
+		const picks = question.options.map(option => ({ ...option, custom: false }));
+		const options = { title: question.header || question.question, placeHolder: question.question };
+		const cancelled = localize('studio.answerCancelled', '用户取消了回答');
+		if (question.multiSelect) {
+			const answers = await this.quickInputService.pick(picks, { ...options, canPickMany: true }, token);
+			return answers?.map(item => item.label).join(', ') || cancelled;
+		}
+		picks.push({ label: localize('studio.customAnswer', '输入其他回答…'), description: '', custom: true });
+		const picked = await this.quickInputService.pick(picks, options, token);
+		if (!picked?.custom) { return picked?.label ?? cancelled; }
+		return await this.quickInputService.input({ title: question.question }, token) ?? cancelled;
+	}
+
+	private reportChanges(request: IChatAgentRequest, progress: (parts: IChatProgress[]) => void): void {
+		const files = new Map<string, { added: number; removed: number }>();
+		for (const group of this.diffStore.groups) {
+			if (group.sessionId !== request.sessionResource.toString() || group.chatMessageId !== request.requestId) { continue; }
+			for (const hunk of group.hunks) {
+				if (hunk.status !== 'applied') { continue; }
+				const stats = files.get(hunk.filePath) ?? { added: 0, removed: 0 };
+				stats.added += hunk.modifiedText ? hunk.modifiedText.split('\n').length : 0;
+				stats.removed += hunk.originalText ? hunk.originalText.split('\n').length : 0;
+				files.set(hunk.filePath, stats);
+			}
+		}
+		if (files.size) {
+			progress([{
+				kind: 'multiDiffData', collapsed: false, multiDiffData: {
+					title: localize('studio.edits', '已修改 {0} 个文件', files.size),
+					resources: Array.from(files, ([path, stats]) => ({ modifiedUri: URI.file(path), goToFileUri: URI.file(path), ...stats })),
+				}
+			}]);
 		}
 	}
 }
 
-registerWorkbenchContribution2(AIStudioChatAgentContribution.ID, AIStudioChatAgentContribution, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2(AIStudioChatAgentContribution.ID, AIStudioChatAgentContribution, WorkbenchPhase.BlockRestore);

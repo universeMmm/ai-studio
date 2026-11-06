@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Core Type Definitions
  *  All AI platform types in one place for consistent use across all modules.
  *--------------------------------------------------------------------------------------------*/
@@ -23,7 +28,7 @@ export interface AIMessageContent {
 	name?: string;
 	input?: Record<string, unknown>;
 	tool_use_id?: string;
-	content?: string | Array<{ type: string; text?: string }>;
+	content?: string | AIMessageContent[];
 	is_error?: boolean;
 	/** Image source data for Anthropic Messages API image content blocks. */
 	source?: {
@@ -51,15 +56,19 @@ export interface AITool {
 	description: string;
 	input_schema: {
 		type: 'object';
-		properties: Record<string, {
-			type: string;
-			description: string;
-			enum?: string[];
-			default?: unknown;
-			items?: { type: string };
-		}>;
+		properties: Record<string, ToolInputProperty>;
 		required: string[];
 	};
+}
+
+export interface ToolInputProperty {
+	type: string;
+	description?: string;
+	enum?: string[];
+	default?: unknown;
+	items?: ToolInputProperty;
+	properties?: Record<string, ToolInputProperty>;
+	required?: string[];
 }
 
 /**
@@ -84,7 +93,7 @@ export type StopReason = 'end_turn' | 'max_tokens' | 'tool_use' | 'stop_sequence
  */
 export interface AIStreamCallbacks {
 	onToken(token: string): void;
-	onToolUse(toolName: string, toolInput: Record<string, unknown>, toolCallId: string): void;
+	onToolUse(toolName: string, toolInput: Record<string, unknown>, toolCallId: string, inputError?: string): void;
 	onToolResult(toolCallId: string, result: string, isError: boolean): void;
 	onError(error: Error): void;
 	onDone(stopReason: StopReason): void;
@@ -174,6 +183,8 @@ export interface ConversationTurn {
 
 /** Complete session data for persistence. */
 export interface AgentSession {
+	/** Native workbench chat URI; older standalone runs have no chat association. */
+	chatSessionId?: string;
 	/** ISO timestamp when the session was created */
 	sessionId: string;
 	/** When the session started (epoch ms) */
@@ -205,6 +216,9 @@ export interface AgentStep {
 	type: 'thought' | 'tool_use' | 'tool_result' | 'error' | 'plan';
 	content: string;
 	toolName?: string;
+	toolCallId?: string;
+	isError?: boolean;
+	outcome?: 'success' | 'error' | 'denied' | 'cancelled';
 	toolInput?: Record<string, unknown>;
 	timestamp: number;
 }
@@ -257,7 +271,7 @@ export interface IndexStats {
 /**
  * Status of a diff edit.
  */
-export type DiffEditStatus = 'applied' | 'rejected';
+export type DiffEditStatus = 'applied' | 'accepted' | 'rejected';
 
 /**
  * A single diff hunk describing one code change.
@@ -268,6 +282,11 @@ export interface DiffHunk {
 	originalStartLine: number;
 	originalEndLine: number;
 	modifiedStartLine: number;
+	modifiedStartColumn?: number;
+	kind?: 'edit' | 'write' | 'create';
+	/** Neighbouring text bounds the recorded edit when later changes shift the file. */
+	beforeAnchor?: string;
+	afterAnchor?: string;
 	modifiedEndLine: number;
 	originalText: string;
 	modifiedText: string;
@@ -280,6 +299,7 @@ export interface DiffHunk {
 export interface DiffGroup {
 	id: string;
 	chatMessageId: string;
+	sessionId?: string;
 	hunks: DiffHunk[];
 	createdAt: number;
 }
@@ -295,6 +315,7 @@ export type SubAgentType = 'general-purpose' | 'Explore' | 'Plan' | 'verificatio
 export interface SubAgentConfig {
 	subagent_type: SubAgentType;
 	description: string;
+	prompt?: string;
 	name?: string;
 	run_in_background: boolean;
 	mode: 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'auto';

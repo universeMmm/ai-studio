@@ -3,7 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export function getNLSMessages(): string[] {
+export type NLSMessages = string[] | Record<string, string>;
+
+export function getNLSMessages(): NLSMessages {
 	return globalThis._VSCODE_NLS_MESSAGES;
 }
 
@@ -86,7 +88,16 @@ export function localize(data: ILocalizeInfo | string /* | number when built */,
 	if (typeof data === 'number') {
 		return _format(lookupMessage(data, message), args);
 	}
-	return _format(message, args);
+	return _format(lookupDevMessage(data, message), args);
+}
+
+function lookupDevMessage(data: ILocalizeInfo | string, original: string): string {
+	const messages = getNLSMessages();
+	if (messages && !Array.isArray(messages)) {
+		const key = typeof data === 'string' ? data : data.key;
+		return messages[key + '\u0004' + original] ?? original;
+	}
+	return original;
 }
 
 /**
@@ -95,7 +106,8 @@ export function localize(data: ILocalizeInfo | string /* | number when built */,
  * depending on the target context.
  */
 function lookupMessage(index: number, fallback: string | null): string {
-	const message = getNLSMessages()?.[index];
+	const messages = getNLSMessages();
+	const message = Array.isArray(messages) ? messages[index] : undefined;
 	if (typeof message !== 'string') {
 		if (typeof fallback === 'string') {
 			return fallback;
@@ -143,7 +155,7 @@ export function localize2(data: ILocalizeInfo | string /* | number when built */
 	if (typeof data === 'number') {
 		message = lookupMessage(data, originalMessage);
 	} else {
-		message = originalMessage;
+		message = lookupDevMessage(data, originalMessage);
 	}
 
 	const value = _format(message, args);
@@ -164,7 +176,8 @@ export interface INLSLanguagePackConfiguration {
 
 	/**
 	 * The path to the file containing the translations for this language
-	 * pack as flat string array.
+	 * pack. Packaged builds use a flat string array, while development
+	 * builds keep the original source keys.
 	 */
 	readonly messagesFile: string;
 
@@ -196,8 +209,8 @@ export interface INLSConfiguration {
 
 	/**
 	 * Defined if a language pack is used that is not the
-	 * default english language pack. This requires a language
-	 * pack to be installed as extension.
+	 * default English language pack. It can be bundled with the
+	 * application or installed as an extension.
 	 */
 	readonly languagePack?: INLSLanguagePackConfiguration;
 

@@ -66,23 +66,25 @@ export class RequestService extends AbstractRequestService implements IRequestSe
 	private shellEnvErrorLogged?: boolean;
 
 	constructor(
-		private readonly machine: 'local' | 'remote',
+		private readonly machine: 'local' | 'remote' | 'desktop',
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@ILogService logService: ILogService,
 	) {
 		super(logService);
-		this.configure();
-		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('http')) {
-				this.configure();
-			}
-		}));
+		if (machine !== 'desktop') {
+			this.configure();
+			this._register(configurationService.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration('http')) {
+					this.configure();
+				}
+			}));
+		}
 	}
 
 	private configure() {
 		this.proxyUrl = this.getConfigValue<string>('http.proxy');
-		this.strictSSL = !!this.getConfigValue<boolean>('http.proxyStrictSSL');
+		this.strictSSL = this.getConfigValue<boolean>('http.proxyStrictSSL', true);
 		this.authorization = this.getConfigValue<string>('http.proxyAuthorization');
 	}
 
@@ -128,7 +130,7 @@ export class RequestService extends AbstractRequestService implements IRequestSe
 
 	async lookupKerberosAuthorization(urlStr: string): Promise<string | undefined> {
 		try {
-			const spnConfig = this.getConfigValue<string>('http.proxyKerberosServicePrincipal');
+			const spnConfig = this.machine === 'desktop' ? undefined : this.getConfigValue<string>('http.proxyKerberosServicePrincipal');
 			const response = await lookupKerberosAuthorization(urlStr, spnConfig, this.logService, 'RequestService#lookupKerberosAuthorization');
 			return 'Negotiate ' + response;
 		} catch (err) {

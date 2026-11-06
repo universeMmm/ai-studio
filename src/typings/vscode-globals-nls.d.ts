@@ -27,7 +27,7 @@ declare global {
 	 *
 	 * Instead of accessing this global variable directly, use function getNLSMessages.
 	 */
-	var _VSCODE_NLS_MESSAGES: string[];
+	var _VSCODE_NLS_MESSAGES: import('../vs/nls.js').NLSMessages;
 	/**
 	 * The actual language of the NLS messages (e.g. 'en', de' or 'pt-br').
 	 *
@@ -37,4 +37,4 @@ declare global {
 }
 
 // fake export to make global work
-export { }
+export { };

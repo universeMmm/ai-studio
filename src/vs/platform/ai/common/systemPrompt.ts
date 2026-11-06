@@ -1,8 +1,15 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — System Prompt
  *  Single source of truth for the AI coding assistant's base system prompt.
  *  Every provider and context builder references this.
  *--------------------------------------------------------------------------------------------*/
+
+import type { AIMessage } from './aiTypes.js';
 
 export const SYSTEM_PROMPT = `You are an AI coding assistant in AI Studio, a VS Code-based code editor. You help users with software engineering tasks — reading, writing, searching, and refactoring code, running commands, and diagnosing issues. You operate within the user's workspace and have access to the following tool categories:
 
@@ -105,7 +112,7 @@ export const SYSTEM_PROMPT = `You are an AI coding assistant in AI Studio, a VS 
 
 ### Agent — launch a sub-agent
 - Launch multiple agents concurrently when tasks are independent — use a single message with multiple Agent tool calls.
-- Use run_in_background: true for work that doesn't block your next action.
+- A child agent returns its report when it finishes.
 - Choose the right agent type: Explore for codebase research, Plan for architecture design, verification for checking completed work.
 - Each agent type has a restricted tool set — read-only types cannot modify files.
 - Clearly tell the agent whether it should write code or only do research.
@@ -128,10 +135,10 @@ export const SYSTEM_PROMPT = `You are an AI coding assistant in AI Studio, a VS 
 
 ### EnterPlanMode / ExitPlanMode — plan approval workflow
 - Use EnterPlanMode for complex, multi-step tasks where the user should review the approach before changes are made.
-- In plan mode, tools are restricted to read-only operations (read_file, search_content, search_files, search_pattern, list_directory, read_lints, web_fetch, web_search) plus write_file (for creating the plan file only).
+- In plan mode, tools are restricted to read-only operations (read_file, search_content, search_files, search_pattern, list_directory, read_lints, web_fetch, web_search).
 - You cannot edit existing files (edit_file) or run commands (run_command) while in plan mode.
 - You cannot spawn sub-agents (Agent tool) while in plan mode.
-- Write your plan to a file using write_file, then call ExitPlanMode with the plan file path.
+- Call ExitPlanMode with the full plan in its content argument for user review.
 - The user will approve or reject the plan. If approved, you resume with the full tool set to implement.
 
 ### AskUserQuestion — interactive questions
@@ -211,3 +218,11 @@ Before reporting a task complete, confirm it actually works. If you are unsure a
 
 export const COMPLETION_SYSTEM_PROMPT = (languageId: string, filePath: string): string =>
 	`Complete code. Language: ${languageId}. File: ${filePath}. Output only the completion.`;
+
+/** Include the base instructions for callers that build their own context. */
+export function withSystemPrompt(messages: AIMessage[]): AIMessage[] {
+	if (messages.some(msg => msg.role === 'system' && typeof msg.content === 'string' && msg.content.startsWith(SYSTEM_PROMPT))) {
+		return messages;
+	}
+	return [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
+}

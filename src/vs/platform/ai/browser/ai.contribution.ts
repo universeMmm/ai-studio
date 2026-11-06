@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Workbench Contribution Entry Point
  *  Registers AI configuration and services into the VS Code DI container.
  *--------------------------------------------------------------------------------------------*/
@@ -16,7 +21,8 @@ import { IAIContextService, AIContextService } from './aiContextService.js';
 import { IAIIndexService, AIIndexService } from './aiIndexService.js';
 import { IAIKeychainService, AIKeychainService } from './credentialService.js';
 import { ITaskManager, TaskManager } from '../common/taskManager.js';
-import { ISubAgentManager, SubAgentManager } from '../common/subAgentManager.js';
+import { ISubAgentManager } from '../common/subAgentManager.js';
+import { SubAgentManager } from './subAgentManager.js';
 import { IUserMemoryStore, UserMemoryStore } from '../common/userMemoryStore.js';
 import { InstantiationType, registerSingleton } from '../../../platform/instantiation/common/extensions.js';
 

@@ -604,7 +604,10 @@ const languageModelChatProviderType = {
 	}
 } as const satisfies IJSONSchema;
 
-export type IUserFriendlyLanguageModel = TypeFromJsonSchema<typeof languageModelChatProviderType>;
+// The configuration refers to the external JSON Schema meta-schema, which TypeFromJsonSchema cannot resolve.
+export interface IUserFriendlyLanguageModel extends Omit<TypeFromJsonSchema<typeof languageModelChatProviderType>, 'configuration'> {
+	readonly configuration?: IJSONSchema;
+}
 
 export interface ILanguageModelProviderDescriptor extends IUserFriendlyLanguageModel {
 	readonly isDefault: boolean;

@@ -27,7 +27,7 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 	EditorPaneDescriptor.create(
 		ModelConfigurationEditor,
 		MODEL_CONFIGURATION_EDITOR_ID,
-		localize('modelConfigurationEditor', "Model Configuration Editor")
+		localize('modelConfigurationEditor', "模型配置")
 	),
 	[
 		new SyncDescriptor(ModelConfigurationEditorInput)

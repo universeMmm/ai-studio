@@ -1,0 +1,17 @@
+{
+	"extends": "../../../src/tsconfig.base.json",
+	"compilerOptions": {
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"noCheck": true,
+		"preserveConstEnums": true,
+		"rootDir": "../../..",
+		"outDir": "../../../.build/test-ai"
+	},
+	"include": [
+		"*.test.ts",
+		"../../smoke/ai-smoke.test.ts",
+		"../../../src/vs/platform/ai/test/**/*.test.ts",
+		"../../../src/vs/workbench/contrib/aiDiffApply/test/**/*.test.ts"
+	]
+}

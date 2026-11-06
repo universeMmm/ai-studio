@@ -6,13 +6,14 @@
 import assert from 'assert';
 import { Event } from '../../../../common/event.js';
 import { IChannel } from '../../common/ipc.js';
-import { Client } from '../../node/ipc.cp.js';
-import { ITestService, TestServiceClient } from './testService.js';
+import { Client, IIPCOptions } from '../../node/ipc.cp.js';
+import { ITestService, TestChannel, TestService, TestServiceClient } from './testService.js';
 import { FileAccess } from '../../../../common/network.js';
 
-function createClient(): Client {
+function createClient(parentChannels?: IIPCOptions['parentChannels']): Client {
 	return new Client(FileAccess.asFileUri('bootstrap-fork').fsPath, {
 		serverName: 'TestServer',
+		parentChannels,
 		env: { VSCODE_ESM_ENTRYPOINT: 'vs/base/parts/ipc/test/node/testApp', verbose: true }
 	});
 }
@@ -39,6 +40,18 @@ suite('IPC, Child Process', function () {
 		const result = await service.pong('ping');
 		assert.strictEqual(result.incoming, 'ping');
 		assert.strictEqual(result.outgoing, 'pong');
+	});
+
+	test('calls a service on the parent over the same child connection', async () => {
+		const parentService = new TestService();
+		parentService.pong = async incoming => ({ incoming, outgoing: 'fromParent' });
+		const duplexClient = createClient({ test: new TestChannel(parentService) });
+		try {
+			const relay = new TestServiceClient(duplexClient.getChannel('parent'));
+			assert.deepStrictEqual(await relay.pong('fromChild'), { incoming: 'fromChild', outgoing: 'fromParent' });
+		} finally {
+			duplexClient.dispose();
+		}
 	});
 
 	test('events', async () => {

@@ -1,0 +1,74 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Desktop navigation remains native to the workbench, including its drag region. */
+.monaco-workbench .studio-home,
+.monaco-workbench .studio-review {
+	position: relative;
+	z-index: 2500;
+	-webkit-app-region: no-drag;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 26px;
+	padding: 0 8px;
+	background: transparent;
+	color: var(--vscode-titleBar-activeForeground);
+	border: 1px solid transparent;
+	border-radius: 6px;
+	font: inherit;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.monaco-workbench .studio-home:hover,
+.monaco-workbench .studio-review:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench .studio-home:focus-visible,
+.monaco-workbench .studio-review:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.monaco-workbench .studio-wordmark { font-size: 12px; font-weight: 650; letter-spacing: -.3px; }
+.monaco-workbench .studio-mark {
+	display: inline-block;
+	width: 18px;
+	height: 18px;
+	background: url('../../../../browser/media/code-icon.png') center / contain no-repeat;
+}
+
+.monaco-workbench .studio-review { font-size: 12px; margin-inline: 6px; border-color: var(--vscode-widget-border); }
+.studio-desktop .part.titlebar { box-shadow: none; }
+.studio-desktop .part.titlebar .command-center .action-item.command-center-center { border-radius: 7px; }
+.studio-desktop .part.sidebar > .title,
+.studio-desktop .part.auxiliarybar > .title { padding-inline: 10px; }
+.studio-desktop .part.sidebar .pane-header .title,
+.studio-desktop .part.auxiliarybar .pane-header .title { font-weight: 600; text-transform: none; }
+.studio-desktop .part.sidebar .monaco-list-row,
+.studio-desktop .part.auxiliarybar .monaco-list-row { border-radius: 4px; }
+.studio-desktop .quick-input-widget { border-radius: 12px; overflow: hidden; }
+.studio-desktop .monaco-menu-container .monaco-menu { border-radius: 8px; }
+.studio-desktop .part.editor .tabs-container > .tab .tab-label { font-size: 12px; }
+@media (max-width: 850px) {
+	.monaco-workbench .studio-review .studio-review-label { display: none; }
+	.monaco-workbench .studio-review { border-color: transparent; }
+}
+
+@media (max-width: 620px) {
+	.monaco-workbench .studio-home .studio-wordmark { display: none; }
+}
+
+/* System-drawn buttons overlay the web contents in a windowed macOS title bar. */
+.monaco-workbench.mac:not(.fullscreen) .part.titlebar .studio-mac-window-controls {
+	box-sizing: border-box;
+	padding-left: var(--studio-mac-controls-width, 86px);
+	min-width: max-content;
+}
+.monaco-workbench.mac:not(.web):not(.fullscreen) .part.titlebar .titlebar-right > .window-controls-container {
+	width: var(--studio-mac-controls-width, 86px);
+}

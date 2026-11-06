@@ -11,6 +11,7 @@
   "private": true,
   "scripts": {
     "test": "echo Please run any of the test scripts from the scripts folder.",
+    "test:ai": "tsgo --project test/unit/ai/tsconfig.json && mocha --ui tdd --timeout 20000 --require ./test/unit/ai/bootstrap.mjs \".build/test-ai/test/{unit/ai,smoke}/*.test.js\" \".build/test-ai/src/vs/{platform/ai,workbench/contrib/aiDiffApply}/test/**/*.test.js\"",
     "test-browser": "npx playwright install && node test/unit/browser/index.js",
     "test-browser-no-install": "node test/unit/browser/index.js",
     "test-node": "mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit",

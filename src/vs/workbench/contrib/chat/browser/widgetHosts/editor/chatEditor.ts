@@ -33,6 +33,7 @@ import { IChatSessionsService, localChatSessionType } from '../../../common/chat
 import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
 import { clearChatEditor } from '../../actions/chatClear.js';
 import { ChatEditorInput } from './chatEditorInput.js';
+import { StudioChatSurface } from '../../../../aiChat/browser/studioChatSurface.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 
 export interface IChatEditorOptions extends IEditorOptions {
@@ -65,6 +66,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 		return this._scopedContextKeyService;
 	}
 
+	private studioSurface?: StudioChatSurface;
 	private dimension = new dom.Dimension(0, 0);
 	private _loadingContainer: HTMLElement | undefined;
 	private _editorContainer: HTMLElement | undefined;
@@ -138,7 +140,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 				}
 			}
 		}));
-		this.widget.render(parent);
+		this.studioSurface = this._register(scopedInstantiationService.createInstance(StudioChatSurface, parent, this.widget));
 		this.widget.setVisible(true);
 	}
 
@@ -148,7 +150,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 		this.widget?.setVisible(visible);
 
 		if (visible && this.widget) {
-			this.widget.layout(this.dimension.height, this.dimension.width);
+			this.studioSurface?.layout(this.dimension.height, this.dimension.width);
 		}
 	}
 
@@ -298,7 +300,7 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 	override layout(dimension: dom.Dimension, position?: dom.IDomPosition | undefined): void {
 		this.dimension = dimension;
 		if (this.widget) {
-			this.widget.layout(dimension.height, dimension.width);
+			this.studioSurface?.layout(dimension.height, dimension.width);
 		}
 	}
 }

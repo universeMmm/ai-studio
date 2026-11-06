@@ -20,7 +20,6 @@ type Reporter = (message: string, isError: boolean) => void;
  * Stylelint gulpfile task
  */
 export default function gulpstylelint(reporter: Reporter): NodeJS.ReadWriteStream {
-	const variableValidator = getVariableNameValidator();
 	let errorCount = 0;
 	const monacoWorkbenchPattern = /\.monaco-workbench/;
 	const restrictedPathPattern = /^src[\/\\]vs[\/\\](base|platform|editor)[\/\\]/;
@@ -29,6 +28,7 @@ export default function gulpstylelint(reporter: Reporter): NodeJS.ReadWriteStrea
 	return es.through(function (this, file: FileWithLines) {
 		const lines = file.__lines || file.contents.toString('utf8').split(/\r\n|\r|\n/);
 		file.__lines = lines;
+		const variableValidator = getVariableNameValidator(lines.join('\n'));
 
 		const isRestrictedPath = restrictedPathPattern.test(file.relative);
 

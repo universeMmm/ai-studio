@@ -10,6 +10,7 @@ import { promisify } from 'util';
 
 import glob from 'glob';
 import gulpWatch from '../lib/watch/index.ts';
+import { writeDevNLS } from '../lib/devNls.ts';
 import { nlsPlugin, createNLSCollector, finalizeNLS, postProcessNLS } from './nls-plugin.ts';
 import { convertPrivateFields, adjustSourceMap, type ConvertPrivateFieldsResult } from './private-to-property.ts';
 import { getVersion } from '../lib/getVersion.ts';
@@ -241,9 +242,9 @@ const commonResourcePatterns = [
 	'vs/editor/common/languages/highlights/*.scm',
 	'vs/editor/common/languages/injections/*.scm',
 
-	// SVGs referenced from CSS (needed for transpile/dev builds where CSS is copied as-is)
+	// Images referenced from CSS (needed when transpilation copies CSS as-is)
 	'vs/workbench/browser/media/code-icon.svg',
-	'vs/workbench/browser/parts/editor/media/letterpress*.svg',
+	'vs/workbench/browser/media/code-icon.png',
 	'vs/sessions/contrib/chat/browser/media/*.svg',
 	'vs/sessions/contrib/welcome/browser/media/themePreviews/*.svg'
 ];
@@ -756,11 +757,11 @@ async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
 	console.log(`[transpile] Found ${files.length} files`);
 
 	// Transpile all files in parallel using esbuild.transform (fastest approach)
-	await Promise.all(files.map(file => {
+	await Promise.all([writeDevNLS(outDir), ...files.map(file => {
 		const srcPath = path.join(REPO_ROOT, SRC_DIR, file);
 		const destPath = path.join(REPO_ROOT, outDir, file.replace(/\.ts$/, '.js'));
 		return transpileFile(srcPath, destPath);
-	}));
+	})]);
 }
 
 // ============================================================================

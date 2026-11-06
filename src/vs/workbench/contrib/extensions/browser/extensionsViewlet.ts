@@ -7,6 +7,7 @@ import './media/extensionsViewlet.css';
 import { localize, localize2 } from '../../../../nls.js';
 import { timeout, Delayer } from '../../../../base/common/async.js';
 import { isCancellationError } from '../../../../base/common/errors.js';
+import { isElectron } from '../../../../base/common/platform.js';
 import { createErrorWithActions } from '../../../../base/common/errorMessage.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -964,6 +965,10 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer<IExtensionsVi
 		const message = err && err.message || '';
 
 		if (/ECONNREFUSED/.test(message)) {
+			if (isElectron) {
+				this.notificationService.error(localize('marketplaceConnectionRefused', "The Marketplace connection was refused. Check your network connection and system proxy settings."));
+				return;
+			}
 			const error = createErrorWithActions(localize('suggestProxyError', "Marketplace returned 'ECONNREFUSED'. Please check the 'http.proxy' setting."), [
 				new Action('open user settings', localize('open user settings', "Open User Settings"), undefined, true, () => this.preferencesService.openUserSettings())
 			]);

@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Memory Types & YAML frontmatter parser
  *  Reads/writes YAML frontmatter for ~/.ai-studio/memory/*.md files.
  *--------------------------------------------------------------------------------------------*/
@@ -11,7 +16,7 @@ const FRONTMATTER_RE = /^---\s*\n([\s\S]*?)\n---\s*\n?/;
 /** Parse a memory .md file into a MemoryEntry */
 export function parseMemoryFile(raw: string, filename: string): MemoryEntry | null {
 	const m = raw.match(FRONTMATTER_RE);
-	if (!m) return null;
+	if (!m) { return null; }
 
 	const fm = _parseSimpleYaml(m[1]);
 	const content = raw.slice(m[0].length).trim();

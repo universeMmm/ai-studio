@@ -9,6 +9,8 @@ import { IConfigurationService } from '../../configuration/common/configuration.
 import { IEnvironmentService } from '../../environment/common/environment.js';
 import { ILoggerService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
+import { IRequestService } from '../../request/common/request.js';
+import { RequestChannel } from '../../request/common/requestIpc.js';
 import { ICustomEndpointTelemetryService, ITelemetryData, ITelemetryEndpoint, ITelemetryService } from '../common/telemetry.js';
 import { TelemetryAppenderClient } from '../common/telemetryIpc.js';
 import { TelemetryLogAppender } from '../common/telemetryLogAppender.js';
@@ -24,7 +26,8 @@ export class CustomEndpointTelemetryService implements ICustomEndpointTelemetryS
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ILoggerService private readonly loggerService: ILoggerService,
 		@IEnvironmentService private readonly environmentService: IEnvironmentService,
-		@IProductService private readonly productService: IProductService
+		@IProductService private readonly productService: IProductService,
+		@IRequestService private readonly requestService: IRequestService
 	) { }
 
 	private getCustomTelemetryService(endpoint: ITelemetryEndpoint): ITelemetryService {
@@ -33,12 +36,22 @@ export class CustomEndpointTelemetryService implements ICustomEndpointTelemetryS
 			telemetryInfo['common.vscodemachineid'] = this.telemetryService.machineId;
 			telemetryInfo['common.vscodesessionid'] = this.telemetryService.sessionId;
 			const args = [endpoint.id, JSON.stringify(telemetryInfo), endpoint.aiKey];
+			const requestChannel = new RequestChannel(this.requestService);
 			const client = new TelemetryClient(
 				FileAccess.asFileUri('bootstrap-fork').fsPath,
 				{
 					serverName: 'Debug Telemetry',
 					timeout: 1000 * 60 * 5,
 					args,
+					parentChannels: {
+						request: {
+							listen: () => { throw new Error('No telemetry transport events'); },
+							call: (ctx, command, args, token) => {
+								if (command !== 'request') { throw new Error('Unsupported telemetry transport operation'); }
+								return requestChannel.call(ctx, command, args, token);
+							}
+						}
+					},
 					env: {
 						ELECTRON_RUN_AS_NODE: 1,
 						VSCODE_PIPE_LOGGING: 'true',

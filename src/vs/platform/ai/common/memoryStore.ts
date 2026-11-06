@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Memory Store
  *  Two-tier conversation memory: in-memory ConversationMemory + disk JSONL archive.
  *  Sessions auto-save on stop/error and auto-load on next run.
@@ -18,7 +23,7 @@ export class MemoryStore {
 		private readonly workspaceRoot: string,
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
-	) {}
+	) { }
 
 	private get _historyDir(): string {
 		return this.workspaceRoot + '/.ai-studio/history';
@@ -29,7 +34,7 @@ export class MemoryStore {
 	 * Legacy save that writes one ConversationTurn per line.
 	 */
 	async saveSession(turns: readonly ConversationTurn[]): Promise<void> {
-		if (!turns.length) return;
+		if (!turns.length) { return; }
 		try {
 			const dirUri = URI.file(this._historyDir);
 			await this._ensureDir(dirUri);
@@ -68,11 +73,11 @@ export class MemoryStore {
 		try {
 			const dirUri = URI.file(this._historyDir);
 			const stat = await this.fileService.resolve(dirUri);
-			if (!stat.children?.length) return null;
+			if (!stat.children?.length) { return null; }
 			const sessions = stat.children
 				.filter(c => c.name.endsWith('.jsonl'))
 				.sort((a, b) => b.name.localeCompare(a.name));
-			if (!sessions.length) return null;
+			if (!sessions.length) { return null; }
 			const raw = (await this.fileService.readFile(URI.file(this._historyDir + '/' + sessions[0].name))).value.toString();
 			return this._parseSession(raw, sessions[0].name);
 		} catch {
@@ -80,14 +85,30 @@ export class MemoryStore {
 		}
 	}
 
+	/** Restore only the most recent turn belonging to this workbench chat. */
+	async loadLatestForChat(chatSessionId: string): Promise<AgentSession | null> {
+		try {
+			const directory = await this.fileService.resolve(URI.file(this._historyDir));
+			const files = (directory.children ?? []).filter(f => f.name.endsWith('.jsonl')).sort((a, b) => b.name.localeCompare(a.name));
+			for (const file of files) {
+				try {
+					const raw = (await this.fileService.readFile(file.resource)).value.toString();
+					const session = this._parseSession(raw, file.name);
+					if (session?.chatSessionId === chatSessionId) { return session; }
+				} catch { /* Another run may have pruned the file since the directory lookup. */ }
+			}
+		} catch { /* No saved history in this workspace. */ }
+		return null;
+	}
+
 	/** Load a specific session by sessionId. */
 	async loadSession(sessionId: string): Promise<AgentSession | null> {
 		try {
 			const dirUri = URI.file(this._historyDir);
 			const stat = await this.fileService.resolve(dirUri);
-			if (!stat.children?.length) return null;
+			if (!stat.children?.length) { return null; }
 			const file = stat.children.find(c => c.name === 'session-' + sessionId.replace(/[:.]/g, '-') + '.jsonl');
-			if (!file) return null;
+			if (!file) { return null; }
 			const raw = (await this.fileService.readFile(URI.file(this._historyDir + '/' + file.name))).value.toString();
 			return this._parseSession(raw, file.name);
 		} catch {
@@ -100,10 +121,10 @@ export class MemoryStore {
 		try {
 			const dirUri = URI.file(this._historyDir);
 			const stat = await this.fileService.resolve(dirUri);
-			if (!stat.children?.length) return [];
+			if (!stat.children?.length) { return []; }
 			const result: { sessionId: string; startedAt: number; instruction: string }[] = [];
 			for (const child of stat.children) {
-				if (!child.name.endsWith('.jsonl')) continue;
+				if (!child.name.endsWith('.jsonl')) { continue; }
 				try {
 					const raw = (await this.fileService.readFile(URI.file(this._historyDir + '/' + child.name))).value.toString();
 					const firstLine = raw.trim().split('\n')[0] || '';
@@ -133,10 +154,10 @@ export class MemoryStore {
 	 */
 	private _parseSession(raw: string, filename: string): AgentSession | null {
 		const firstLine = raw.trim().split('\n')[0] || '';
-		let parsed: any;
+		let parsed: Partial<AgentSession> | null;
 		try { parsed = JSON.parse(firstLine); } catch { return null; }
 
-		if (parsed.sessionId && parsed.turns) {
+		if (parsed?.sessionId && parsed.turns) {
 			// New format — full AgentSession
 			return parsed as AgentSession;
 		}
@@ -147,7 +168,7 @@ export class MemoryStore {
 			catch { return null; }
 		}).filter(Boolean) as ConversationTurn[];
 
-		if (!turns.length) return null;
+		if (!turns.length) { return null; }
 
 		// Extract sessionId from filename: session-YYYY-MM-DDTHH-MM-SS-MSSZ.jsonl
 		const id = filename.replace(/^session-/, '').replace(/\.jsonl$/, '');
@@ -172,11 +193,11 @@ export class MemoryStore {
 	private async _pruneOldSessions(dirUri: URI): Promise<void> {
 		try {
 			const stat = await this.fileService.resolve(dirUri);
-			if (!stat.children) return;
+			if (!stat.children) { return; }
 			const sessions = stat.children.filter(c => c.name.endsWith('.jsonl')).sort((a, b) => a.name.localeCompare(b.name));
 			while (sessions.length > MAX_HISTORY_FILES) {
 				const oldest = sessions.shift()!;
-				await this.fileService.del(URI.file(this._historyDir + '/' + oldest.name)).catch(() => {});
+				await this.fileService.del(URI.file(this._historyDir + '/' + oldest.name)).catch(() => { });
 			}
 		} catch { /* fine */ }
 	}

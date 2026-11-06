@@ -131,8 +131,8 @@ class NativeLocaleService implements ILocaleService {
 	async clearLocalePreference(): Promise<void> {
 		try {
 			await this.writeLocaleValue(undefined);
-			if (!Language.isDefaultVariant()) {
-				await this.showRestartDialog('English');
+			if (Language.value() !== 'zh-cn' && await this.showRestartDialog('简体中文')) {
+				await this.hostService.restart();
 			}
 		} catch (err) {
 			this.notificationService.error(err);

@@ -763,7 +763,11 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 		// Sidebar View Container To Restore
 		if (this.isVisible(Parts.SIDEBAR_PART)) {
-			let viewContainerToRestore = this.storageService.get(SidebarPart.activeViewletSettingsKey, StorageScope.WORKSPACE, this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id);
+			const sessions = this.configurationService.getValue('workbench.startupEditor') === 'agentWorkspace'
+				? this.viewDescriptorService.getViewContainerById('workbench.view.aiStudioSessions') : undefined;
+			const defaultSidebarId = sessions && this.viewDescriptorService.getViewContainerLocation(sessions) === ViewContainerLocation.Sidebar
+				? sessions.id : this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id;
+			let viewContainerToRestore = this.storageService.get(SidebarPart.activeViewletSettingsKey, StorageScope.WORKSPACE, defaultSidebarId);
 			if (
 				!this.environmentService.isBuilt ||
 				lifecycleService.startupKind === StartupKind.ReloadedWindow ||
@@ -771,11 +775,12 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			) {
 				// allow to restore a non-default viewlet in development mode or when window reloads
 			} else if (
+				viewContainerToRestore !== defaultSidebarId &&
 				viewContainerToRestore !== this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id &&
 				viewContainerToRestore !== this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar)?.id
 			) {
 				// fallback to default viewlet otherwise if the viewlet is not a default viewlet
-				viewContainerToRestore = this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id;
+				viewContainerToRestore = defaultSidebarId;
 			}
 
 			if (viewContainerToRestore) {
@@ -2943,7 +2948,8 @@ class LayoutStateModel extends Disposable {
 		const workbenchState = this.contextService.getWorkbenchState();
 		const mainContainerDimension = configuration.mainContainerDimension;
 		LayoutStateKeys.SIDEBAR_SIZE.defaultValue = Math.min(300, mainContainerDimension.width / 4);
-		LayoutStateKeys.SIDEBAR_HIDDEN.defaultValue = workbenchState === WorkbenchState.EMPTY || auxiliaryBarForceMaximized === true;
+		const startWithAgent = this.configurationService.getValue('workbench.startupEditor') === 'agentWorkspace';
+		LayoutStateKeys.SIDEBAR_HIDDEN.defaultValue = (workbenchState === WorkbenchState.EMPTY && !startWithAgent) || auxiliaryBarForceMaximized === true;
 		LayoutStateKeys.AUXILIARYBAR_SIZE.defaultValue = auxiliaryBarForceMaximized ? Math.max(300, mainContainerDimension.width / 2) : Math.min(300, mainContainerDimension.width / 4);
 		LayoutStateKeys.AUXILIARYBAR_HIDDEN.defaultValue = (() => {
 			if (isWeb && !this.environmentService.remoteAuthority) {

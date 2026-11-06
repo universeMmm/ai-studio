@@ -10,6 +10,8 @@ import { Queue } from '../../../base/common/async.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { Schemas } from '../../../base/common/network.js';
 import { join } from '../../../base/common/path.js';
+import { getBundledChineseLanguagePack } from '../../../base/node/nls.js';
+import type { ILanguagePack as ReadonlyLanguagePack } from '../../../nls.js';
 import { Promises } from '../../../base/node/pfs.js';
 import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IExtensionGalleryService, IExtensionIdentifier, IExtensionManagementService, ILocalExtension } from '../../extensionManagement/common/extensionManagement.js';
@@ -31,6 +33,7 @@ interface ILanguagePack {
 
 export class NativeLanguagePackService extends LanguagePackBaseService {
 	private readonly cache: LanguagePacksCache;
+	private readonly bundledPack: Promise<ReadonlyLanguagePack | undefined>;
 
 	constructor(
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
@@ -39,6 +42,7 @@ export class NativeLanguagePackService extends LanguagePackBaseService {
 		@ILogService private readonly logService: ILogService
 	) {
 		super(extensionGalleryService);
+		this.bundledPack = getBundledChineseLanguagePack(environmentService.builtinExtensionsPath);
 		this.cache = this._register(new LanguagePacksCache(environmentService, logService));
 		this.extensionManagementService.registerParticipant({
 			postInstall: async (extension: ILocalExtension): Promise<void> => {
@@ -52,13 +56,16 @@ export class NativeLanguagePackService extends LanguagePackBaseService {
 
 	async getBuiltInExtensionTranslationsUri(id: string, language: string): Promise<URI | undefined> {
 		const packs = await this.cache.getLanguagePacks();
-		const pack = packs[language];
-		if (!pack) {
-			this.logService.warn(`No language pack found for ${language}`);
-			return undefined;
+		const installed = packs[language]?.translations[id];
+		if (installed && (language !== 'zh-cn' || await Promises.exists(installed))) {
+			return URI.file(installed);
 		}
 
-		const translation = pack.translations[id];
+		const bundled = language === 'zh-cn' ? await this.bundledPack : undefined;
+		const translation = bundled?.translations[id];
+		if (!translation && !packs[language] && !bundled) {
+			this.logService.warn(`No language pack found for ${language}`);
+		}
 		return translation ? URI.file(translation) : undefined;
 	}
 
@@ -72,6 +79,10 @@ export class NativeLanguagePackService extends LanguagePackBaseService {
 				extensionId: languagePack.extensions[0].extensionIdentifier.id,
 			};
 		});
+		const bundled = await this.bundledPack;
+		if (bundled && !languagePacks['zh-cn']) {
+			languages.push({ ...this.createQuickPickItem('zh-cn', bundled.label), extensionId: bundled.extensions[0].extensionIdentifier.id });
+		}
 		languages.push(this.createQuickPickItem('en', 'English'));
 		languages.sort((a, b) => a.label.localeCompare(b.label));
 		return languages;

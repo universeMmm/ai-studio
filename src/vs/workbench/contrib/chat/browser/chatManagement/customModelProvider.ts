@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { localize } from '../../../../../nls.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
@@ -12,6 +13,7 @@ import {
 	ILanguageModelChatMetadataAndIdentifier,
 	ILanguageModelChatProvider,
 	ILanguageModelsService,
+	IUserFriendlyLanguageModel,
 } from '../../common/languageModels.js';
 import { ILanguageModelsConfigurationService } from '../../common/languageModelsConfiguration.js';
 
@@ -88,16 +90,16 @@ export function registerCustomModelProvider(
 	languageModelsService: ILanguageModelsService,
 	provider: CustomModelProvider,
 ): IDisposable {
-	const vendorDescriptor = {
+	const vendorDescriptor: IUserFriendlyLanguageModel = {
 		vendor: AI_STUDIO_VENDOR_ID,
 		displayName: 'AI Studio',
 		configuration: {
-			type: 'object' as const,
+			type: 'object',
 			properties: {
-				modelId: { type: 'string', description: 'Model identifier' },
-				apiKey: { type: 'string', description: 'API key for the provider', secret: true },
-				endpoint: { type: 'string', description: 'API endpoint URL' },
-				apiType: { type: 'string', enum: ['openai', 'anthropic'], description: 'API type' },
+				modelId: { type: 'string', description: localize('studio.model.modelId', '模型标识符') },
+				apiKey: { type: 'string', description: localize('studio.model.key', '模型服务的 API 密钥'), secret: true },
+				endpoint: { type: 'string', description: localize('studio.model.endpoint', '模型服务的 API 地址') },
+				apiType: { type: 'string', enum: ['openai', 'anthropic'], description: localize('studio.model.apiType', '接口类型') },
 			},
 		},
 		managementCommand: undefined,

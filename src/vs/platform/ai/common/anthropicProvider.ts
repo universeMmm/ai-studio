@@ -1,16 +1,23 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Anthropic Provider
  *  Uses native fetch() to call Anthropic Messages API.
  *--------------------------------------------------------------------------------------------*/
 
+import { decodeToolArguments } from './toolRuntime.js';
+import { providerEvents } from './providerEvents.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import type { IAIProvider } from './aiProvider.js';
 import type {
-	AIMessage, AIMessageContent, AITool, AIRequestOptions, AIStreamCallbacks,
+	AIMessage, AITool, AIRequestOptions, AIStreamCallbacks,
 	AICompletionOptions, AICompletionCallbacks, FileContext, AIModel,
 } from './aiTypes.js';
-import { SYSTEM_PROMPT, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
+import { withSystemPrompt, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
 
 export class AnthropicProvider extends Disposable implements IAIProvider {
 	declare readonly _serviceBrand: undefined;
@@ -34,17 +41,18 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 
 	private async _streamChat(messages: AIMessage[], tools: AITool[], options: AIRequestOptions, callbacks: AIStreamCallbacks, signal: AbortSignal): Promise<void> {
 		try {
-			const body: any = {
+			const body: Record<string, unknown> = {
 				model: this.modelId,
 				max_tokens: options.maxTokens || 16000,
 				temperature: options.temperature ?? 0,
-				system: this._buildSystemBlocks(messages),
+				system: withSystemPrompt(messages).filter(msg => msg.role === 'system').flatMap(msg =>
+					typeof msg.content === 'string' ? [{ type: 'text' as const, text: msg.content }] : msg.content.filter(block => block.type === 'text')),
 				messages: this._convertMessages(messages),
 				stream: true,
 				thinking: options.thinking ? { type: 'enabled' } : { type: 'disabled' },
 			};
 			if (options.thinking && this._baseUrl.includes('deepseek')) { body.reasoning_effort = 'high'; }
-			if (tools.length) body.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+			if (tools.length) { body.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })); }
 
 			const url = this._baseUrl + '/v1/messages';
 			this.logService.info('[Anthropic] POST ' + url + ' model=' + this.modelId);
@@ -54,56 +62,51 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 			});
 			if (!res.ok) { const t = await res.text(); throw new Error('Anthropic ' + res.status + ': ' + t.slice(0, 500)); }
 
-			const reader = res.body!.getReader(); const decoder = new TextDecoder();
-			let buf = '', toolUseId = '', toolName = '', toolInput = '';
-			let eventCount = 0;
-			const MAX_EVENT_LOG = 5;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buf += decoder.decode(value, { stream: true });
-
-				const lines = buf.split('\n');
-				buf = lines.pop() || '';
-
-				for (const line of lines) {
-					const trimmed = line.trim();
-					if (!trimmed || !trimmed.startsWith('data: ')) continue;
-					const data = trimmed.slice(6).trim();
-					if (!data) continue;
-					try {
-						const e = JSON.parse(data);
-						if (eventCount < MAX_EVENT_LOG) {
-							this.logService.info('[Anthropic] SSE event:', JSON.stringify(e).slice(0, 300));
-						}
-						eventCount++;
-						switch (e.type) {
-							case 'message_start': break; // stream metadata — ignore
-							case 'content_block_start': if (e.content_block?.type === 'tool_use') { toolUseId = e.content_block.id; toolName = e.content_block.name; toolInput = ''; } break;
-							case 'content_block_delta': if (e.delta?.type === 'text_delta') callbacks.onToken(e.delta.text); else if (e.delta?.type === 'input_json_delta') toolInput += e.delta.partial_json; break;
-							case 'content_block_stop': if (toolUseId) { try { callbacks.onToolUse(toolName, JSON.parse(toolInput), toolUseId); } catch { callbacks.onToolUse(toolName, {}, toolUseId); } toolUseId = ''; toolName = ''; toolInput = ''; } break;
-							case 'message_delta': {
-								if (e.usage) {
-									callbacks.onUsage?.({ inputTokens: e.usage.input_tokens, outputTokens: e.usage.output_tokens });
-								}
-								break;
-							}
-							case 'message_stop': this.logService.info('[Anthropic] SSE stream complete — ' + eventCount + ' events, ' + (toolUseId ? 'tool use' : 'text response')); callbacks.onDone('end_turn'); return;
-							case 'error': callbacks.onError(new Error(e.error?.message || 'Unknown')); return;
-							case 'ping': break; // keepalive
-							default:
-								this.logService.warn('[Anthropic] Unknown SSE event type:', e.type);
-						}
-					} catch {
-						// JSON spans chunk boundary — re-append for next chunk
-						buf = line + '\n' + buf;
-					}
+			const calls = new Map<number, { id: string; name: string; initial: unknown; args: string; complete: boolean }>();
+			let inputTokens = 0, outputTokens = 0;
+			let finished = false, truncated = false;
+			for await (const data of providerEvents(res)) {
+				const event = JSON.parse(data);
+				const index = event.index ?? 0;
+				const usage = event.message?.usage ?? event.usage;
+				if (usage) {
+					inputTokens = usage.input_tokens ?? inputTokens;
+					outputTokens = usage.output_tokens ?? outputTokens;
+					callbacks.onUsage?.({ inputTokens, outputTokens });
 				}
+				switch (event.type) {
+					case 'error': throw new Error(event.error?.message || 'Model stream error');
+					case 'content_block_start':
+						if (event.content_block?.type === 'tool_use') {
+							const { id, name, input } = event.content_block;
+							calls.set(index, { id, name, initial: input, args: '', complete: false });
+						}
+						break;
+					case 'content_block_delta': {
+						const call = calls.get(index);
+						if (event.delta?.type === 'text_delta') { callbacks.onToken(event.delta.text); }
+						if (call && event.delta?.type === 'input_json_delta') { call.args += event.delta.partial_json; }
+						break;
+					}
+					case 'content_block_stop': {
+						const call = calls.get(index);
+						if (call) { call.complete = true; }
+						break;
+					}
+					case 'message_delta': truncated = event.delta?.stop_reason === 'max_tokens'; break;
+					case 'message_stop': finished = true; break;
+				}
+				if (finished) { break; }
 			}
-			this.logService.info('[Anthropic] SSE stream ended (EOF) — ' + eventCount + ' events');
-			callbacks.onDone('end_turn');
-		} catch (err: any) { if (err?.name !== 'AbortError') { this.logService.error('[Anthropic]', err); callbacks.onError(err); } }
+			if (calls.size && (!finished || truncated || [...calls.values()].some(call => !call.complete))) {
+				throw new Error('Incomplete model tool call batch');
+			}
+			for (const [, call] of [...calls].sort(([left], [right]) => left - right)) {
+				const { input, error } = decodeToolArguments(call.args || JSON.stringify(call.initial ?? {}));
+				callbacks.onToolUse(call.name, input, call.id, error);
+			}
+			callbacks.onDone(calls.size ? 'tool_use' : truncated ? 'max_tokens' : 'end_turn');
+		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { this.logService.error('[Anthropic]', err); callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
 	streamCompletion(prefix: string, suffix: string, fc: FileContext, options: AICompletionOptions, callbacks: AICompletionCallbacks): AbortController {
@@ -119,14 +122,14 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 			const reader = res.body!.getReader(); const d = new TextDecoder(); let buf = '', full = '';
 			while (true) {
 				const { done, value } = await reader.read();
-				if (done) break;
+				if (done) { break; }
 				buf += d.decode(value, { stream: true });
 
 				const lines = buf.split('\n');
 				buf = lines.pop() || '';
 
 				for (const line of lines) {
-					if (!line.startsWith('data: ')) continue;
+					if (!line.startsWith('data: ')) { continue; }
 					try {
 						const e = JSON.parse(line.slice(6).trim());
 						if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') { full += e.delta.text; callbacks.onToken(e.delta.text); }
@@ -137,11 +140,11 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 				}
 			}
 			callbacks.onDone(full);
-		} catch (err: any) { if (err?.name !== 'AbortError') callbacks.onError(err); }
+		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
 	async embed(_texts: string[]): Promise<number[][]> {
-		throw new Error("Embeddings not supported by the Anthropic API. The codebase index will use keyword-only search. To enable semantic search, configure an OpenAI-compatible provider.");
+		throw new Error('Embeddings not supported by the Anthropic API. The codebase index will use keyword-only search. To enable semantic search, configure an OpenAI-compatible provider.');
 	}
 
 	async listModels(): Promise<AIModel[]> {
@@ -153,36 +156,16 @@ export class AnthropicProvider extends Disposable implements IAIProvider {
 		];
 	}
 
-	private _systemPrompt() { return SYSTEM_PROMPT; }
-
-	private _buildSystemBlocks(messages: AIMessage[]): { type: string; text: string }[] {
-		const blocks = [{ type: 'text' as const, text: this._systemPrompt() }];
-		for (const msg of messages) {
-			if (msg.role === 'system' && typeof msg.content === 'string') {
-				blocks.push({ type: 'text' as const, text: msg.content });
+	// AIMessage uses the Anthropic block format. Only the tool role differs on the wire.
+	private _convertMessages(messages: AIMessage[]) {
+		return messages.filter(msg => msg.role !== 'system').map(msg => {
+			if (msg.role !== 'tool') {
+				return { role: msg.role, content: msg.content };
 			}
-		}
-		return blocks;
-	}
-
-	private _convertMessages(msgs: AIMessage[]): any[] {
-		const result: any[] = [];
-		for (const msg of msgs) {
-			if (msg.role === 'system') continue;
-			// Anthropic API: tool results go in a user message, not a separate "tool" role
-			if (msg.role === 'tool') {
-				const raw = typeof msg.content === 'string' ? [{ type: 'text' as const, text: msg.content }] : msg.content;
-				const blocks = Array.isArray(raw) ? raw : [];
-				const toolResults = blocks.filter((b) => b.type === 'tool_result').map((b) => ({ type: 'tool_result' as const, tool_use_id: (b as { tool_use_id?: string }).tool_use_id || '', content: typeof (b as { content?: unknown }).content === 'string' ? (b as { content: string }).content : '' }));
-				const textBlocks = blocks.filter((b) => b.type === 'text').map((b) => ({ type: 'text' as const, text: (b as { text?: string }).text || '' }));
-				result.push({ role: 'user', content: [...textBlocks, ...toolResults] });
-				continue;
-			}
-			if (typeof msg.content === 'string') { result.push({ role: msg.role, content: msg.content }); continue; }
-			result.push({ role: msg.role, content: msg.content.map((b): any => {
-				switch (b.type) { case 'text': return { type: 'text' as const, text: (b as { text?: string }).text || '' }; case 'tool_use': return { type: 'tool_use' as const, id: (b as { id?: string }).id || '', name: (b as { name?: string }).name || '', input: (b as { input?: Record<string, unknown> }).input || {} }; case 'tool_result': return { type: 'tool_result' as const, tool_use_id: (b as { tool_use_id?: string }).tool_use_id || '', content: typeof (b as { content?: unknown }).content === 'string' ? (b as { content: string }).content : '' }; case 'image': { const img = b as AIMessageContent; if (img.source) { return { type: 'image', source: img.source }; } return { type: 'text' as const, text: '[Image]' }; } default: return { type: 'text' as const, text: '' }; }
-			}) });
-		}
-		return result;
+			const content = typeof msg.content === 'string' && msg.toolCallId
+				? [{ type: 'tool_result', tool_use_id: msg.toolCallId, content: msg.content }]
+				: msg.content;
+			return { role: 'user', content };
+		});
 	}
 }

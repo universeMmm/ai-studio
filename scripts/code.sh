@@ -30,6 +30,18 @@ function code() {
 		node build/lib/preLaunch.ts
 	fi
 
+	if [[ "$OSTYPE" == "darwin"* ]]; then
+		# Keep an existing development bundle in sync when prelaunch is skipped.
+		local bundle=".build/electron/$NAME.app"
+		local source_icon="resources/darwin/code.icns"
+		local bundle_icon="$bundle/Contents/Resources/$EXE_NAME.icns"
+		install -C -S -m 644 "$source_icon" "$bundle_icon"
+		if [[ "$bundle_icon" -nt "$bundle" ]]; then
+			# Signal the icon change to macOS without clearing its global caches.
+			touch "$bundle"
+		fi
+	fi
+
 	# Manage built-in extensions
 	if [[ "$1" == "--builtin" ]]; then
 		exec "$CODE" build/builtin

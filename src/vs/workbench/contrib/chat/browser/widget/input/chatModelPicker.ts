@@ -986,6 +986,11 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 
+		if (this._delegate.showManageModelsAction() && !this._delegate.getModels().length) {
+			void this._commandService.executeCommand('chat.modelConfiguration.open');
+			return;
+		}
+
 		const previousModel = this._selectedModel;
 
 		const onSelect = (model: ILanguageModelChatMetadataAndIdentifier) => {
@@ -1135,7 +1140,9 @@ export class ModelPickerWidget extends Disposable {
 		if (statusIcon) {
 			nameChildren.push(renderIcon(statusIcon));
 		}
-		const modelLabel = name ?? localize('chat.modelPicker.auto', "Auto");
+		const modelLabel = name ?? (this._delegate.showManageModelsAction() && !this._delegate.getModels().length
+			? localize('studio.model.configure', "配置模型")
+			: localize('chat.modelPicker.auto', "Auto"));
 		// In PRU mode, append the config description (e.g. thinking effort) to the button label
 		const isUBB = !!this._entitlementService.quotas.usageBasedBilling;
 		const configDescription = !isUBB && this._selectedModel

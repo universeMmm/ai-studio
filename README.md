@@ -2,12 +2,12 @@
 
 AI Studio 是 [Code - OSS](https://github.com/microsoft/vscode) 的深度定制分支，将 VS Code 改造为 AI-first 的智能编程环境。核心目标是：**完全使用用户自定义模型，不绑定任何商业 AI 服务**。
 
-## 上游源码仓库
+## 上游与设计参考
 
 | 项目 | 说明 |
 |------|------|
 | [microsoft/vscode](https://github.com/microsoft/vscode) | VS Code OSS 上游，AI Studio 的编辑器内核来源 |
-| [anthropics/claude-code](https://github.com/anthropics/claude-code) | Claude Code CLI，Agent 交互模式与工具系统的设计参考 |
+| [anthropics/claude-code](https://github.com/anthropics/claude-code) | Claude Code 的公开交互、插件和用法，作为第一阶段的产品参考 |
 
 ---
 
@@ -48,7 +48,7 @@ AI 行为状态机，实现 `plan → execute → observe → refine` 闭环。�
 
 ### Tool System
 
-为 AI 提供直接操作系统与代码的能力。已实现 11 个工具（参照 Claude Code 工具体系）：
+运行时向模型提供以下 11 个基础工具，另有任务、计划、提问、记忆和子智能体等编排工具。
 
 | 工具 | 说明 |
 |------|------|
@@ -61,14 +61,16 @@ AI 行为状态机，实现 `plan → execute → observe → refine` 闭环。�
 | `run_command` | Shell 命令执行（安全白名单+审批策略+超时） |
 | `list_directory` | 目录浏览 |
 | `read_lints` | Linter 诊断（单文件/工作区） |
-| `web_fetch` | URL 内容抓取（curl，HTML→纯文本） |
-| `web_search` | DuckDuckGo Lite 网页搜索 |
+| `web_fetch` | 按 URL 抓取网页，将 HTML 转为纯文本。支持 HTTP/HTTPS 跳转和取消。 |
+| `web_search` | 优先查询 DuckDuckGo Lite，遇到超时、验证页或无效响应时将同一查询词发给 Bing RSS。返回标题、链接及可用摘要。 |
+
+桌面端统一跟随本机系统代理。网页工具、模型 API、向量索引、扩展市场和本机扩展的标准 HTTP 客户端都由系统决定走代理或直连，支持系统 PAC 和绕过规则。需要调整代理时，在操作系统的网络设置中修改即可。
 
 代码路径：`src/vs/platform/ai/common/aiTools.ts`（定义）、`src/vs/platform/ai/browser/toolExecutor.ts`（执行）
 
 ### Codebase Index
 
-让 AI 理解项目的全局语义。实现文件分块抽取、Embedding 向量化、HNSW 近似搜索，配合 `rg` 关键字搜索作为 fallback，构建混合检索能力。
+按工作区目录分别建立代码块索引，合并向量检索和 `rg` 关键词检索结果。桌面渲染进程通过 IndexedDB 保存向量并按余弦相似度检索；在 Node 环境中可使用 SQLite 及可选的 HNSW 加速。
 
 代码路径：`src/vs/platform/ai/browser/aiIndexService.ts`、`indexBuilder.ts`
 
@@ -86,20 +88,15 @@ AI 行为状态机，实现 `plan → execute → observe → refine` 闭环。�
 
 ### Patch Engine
 
-AI 生成的代码变更以 unified diff 方式应用至文件系统。提供完整的审查流程：预览差异、逐条接受/拒绝、批量操作、文件级回滚。所有变更加持化至 `.ai-studio/diffs.json`。
+文件工具写入后记录修改前后的内容。可从会话打开只读差异对比，逐项保留或撤销。撤销前会校验磁盘内容和编辑器中的未保存改动，发生冲突时保留当前文件并提示处理。审查状态保存在工作区首个本地目录的 `.ai-studio/diffs.json`。
 
 代码路径：`src/vs/workbench/contrib/aiDiffApply/`
 
 ### Agent UI
 
-替换 VS Code 原生 Chat Panel，新增：
+新窗口默认进入智能体工作区。左侧可以新建、筛选和恢复会话，中间使用原生聊天编辑器提交任务、查看工具回执和批准命令，右侧按当前会话展示文件变更、执行记录与上下文。工作区文件、编辑器、终端和设置沿用 VS Code 工作台，可从同一窗口打开。桌面布局参考了 Claude Code 的会话侧栏与差异审查交互。[Claude Code 桌面文档](https://code.claude.com/docs/en/desktop)
 
-- Agent Chat — AI 对话主入口
-- Plan View — 结构化展示执行计划
-- Execution Timeline — 步骤级执行日志
-- Diff Preview — 代码变更审查面板
-
-代码路径：`src/vs/workbench/contrib/aiChat/`、`aiContextView/`、`aiStatusBar/`
+代码路径：`src/vs/workbench/contrib/studioShell/`、`aiChat/`、`aiContextView/`、`aiDiffApply/`。
 
 ---
 
@@ -137,31 +134,45 @@ src/vs/workbench/contrib/
 
 ## 快速开始
 
-**环境要求**：Node.js 20+、Rust（CLI 编译用）、4 核 CPU、8 GB RAM
+桌面开发环境使用 [.nvmrc](.nvmrc) 指定的 Node.js 22 版本，支持同一主版本下更高的补丁或次版本。请使用 npm 低于 11.2.0 的版本。建议 4 核 CPU、8 GB 内存。单独编译 Rust CLI 时还需要 Rust 和 Cargo。
 
 ```bash
-npm install
+npm ci
 npm run compile
 ./scripts/code.sh          # macOS / Linux
 scripts\code.bat           # Windows
 ```
 
-启动后在设置中搜索 `ai.`，配置模型连接：
+运行 AI 模块的离线回归测试可使用 `npm run test:ai`。
+
+桌面首次启动默认使用简体中文。核心菜单、编辑器命令、设置说明及内置扩展的译文随项目分发，可断网启动。上游译文来自与编辑器版本匹配的 [Microsoft 简体中文语言包](https://github.com/microsoft/vscode-loc/tree/6328467f46f70a56566410dc5dcce9d6e2fec2f9/i18n/vscode-language-pack-zh-hans)。使用 `./scripts/code.sh --locale=en` 可显式选择英文核心界面。
+
+启动后打开左侧「模型设置」，填写配置名称、模型 ID、接口类型和 API 地址。也可以在设置中搜索 `ai.` 查看运行策略。
 
 | 配置项 | 说明 |
 |--------|------|
-| `ai.apiType` | 模型类型：`openai` / `anthropic` / `custom` |
+| `ai.apiType` | 接口格式：`openai`（含兼容服务）或 `anthropic` |
 | `ai.apiBase` | API 端点地址 |
-| `ai.apiKey` | API 密钥 |
+| `ai.apiKey` | 旧版密钥配置；新配置通过模型表单输入 |
 | `ai.modelId` | 模型 ID |
 
 ---
 
 ## 项目状态
 
-当前处于 **Phase 1 完成** 阶段。Claude Code 运行时架构的核心基础已移植完成（12 项功能），编译链路、Agent 循环、工具系统、会话持久化均已就绪。
+第一阶段参照 Claude Code 公开可见的项目指令、工具使用和会话体验，由 AI Studio 自行实现。旧版 README 将这部分称为“运行时架构移植”，公开材料不足以支持这一说法。[Claude Code 公开仓库](https://github.com/anthropics/claude-code)
 
-设计方向：**参照 Claude Code 的 Agent 交互模式，最大化复用 VS Code 原生基础设施**。工具体系、Agent 循环、子 Agent 编排参照 Claude Code 系统提示词；Hook 系统、MCP 集成、Chat UI 复用 VS Code 现有实现。
+### 可复查的工具调用实现
+
+本轮选取三个拥有公开工具运行时、GitHub Star 超过十万的编码智能体。2026-11-05 查看仓库时，[OpenCode](https://github.com/anomalyco/opencode) 约 22.5 万、[Codex](https://github.com/openai/codex) 约 13.3 万、[Gemini CLI](https://github.com/google-gemini/gemini-cli) 约 10.9 万。下表链接固定到实际检查过的提交。
+
+| 项目 | 上游源码行为 | AI Studio 中的对应行为 |
+|------|--------------|-----------------------|
+| [OpenAI Codex](https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/tools/parallel.rs) | 按工具是否支持并行决定获取读锁或写锁 | 连续只读调用可重叠执行，写入和终端命令按原顺序执行。每批最多同时运行 4 个只读工具，这是 AI Studio 的本地上限。 |
+| [Gemini CLI 调度器](https://github.com/google-gemini/gemini-cli/blob/1fe22af5f800d8c3024e9968d35bb75bd09e6b79/packages/core/src/scheduler/scheduler.ts#L487-L550) | 将连续可并行的调用分组；执行前评估权限并处理确认 | 两种模型协议均按索引组装流式调用，并按调用 ID 回传每项结果。需要确认的命令等待用户决定，取消后终止等待。 |
+| [OpenCode 工具上下文](https://github.com/anomalyco/opencode/blob/fc7e4cf93e660ad5ddabb0c48ecc99e934ebfe95/packages/opencode/src/session/tools.ts#L55-L94) | 在权限请求中关联会话、消息和工具调用 ID | 桌面审批绑定本次请求，工具记录与变更按会话保存。旧会话的审批无法放行新请求。 |
+
+主智能体和子智能体共用 `src/vs/platform/ai/common/toolRuntime.ts`。只读计划模式在执行器中限制可用工具。运行时也会拒绝无效参数，并将拒绝或失败关联到对应的调用。
 
 已知待完善项：
 
@@ -169,8 +180,8 @@ scripts\code.bat           # Windows
 |--------|------|
 | 高 | 编译稳定性、Windows 原生模块绑定 |
 | 高 | 路径越界防护、命令注入加固、API Key 安全存储迁移 |
-| 中 | 测试覆盖率、Diff 回滚语义修正、索引性能优化 |
-| 低 | UI 样式统一、错误边界、可访问性 |
+| 中 | 扩大跨平台审查和回滚测试、优化大工作区索引 |
+| 低 | 扩展视图样式适配、错误边界、可访问性 |
 
 ---
 
@@ -180,29 +191,29 @@ scripts\code.bat           # Windows
 
 **构建与环境修复**
 
-当前 `npm run compile` 存在 TypeScript 严格模式报错（`indexBuilder.ts` 未使用常量），以及 Windows 平台原生模块（`@vscode/spdlog`、`@vscode/windows-mutex`、`native-keymap`、`node-pty`）绑定缺失导致 `scripts/code.bat` 启动失败。短期首要目标是打通 Windows/Linux/macOS 三端的完整构建与运行链路，补齐原生模块的 Electron ABI rebuild 流程。
+macOS arm64 已验证完整编译和桌面启动。Windows 和 Linux 的构建与启动仍需验证，重点检查原生模块绑定与 Electron ABI 是否匹配。
 
 **安全加固**
 
 工具执行器（`toolExecutor.ts`）是所有 AI 行为的边界层，安全投入应优先于功能开发。三项高优先级工作：
 
 1. **路径包容性检查**：`_resolvePath()` 需统一拒绝 `../` 越界路径和非 workspace 绝对路径，仅允许经用户明确授权的外部路径访问。
-2. **命令注入防护**：`_searchPattern()` 和 `AIIndexService._keywordSearch()` 当前以字符串拼接方式构造 `rg` 命令，需改为 `spawn('rg', args[], { shell: false })` 结构化参数传递，彻底消除 shell metacharacter 注入面。
+2. **命令注入防护**：本地文件搜索通过独立参数启动 `rg`。网页抓取和搜索通过桌面网络栈发起 HTTP 请求。后续新增工具也需验证参数边界和命令审批策略。
 3. **密钥存储迁移**：`ai.apiKey` 应从普通配置项（`aiConfigurationNode`）迁移至 VS Code SecretStorage 或已有的 `AIKeychainService`，避免密钥进入 settings sync、日志或截屏。
 
 **Diff 引擎修复**
 
-`DiffStore.rejectHunk()` / `rejectAll()` 中存在持久化缺失问题（`return` 提前退出导致 `_persist()` 未被调用）。`DiffApplyController._reverseEdit()` 使用 `String.replace()` 而非按 `modifiedStartLine/modifiedEndLine` 精确行范围替换，在重复文本场景下回滚结果不可靠。需要重写行范围替换逻辑并在未打开文件路径与已打开编辑器路径下保持一致。
+已补充写入、撤销、重启恢复、重复内容、CRLF 以及未保存编辑的回归检查。后续重点检查 Windows 路径与多根工作区中的实际审查体验。
 
-**测试补齐**
+**回归测试**
 
-自研 AI 模块（`platform/ai`、`workbench/contrib/ai*`）现有测试覆盖率极低。优先补齐：路径越界拒绝测试、敏感文件拒绝测试、`searchPattern` shell 注入拒绝测试、write/edit diff 持久化测试、rejectHunk/rejectAll 持久化测试、行范围回滚测试、CRLF 文件回滚测试、Provider 错误与流式解析测试、IndexBuilder 路径处理测试。
+运行 `npm run test:ai` 可验证文件操作、网页工具、模型流式解析、命令审批、子智能体及审查状态恢复。真实桌面验收还需验证菜单、输入、窗口恢复和编辑器差异视图。
 
 ### 中期（3-6 个月）：架构收敛与产品化
 
 **Copilot / Agent Host 边界决策**
 
-Agent Host 模块（`src/vs/platform/agentHost/`、`src/vs/sessions/contrib/providers/remoteAgentHost/` 等）已通过编译层剥离：agentHost 源文件不再参与类型检查与 JS 输出，依赖 agentHost 的消费方文件以本地桩代码（stub）替代原有导入，`gulp compile` 已通过 0 错误。
+桌面端的 `gulp compile` 过滤了 Agent Host 的实现文件，保留工作台所需的空状态桩。单独对 `src/tsconfig.json` 做类型检查时，TypeScript 仍会通过其他模块的导入加载部分 Agent Host 源文件。
 
 当前策略：保留 agentHost 源码在仓库中（便于后续提取为独立扩展），编译期隔离。所有 AI 运行时链路（Agent Runtime、Tool System、LLM Provider）走自研体系，不依赖 Copilot/AgentHost 基础设施。
 
@@ -226,9 +237,9 @@ AgentService 当前消息循环将工具结果、过程步骤与最终回复混�
 
 **模型配置体验**
 
-Provider 配置当前仅通过 settings JSON 直接编辑，缺少 GUI 配置面板。中期需提供：
+桌面已提供模型配置表单。后续工作包括：
 
-- Provider 类型选择与连接测试
+- 在现有 Provider 类型选择表单中增加连接测试
 - API 端点联通性探测
 - 模型列表拉取与选择（兼容 OpenAI / Anthropic 模型列表 API）
 - 敏感信息（Key）仅通过 SecretStorage 输入，不在 settings UI 中明文展示
@@ -269,8 +280,8 @@ Provider 配置当前仅通过 settings JSON 直接编辑，缺少 GUI 配置面
 |------|------|------|
 | Phase 0 | 技术债务修复：竞态条件、取消传播、ToolExecutor 复用、快照/回滚、索引一致性、多根工作区、usage 提取 | ✅ 完成 |
 | Phase 1 | 基础能力补齐：CLAUDE.md 自动发现、WebFetch+WebSearch、系统提示词重写、图片/PDF 读取、AgentSession 持久化 | ✅ 完成 |
-| Phase 2 | Agent 编排核心：子 Agent 系统（并行+worktree 隔离）、Task 依赖图、SendMessage、验证、用户记忆 | 待实施 |
-| Phase 3 | 交互与计划：AskUserQuestion、EnterPlanMode/ExitPlanMode、自定义斜杠命令 | 待实施 |
+| Phase 2 | Agent 编排核心：子 Agent 系统、Task 依赖图、SendMessage、验证、用户记忆 | 已接入运行时；跨平台 worktree 流程仍需实测 |
+| Phase 3 | 交互与计划：AskUserQuestion、EnterPlanMode/ExitPlanMode、自定义斜杠命令 | 已接入提问与计划审批；斜杠命令的桌面交互仍待验收 |
 | Phase 4 | 补充完善：Cron、Skill 工具、Workflow 引擎、NotebookEdit、Artifact 系统 | 待实施 |
 
 ---

@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Byte Utilities
  *  Platform-agnostic conversion from raw SQLite BLOB to Float32Array.
  *  Handles Node.js Buffer, browser ArrayBuffer, and Uint8Array.
@@ -16,19 +21,19 @@ export function bufferToFloat32Array(raw: unknown, dim: number): Float32Array {
 
 	// Node.js sqlite3 returns Buffer (subclass of Uint8Array)
 	if (Buffer.isBuffer(raw)) {
-		if (raw.length === 0) throw new Error('Empty embedding buffer');
+		if (raw.length === 0) { throw new Error('Empty embedding buffer'); }
 		return new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
 	}
 
 	// Browser / Electron renderer — sqlite3 WASM returns ArrayBuffer
 	if (raw instanceof ArrayBuffer) {
-		if (raw.byteLength === 0) throw new Error('Empty embedding ArrayBuffer');
+		if (raw.byteLength === 0) { throw new Error('Empty embedding ArrayBuffer'); }
 		return new Float32Array(raw);
 	}
 
 	// Uint8Array (e.g., from manual serialization)
 	if (raw instanceof Uint8Array) {
-		if (raw.length === 0) throw new Error('Empty embedding Uint8Array');
+		if (raw.length === 0) { throw new Error('Empty embedding Uint8Array'); }
 		return new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
 	}
 

@@ -19,6 +19,18 @@
 	],
 	"workbench": [
 		{
+			"name": "vs/workbench/contrib/aiChat",
+			"project": "vscode-workbench"
+		},
+		{
+			"name": "vs/workbench/contrib/aiContextView",
+			"project": "vscode-workbench"
+		},
+		{
+			"name": "vs/workbench/contrib/aiDiffApply",
+			"project": "vscode-workbench"
+		},
+		{
 			"name": "vs/code",
 			"project": "vscode-workbench"
 		},

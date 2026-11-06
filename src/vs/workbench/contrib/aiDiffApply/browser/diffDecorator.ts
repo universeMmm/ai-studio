@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Diff Decorator
  *  Shows green line decorations in the editor for applied AI edits.
  *  After the edit is applied, only the modified range exists in the file,
@@ -11,18 +16,19 @@ import { IDiffStore } from './diffStore.js';
 import type { DiffHunk } from '../common/diffTypes.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import type { IModelDeltaDecoration, ITextModel } from '../../../../editor/common/model.js';
-import { URI } from '../../../../base/common/uri.js';
+import { IModelService } from '../../../../editor/common/services/model.js';
 import { Range } from '../../../../editor/common/core/range.js';
 
 export class DiffDecorator extends Disposable {
 	private static readonly ADDED_CLASS = 'ai-diff-block-added';
 	private static readonly MAX_DECORATIONS = 100;
 
-	private readonly _decIds = new Map<string, string[]>();
+	private readonly _decIds = new Map<ITextModel, string[]>();
 
 	constructor(
 		@IDiffStore private readonly diffStore: IDiffStore,
 		@IEditorService private readonly editorService: IEditorService,
+		@IModelService private readonly modelService: IModelService,
 	) {
 		super();
 		this._register(this.diffStore.onDidChange(() => this._refresh()));
@@ -35,7 +41,7 @@ export class DiffDecorator extends Disposable {
 
 	private _refresh(): void {
 		const applied = this.diffStore.getAllAppliedHunks();
-		if (!applied.length) return;
+
 
 		const byFile = new Map<string, DiffHunk[]>();
 		for (const h of applied) {
@@ -44,11 +50,15 @@ export class DiffDecorator extends Disposable {
 			byFile.set(h.filePath, arr);
 		}
 
-		for (const [fp, hunks] of byFile) {
-			const model = this._findModel(URI.file(fp));
-			if (model) {
-				this._updateModel(model, hunks);
+		for (const model of this._decIds.keys()) {
+			if (model.isDisposed() || !byFile.has(model.uri.fsPath)) {
+				if (!model.isDisposed()) { model.deltaDecorations(this._decIds.get(model)!, []); }
+				this._decIds.delete(model);
 			}
+		}
+		for (const model of this.modelService.getModels()) {
+			const hunks = byFile.get(model.uri.fsPath);
+			if (model.uri.scheme === 'file' && hunks) { this._updateModel(model, hunks); }
 		}
 	}
 
@@ -56,7 +66,7 @@ export class DiffDecorator extends Disposable {
 		const decs: IModelDeltaDecoration[] = [];
 		let count = 0;
 		for (const h of hunks) {
-			if (count++ >= DiffDecorator.MAX_DECORATIONS) break;
+			if (count++ >= DiffDecorator.MAX_DECORATIONS) { break; }
 			// After edit, only modified range exists in the file.
 			// Decorate the new content at its actual position.
 			if (h.modifiedText && h.modifiedEndLine > 0) {
@@ -71,17 +81,15 @@ export class DiffDecorator extends Disposable {
 				});
 			}
 		}
-		const uriStr = model.uri.toString();
-		const oldIds = this._decIds.get(uriStr) || [];
-		this._decIds.set(uriStr, model.deltaDecorations(oldIds, decs));
+		const oldIds = this._decIds.get(model) || [];
+		this._decIds.set(model, model.deltaDecorations(oldIds, decs));
 	}
 
-	private _findModel(uri: URI): ITextModel | null {
-		// Check all visible editors
-		for (const ed of this.editorService.visibleTextEditorControls) {
-			const m = (ed as any).getModel?.() as ITextModel | null;
-			if (m?.uri?.toString() === uri.toString()) return m;
+	override dispose(): void {
+		for (const [model, ids] of this._decIds) {
+			if (!model.isDisposed()) { model.deltaDecorations(ids, []); }
 		}
-		return null;
+		this._decIds.clear();
+		super.dispose();
 	}
 }

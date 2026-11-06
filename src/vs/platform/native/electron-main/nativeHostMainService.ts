@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import { exec } from 'child_process';
-import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, shell, systemPreferences, webContents } from 'electron';
+import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, session, shell, systemPreferences, webContents } from 'electron';
 import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 'os';
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
@@ -1121,11 +1121,8 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Connectivity
 
-	async resolveProxy(windowId: number | undefined, url: string): Promise<string | undefined> {
-		const window = this.codeWindowById(windowId);
-		const session = window?.win?.webContents?.session;
-
-		return session?.resolveProxy(url);
+	async resolveProxy(_windowId: number | undefined, url: string): Promise<string> {
+		return session.defaultSession.resolveProxy(url);
 	}
 
 	async lookupAuthorization(_windowId: number | undefined, authInfo: AuthInfo): Promise<Credentials | undefined> {

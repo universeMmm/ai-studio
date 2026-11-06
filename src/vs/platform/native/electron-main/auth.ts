@@ -8,9 +8,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Event } from '../../../base/common/event.js';
 import { hash } from '../../../base/common/hash.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
-import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
-import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEncryptionMainService } from '../../encryption/common/encryptionService.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
@@ -54,7 +52,6 @@ export class ProxyAuthService extends Disposable implements IProxyAuthService {
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
 		@IEncryptionMainService private readonly encryptionMainService: IEncryptionMainService,
 		@IApplicationStorageMainService private readonly applicationStorageMainService: IApplicationStorageMainService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
 	) {
 		super();
@@ -148,36 +145,6 @@ export class ProxyAuthService extends Disposable implements IProxyAuthService {
 				// ignore
 			}
 			return undefined;
-		}
-
-		// Reply with manually supplied credentials. Fail if they are wrong.
-		const newHttpProxy = (this.configurationService.getValue<string>('http.proxy') || '').trim()
-			|| (process.env['https_proxy'] || process.env['HTTPS_PROXY'] || process.env['http_proxy'] || process.env['HTTP_PROXY'] || '').trim()
-			|| undefined;
-
-		if (newHttpProxy?.indexOf('@') !== -1) {
-			const uri = URI.parse(newHttpProxy!);
-			const i = uri.authority.indexOf('@');
-			if (i !== -1) {
-				if (authInfo.attempt > 1) {
-					this.logService.trace('auth#doResolveProxyCredentials (proxy) - exit - ignoring previously used config/envvar credentials');
-					return undefined; // We tried already, let the user handle it.
-				}
-				this.logService.trace('auth#doResolveProxyCredentials (proxy) - exit - found config/envvar credentials to use');
-				const credentials = uri.authority.substring(0, i);
-				const j = credentials.indexOf(':');
-				if (j !== -1) {
-					return {
-						username: credentials.substring(0, j),
-						password: credentials.substring(j + 1)
-					};
-				} else {
-					return {
-						username: credentials,
-						password: ''
-					};
-				}
-			}
 		}
 
 		// Reply with session credentials unless we used them already.

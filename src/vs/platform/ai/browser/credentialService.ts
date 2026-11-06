@@ -1,8 +1,14 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Credential Service
  *  Stores API keys via VS Code SecretStorage with settings fallback.
  *--------------------------------------------------------------------------------------------*/
 
+import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { ISecretStorageService } from '../../../platform/secrets/common/secrets.js';
@@ -13,6 +19,7 @@ export const IAIKeychainService = createDecorator<IAIKeychainService>('aiKeychai
 
 export interface IAIKeychainService {
 	readonly _serviceBrand: undefined;
+	readonly onDidChangeApiKey: Event<void>;
 	getApiKey(): Promise<string | undefined>;
 	setApiKey(apiKey: string): Promise<void>;
 	deleteApiKey(): Promise<void>;
@@ -21,6 +28,8 @@ export interface IAIKeychainService {
 export class AIKeychainService extends Disposable implements IAIKeychainService {
 	declare readonly _serviceBrand: undefined;
 	private static readonly SECRET_KEY = 'ai-studio.apiKey';
+	private readonly _onDidChangeApiKey = this._register(new Emitter<void>());
+	readonly onDidChangeApiKey = this._onDidChangeApiKey.event;
 
 	constructor(
 		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
@@ -31,7 +40,7 @@ export class AIKeychainService extends Disposable implements IAIKeychainService 
 	async getApiKey(): Promise<string | undefined> {
 		try {
 			const stored = await this.secretStorageService.get(AIKeychainService.SECRET_KEY);
-			if (stored) return stored;
+			if (stored) { return stored; }
 		} catch (err) {
 			this.logService.warn('[AIKeychain] SecretStorage unavailable, falling back to settings.');
 		}
@@ -42,6 +51,7 @@ export class AIKeychainService extends Disposable implements IAIKeychainService 
 	async setApiKey(apiKey: string): Promise<void> {
 		try {
 			await this.secretStorageService.set(AIKeychainService.SECRET_KEY, apiKey);
+			this._onDidChangeApiKey.fire();
 		} catch (err) {
 			this.logService.warn('[AIKeychain] Cannot store API key securely. Use ai.apiKey in settings as fallback.');
 			await this.configurationService.updateValue('ai.apiKey', apiKey);
@@ -51,6 +61,7 @@ export class AIKeychainService extends Disposable implements IAIKeychainService 
 	async deleteApiKey(): Promise<void> {
 		try {
 			await this.secretStorageService.delete(AIKeychainService.SECRET_KEY);
+			this._onDidChangeApiKey.fire();
 		} catch {
 			// Key already gone or storage unavailable
 		}

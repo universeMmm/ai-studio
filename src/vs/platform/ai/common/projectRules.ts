@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Project Rules
  *  Reads .ai-studio/rules/*.md files and assembles them into a system prompt block.
  *  Mirrors Cursor''s .cursor/rules/ and Claude Code''s CLAUDE.md pattern.
@@ -14,7 +19,7 @@ export class ProjectRules {
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 		private readonly homeDir: string = '',
-	) {}
+	) { }
 
 	async load(): Promise<string> {
 		const root = this.workspaceRoot === '.' ? '' : this.workspaceRoot;

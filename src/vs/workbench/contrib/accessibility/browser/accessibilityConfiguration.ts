@@ -231,7 +231,7 @@ const configuration: IConfigurationNode = {
 		},
 		'accessibility.signalOptions.experimental.delays.general': {
 			'type': 'object',
-			'description': 'Delays for all signals besides error and warning at position',
+			'description': localize('studio.signalGeneralDelay', "Delays for all signals besides error and warning at position"),
 			'additionalProperties': false,
 			'properties': {
 				'announcement': {

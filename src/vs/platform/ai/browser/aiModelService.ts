@@ -1,8 +1,16 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Model Service
  *  Reads user configuration, selects the correct Provider, delegates all AI calls.
  *--------------------------------------------------------------------------------------------*/
 
+import { localize } from '../../../nls.js';
+import { ExpectedError } from '../../../base/common/errors.js';
+import { Barrier } from '../../../base/common/async.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
@@ -41,6 +49,7 @@ export class AIModelService extends Disposable implements IAIModelService {
 	declare readonly _serviceBrand: undefined;
 
 	private _provider: IAIProvider | null = null;
+	private _initializing: Barrier | undefined;
 
 	constructor(
 		@IConfigurationService private readonly configurationService: IConfigurationService,
@@ -48,6 +57,7 @@ export class AIModelService extends Disposable implements IAIModelService {
 		@IAIKeychainService private readonly keychainService: IAIKeychainService,
 	) {
 		super();
+		this._register(this.keychainService.onDidChangeApiKey(() => { void this._initProvider(); }));
 		void this._initProvider();
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -79,45 +89,39 @@ export class AIModelService extends Disposable implements IAIModelService {
 	// ── Provider delegation ──────────────────────────────────
 
 	streamChat(messages: AIMessage[], tools: AITool[], options: AIRequestOptions, callbacks: AIStreamCallbacks): AbortController {
-		return this._ensureProvider().streamChat(messages, tools, options, callbacks);
+		return this._startStream(provider => provider.streamChat(messages, tools, options, callbacks), err => callbacks.onError(err));
 	}
 
 	streamCompletion(prefix: string, suffix: string, fileContext: FileContext, options: AICompletionOptions, callbacks: AICompletionCallbacks): AbortController {
-		return this._ensureProvider().streamCompletion(prefix, suffix, fileContext, options, callbacks);
+		return this._startStream(provider => provider.streamCompletion(prefix, suffix, fileContext, options, callbacks), err => callbacks.onError(err));
 	}
 
 	async embed(texts: string[]): Promise<number[][]> {
-		return this._ensureProvider().embed(texts);
+		return this._withProvider(provider => provider.embed(texts));
 	}
 
 	async listModels(): Promise<AIModel[]> {
-		return this._ensureProvider().listModels();
+		return this._withProvider(provider => provider.listModels());
 	}
 
 	// ── Internal ─────────────────────────────────────────────
 
 	private async _initProvider(): Promise<void> {
-		if (this._provider) {
-			this._provider.dispose();
-		}
+		const previous = this._initializing;
+		const initializing = this._initializing = new Barrier();
+		previous?.open(); // Queued callers now wait for the current configuration.
+		this._provider?.dispose();
 		this._provider = null;
-
-		const apiType = this.configurationService.getValue<string>('ai.apiType') ?? 'openai';
-		const apiKey = await this.keychainService.getApiKey() ?? '';
-		const apiBase = this.configurationService.getValue<string>('ai.apiBase') ?? '';
-		const modelId = this.configurationService.getValue<string>('ai.modelId') ?? '';
-
-		if (!apiKey) {
-			this.logService.warn('[AIModelService] No AI API key configured — store one with AI Studio credentials or set ai.apiKey as a fallback.');
-			return;
-		}
-
-		if (!modelId) {
-			this.logService.warn('[AIModelService] No model ID configured — select a model or set ai.modelId in Settings.');
-			return;
-		}
-
 		try {
+			const apiType = this.currentProviderId;
+			const apiBase = this.configurationService.getValue<string>('ai.apiBase') ?? '';
+			const modelId = this.currentModelId;
+			const apiKey = await this.keychainService.getApiKey();
+			if (this._initializing !== initializing) { return; }
+			if (!apiKey || !modelId) {
+				this.logService.warn('[AIModelService] Configure an API key and model ID to enable the provider.');
+				return;
+			}
 			if (apiType === 'anthropic') {
 				this._provider = new AnthropicProvider(apiKey, modelId, apiBase || undefined, this.logService);
 			} else {
@@ -126,14 +130,43 @@ export class AIModelService extends Disposable implements IAIModelService {
 			}
 			this.logService.info(`[AIModelService] Provider ready: ${apiType}, model ${modelId}`);
 		} catch (err) {
-			this.logService.error('[AIModelService] Failed to initialize provider:', err);
+			if (this._initializing === initializing) {
+				this.logService.error('[AIModelService] Failed to initialize provider:', err);
+			}
+		} finally {
+			if (this._initializing === initializing) { this._initializing = undefined; }
+			initializing.open();
 		}
 	}
 
-	private _ensureProvider(): IAIProvider {
-		if (!this._provider) {
-			throw new Error('AI provider not initialized. Configure ai.apiKey in Settings.');
+	private async _withProvider<T>(action: (provider: IAIProvider) => T | Promise<T>): Promise<T> {
+		while (this._initializing) {
+			await this._initializing.wait();
 		}
-		return this._provider;
+		if (!this._provider) {
+			throw new ExpectedError(localize('studio.modelNotConfigured', '请打开「模型设置」，填写模型 ID 和 API 密钥后再发送消息。'));
+		}
+		return action(this._provider);
+	}
+
+	private _startStream(start: (provider: IAIProvider) => AbortController, onError: (err: Error) => void): AbortController {
+		const controller = new AbortController();
+		void this._withProvider(provider => {
+			if (controller.signal.aborted) { return; }
+			const request = start(provider);
+			if (controller.signal.aborted) { request.abort(); }
+			else { controller.signal.addEventListener('abort', () => request.abort(), { once: true }); }
+		}).catch(err => {
+			if (!controller.signal.aborted) { onError(err instanceof Error ? err : new Error(String(err))); }
+		});
+		return controller;
+	}
+
+	override dispose(): void {
+		this._initializing?.open();
+		this._initializing = undefined;
+		this._provider?.dispose();
+		this._provider = null;
+		super.dispose();
 	}
 }

@@ -1,41 +1,12 @@
 /*---------------------------------------------------------------------------------------------
- *  AI Studio — Diff Decoration Styles
- *  Green/red gutters and line highlights for AI-generated edits.
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 .monaco-editor .ai-diff-block-added {
-	background: rgba(53, 178, 78, 0.12);
-	border-left: 3px solid rgba(53, 178, 78, 0.5);
+	background: var(--vscode-diffEditor-insertedLineBackground);
 }
-
-.monaco-editor .ai-diff-block-removed {
-	background: rgba(220, 74, 56, 0.12);
-	border-left: 3px solid rgba(220, 74, 56, 0.5);
-}
-
-.monaco-editor .ai-diff-block-added::before {
-	content: '';
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: 3px;
-	background: #35b24e;
-}
-
 .monaco-editor .ai-diff-glyph-added {
-	background: rgba(53, 178, 78, 0.6);
-	width: 4px !important;
-	margin-left: 0;
-	border-radius: 2px;
-}
-
-.monaco-editor .ai-diff-block-removed::before {
-	content: '';
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: 3px;
-	background: #dc4a38;
+	border-left: 2px solid var(--vscode-editorGutter-addedBackground);
+	box-sizing: border-box;
 }

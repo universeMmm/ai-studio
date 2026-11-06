@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { chineseSettingTitle, useChineseSettingNames } from './chineseSettingNames.js';
 import { distinct } from '../../../../base/common/arrays.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IStringDictionary } from '../../../../base/common/collections.js';
@@ -179,11 +180,14 @@ export class SettingMatches {
 		// First, search by the setting's ID and label.
 		const settingKeyAsWords: string = this._keyToLabel(setting.key);
 		const queryWords = new Set<string>(searchString.split(' '));
+		const translatedTitle = useChineseSettingNames() ? chineseSettingTitle(setting.key)?.toLowerCase() : undefined;
 		for (const word of queryWords) {
 			// Check if the key contains the word. Use contiguous search.
 			const keyMatches = matchesWords(word, settingKeyAsWords, true);
 			if (keyMatches?.length) {
 				keyMatchingWords.set(word, keyMatches.map(match => this.toKeyRange(setting, match)));
+			} else if (translatedTitle?.includes(word.toLowerCase())) {
+				keyMatchingWords.set(word, [setting.keyRange]);
 			}
 		}
 		if (keyMatchingWords.size === queryWords.size) {

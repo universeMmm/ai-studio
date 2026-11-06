@@ -156,7 +156,7 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 		}
 
 		// Fall back to default naming pattern
-		return this.options.title?.fallback ?? nls.localize('chatEditorName', "Chat");
+		return this.options.title?.fallback ?? nls.localize('studioChatEditorName', "新会话");
 	}
 
 	override getTitle(verbosity?: Verbosity): string {

@@ -1,10 +1,16 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — User Memory Store
  *  Reads/writes persistent user memories from ~/.ai-studio/memory/*.md.
  *  Each .md file uses YAML frontmatter (name, description, type) + Markdown body.
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../base/common/uri.js';
+import { env } from '../../../base/common/process.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILogService } from '../../../platform/log/common/log.js';
@@ -31,7 +37,7 @@ export class UserMemoryStore implements IUserMemoryStore {
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 	) {
-		this._homeDir = process.env.HOME || process.env.USERPROFILE || '.';
+		this._homeDir = env.HOME || env.USERPROFILE || '.';
 	}
 
 	private get _memoryDir(): string {
@@ -41,17 +47,16 @@ export class UserMemoryStore implements IUserMemoryStore {
 	async list(): Promise<MemoryEntry[]> {
 		try {
 			const dirUri = URI.file(this._memoryDir);
-			await this.fileService.createFolder(dirUri);
 			const stat = await this.fileService.resolve(dirUri);
-			if (!stat.children?.length) return [];
+			if (!stat.children?.length) { return []; }
 
 			const entries: MemoryEntry[] = [];
 			for (const child of stat.children) {
-				if (!child.name.endsWith('.md')) continue;
+				if (!child.name.endsWith('.md')) { continue; }
 				try {
 					const raw = (await this.fileService.readFile(URI.file(this._memoryDir + '/' + child.name))).value.toString();
 					const entry = parseMemoryFile(raw, child.name);
-					if (entry) entries.push(entry);
+					if (entry) { entries.push(entry); }
 				} catch (e) {
 					this.logService.warn(`[UserMemoryStore] Failed to read ${child.name}:`, e);
 				}

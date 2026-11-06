@@ -1,57 +1,64 @@
-﻿/*---------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - DiffStore Tests
  *--------------------------------------------------------------------------------------------*/
 
-import * as assert from "assert";
-import { DiffStore } from "../../../src/vs/workbench/contrib/aiDiffApply/browser/diffStore.js";
-import type { DiffGroup, DiffHunk } from "../../../src/vs/workbench/contrib/aiDiffApply/common/diffTypes.js";
+import * as assert from 'assert';
+import { DiffStore } from '../../../src/vs/workbench/contrib/aiDiffApply/browser/diffStore.js';
+import type { DiffGroup, DiffHunk } from '../../../src/vs/workbench/contrib/aiDiffApply/common/diffTypes.js';
+import { upcastPartial } from '../../../src/vs/base/test/common/mock.js';
+import type { IFileService } from '../../../src/vs/platform/files/common/files.js';
+import { NullLogService } from '../../../src/vs/platform/log/common/log.js';
 
 function makeHunk(overrides: Partial<DiffHunk> = {}): DiffHunk {
 	return {
-		id: "h1",
-		filePath: "/test/file.ts",
+		id: 'h1',
+		filePath: '/test/file.ts',
 		originalStartLine: 1,
 		originalEndLine: 3,
 		modifiedStartLine: 1,
 		modifiedEndLine: 4,
-		originalText: "old\ncontent\nhere",
-		modifiedText: "new\ncontent\nhere\nextra",
-		status: "applied",
+		originalText: 'old\ncontent\nhere',
+		modifiedText: 'new\ncontent\nhere\nextra',
+		status: 'applied',
 		...overrides,
 	};
 }
 
 function makeGroup(overrides: Partial<DiffGroup> = {}): DiffGroup {
 	return {
-		id: "g1",
-		chatMessageId: "",
+		id: 'g1',
+		chatMessageId: '',
 		hunks: [makeHunk()],
 		createdAt: Date.now(),
 		...overrides,
 	};
 }
 
-suite("DiffStore", () => {
+suite('DiffStore', () => {
 	let store: DiffStore;
-	let groups: readonly DiffGroup[];
 
-	beforeEach(() => {
-		store = new DiffStore(null as any, null as any);
-		store.onDidChange(() => { groups = store.groups; });
+	setup(() => {
+		store = new DiffStore(upcastPartial<IFileService>({}), new NullLogService());
 	});
+	teardown(() => store.dispose());
 
-	test("should start with empty groups", () => {
+	test('should start with empty groups', () => {
 		assert.strictEqual(store.groups.length, 0);
 	});
 
-	test("should add a group", () => {
+	test('should add a group', () => {
 		const group = makeGroup();
 		store.addGroup(group);
 		assert.strictEqual(store.groups.length, 1);
-		assert.strictEqual(store.groups[0].id, "g1");
+		assert.strictEqual(store.groups[0].id, 'g1');
 	});
 
-	test("should add a group - onDidChange fires", (done) => {
+	test('should add a group - onDidChange fires', (done) => {
 		store.onDidChange(() => {
 			assert.strictEqual(store.groups.length, 1);
 			done();
@@ -59,88 +66,88 @@ suite("DiffStore", () => {
 		store.addGroup(makeGroup());
 	});
 
-	test("should reject a single hunk", () => {
+	test('should reject a single hunk', () => {
 		const group = makeGroup();
 		store.addGroup(group);
-		store.rejectHunk("g1", "h1");
-		assert.strictEqual(store.groups[0].hunks[0].status, "rejected");
+		store.rejectHunk('g1', 'h1');
+		assert.strictEqual(store.groups[0].hunks[0].status, 'rejected');
 	});
 
-	test("should reject all hunks in a group", () => {
+	test('should reject all hunks in a group', () => {
 		const group = makeGroup({
 			hunks: [
-				makeHunk({ id: "h1" }),
-				makeHunk({ id: "h2" }),
+				makeHunk({ id: 'h1' }),
+				makeHunk({ id: 'h2' }),
 			],
 		});
 		store.addGroup(group);
-		store.rejectAll("g1");
-		assert.strictEqual(store.groups[0].hunks[0].status, "rejected");
-		assert.strictEqual(store.groups[0].hunks[1].status, "rejected");
+		store.rejectAll('g1');
+		assert.strictEqual(store.groups[0].hunks[0].status, 'rejected');
+		assert.strictEqual(store.groups[0].hunks[1].status, 'rejected');
 	});
 
-	test("rejectHunk should not affect other groups", () => {
-		store.addGroup(makeGroup({ id: "g1" }));
-		store.addGroup(makeGroup({ id: "g2" }));
-		store.rejectHunk("g1", "h1");
-		assert.strictEqual(store.groups[0].hunks[0].status, "rejected");
-		assert.strictEqual(store.groups[1].hunks[0].status, "applied");
+	test('rejectHunk should not affect other groups', () => {
+		store.addGroup(makeGroup({ id: 'g1' }));
+		store.addGroup(makeGroup({ id: 'g2' }));
+		store.rejectHunk('g1', 'h1');
+		assert.strictEqual(store.groups[0].hunks[0].status, 'rejected');
+		assert.strictEqual(store.groups[1].hunks[0].status, 'applied');
 	});
 
-	test("getAppliedHunksForFile should return only applied hunks for file", () => {
+	test('getAppliedHunksForFile should return only applied hunks for file', () => {
 		store.addGroup(makeGroup({
 			hunks: [
-				makeHunk({ id: "h1", filePath: "/a.ts" }),
-				makeHunk({ id: "h2", filePath: "/b.ts" }),
+				makeHunk({ id: 'h1', filePath: '/a.ts' }),
+				makeHunk({ id: 'h2', filePath: '/b.ts' }),
 			],
 		}));
-		const result = store.getAppliedHunksForFile("/a.ts");
+		const result = store.getAppliedHunksForFile('/a.ts');
 		assert.strictEqual(result.length, 1);
-		assert.strictEqual(result[0].id, "h1");
+		assert.strictEqual(result[0].id, 'h1');
 	});
 
-	test("getAppliedHunksForFile should skip rejected hunks", () => {
+	test('getAppliedHunksForFile should skip rejected hunks', () => {
 		store.addGroup(makeGroup({
 			hunks: [
-				makeHunk({ id: "h1", filePath: "/a.ts", status: "rejected" }),
-				makeHunk({ id: "h2", filePath: "/a.ts" }),
+				makeHunk({ id: 'h1', filePath: '/a.ts', status: 'rejected' }),
+				makeHunk({ id: 'h2', filePath: '/a.ts' }),
 			],
 		}));
-		const result = store.getAppliedHunksForFile("/a.ts");
+		const result = store.getAppliedHunksForFile('/a.ts');
 		assert.strictEqual(result.length, 1);
-		assert.strictEqual(result[0].id, "h2");
+		assert.strictEqual(result[0].id, 'h2');
 	});
 
-	test("getAllAppliedHunks should return all applied hunks across groups", () => {
+	test('getAllAppliedHunks should return all applied hunks across groups', () => {
 		store.addGroup(makeGroup({
-			id: "g1",
+			id: 'g1',
 			hunks: [
-				makeHunk({ id: "h1" }),
-				makeHunk({ id: "h2", status: "rejected" }),
+				makeHunk({ id: 'h1' }),
+				makeHunk({ id: 'h2', status: 'rejected' }),
 			],
 		}));
 		store.addGroup(makeGroup({
-			id: "g2",
+			id: 'g2',
 			hunks: [
-				makeHunk({ id: "h3" }),
+				makeHunk({ id: 'h3' }),
 			],
 		}));
 		const result = store.getAllAppliedHunks();
 		assert.strictEqual(result.length, 2);
-		assert.ok(result.find(h => h.id === "h1"));
-		assert.ok(result.find(h => h.id === "h3"));
+		assert.ok(result.find(h => h.id === 'h1'));
+		assert.ok(result.find(h => h.id === 'h3'));
 	});
 
-	test("rejectHunk on non-existent group should be no-op", () => {
-		store.addGroup(makeGroup({ id: "real" }));
-		store.rejectHunk("nonexistent", "h1");
-		assert.strictEqual(store.groups[0].hunks[0].status, "applied");
+	test('rejectHunk on non-existent group should be no-op', () => {
+		store.addGroup(makeGroup({ id: 'real' }));
+		store.rejectHunk('nonexistent', 'h1');
+		assert.strictEqual(store.groups[0].hunks[0].status, 'applied');
 	});
 
-	test("multiple groups should maintain order", () => {
-		store.addGroup(makeGroup({ id: "first" }));
-		store.addGroup(makeGroup({ id: "second" }));
-		store.addGroup(makeGroup({ id: "third" }));
-		assert.deepStrictEqual(store.groups.map(g => g.id), ["first", "second", "third"]);
+	test('multiple groups should maintain order', () => {
+		store.addGroup(makeGroup({ id: 'first' }));
+		store.addGroup(makeGroup({ id: 'second' }));
+		store.addGroup(makeGroup({ id: 'third' }));
+		assert.deepStrictEqual(store.groups.map(g => g.id), ['first', 'second', 'third']);
 	});
 });

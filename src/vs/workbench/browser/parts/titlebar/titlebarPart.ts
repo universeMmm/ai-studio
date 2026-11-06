@@ -9,6 +9,8 @@ import { MultiWindowParts, Part } from '../../part.js';
 import { ITitleService } from '../../../services/title/browser/titleService.js';
 import { getWCOTitlebarAreaRect, getZoomFactor, isWCOEnabled } from '../../../../base/browser/browser.js';
 import { MenuBarVisibility, getTitleBarStyle, getMenuBarVisibility, hasCustomTitlebar, hasNativeTitlebar, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, getWindowControlsStyle, WindowControlsStyle, TitlebarStyle, MenuSettings, hasNativeMenu } from '../../../../platform/window/common/window.js';
+import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
+import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { IConfigurationService, IConfigurationChangeEvent } from '../../../../platform/configuration/common/configuration.js';
@@ -53,7 +55,6 @@ import { IView } from '../../../../base/browser/ui/grid/grid.js';
 import { createInstantHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegate.js';
-import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { safeIntl } from '../../../../base/common/date.js';
 import { IsCompactTitleBarContext, TitleBarVisibleContext } from '../../../common/contextkeys.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
@@ -487,6 +488,25 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.installMenubar();
 		}
 
+		if (isNative && !this.isAuxiliary && hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
+			const commands = this.instantiationService.invokeFunction(accessor => accessor.get(ICommandService));
+			const home = append(this.leftContent, $('button.studio-home')) as HTMLButtonElement;
+			home.type = 'button';
+			home.title = localize('studioHome', '打开智能体工作区');
+			home.setAttribute('aria-label', home.title);
+			append(home, $('span.studio-mark')).setAttribute('aria-hidden', 'true');
+			append(home, $('span.studio-wordmark')).textContent = 'AI Studio';
+			this._register(addDisposableListener(home, EventType.CLICK, () => commands.executeCommand('ai.chat.open').catch(onUnexpectedError)));
+
+			const review = append(this.rightContent, $('button.studio-review')) as HTMLButtonElement;
+			review.type = 'button';
+			review.title = localize('studioReview', '审查工作区变更');
+			review.setAttribute('aria-label', review.title);
+			append(review, $('span.codicon.codicon-diff')).setAttribute('aria-hidden', 'true');
+			append(review, $('span.studio-review-label')).textContent = localize('studioChanges', '变更');
+			this._register(addDisposableListener(review, EventType.CLICK, () => commands.executeCommand('aiStudio.openInspector', 'changes').catch(onUnexpectedError)));
+		}
+
 		// Title
 		this.title = append(this.centerContent, $('div.window-title'));
 		this.createTitle();
@@ -528,10 +548,10 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			}
 
 			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left') {
-				// macOS native: controls are on the left and the container is not needed to make room
-				// for something, except for web where a custom menu being supported). not putting the
-				// container helps with allowing to move the window when clicking very close to the
-				// window control buttons.
+				// Keep the native buttons and their surrounding drag region clear of the Studio home button.
+				if (!this.isAuxiliary) {
+					this.leftContent.classList.add('studio-mac-window-controls');
+				}
 			} else if (getWindowControlsStyle(this.configurationService) === WindowControlsStyle.HIDDEN) {
 				// Linux/Windows: controls are explicitly disabled
 			} else {

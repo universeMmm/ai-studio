@@ -936,6 +936,7 @@
 		"--vscode-window-inactiveBorder"
 	],
 	"others": [
+		"--studio-mac-controls-width",
 		"--activity-bar-action-height",
 		"--activity-bar-icon-size",
 		"--activity-bar-width",

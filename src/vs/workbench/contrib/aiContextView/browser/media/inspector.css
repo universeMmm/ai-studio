@@ -1,0 +1,95 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.studio-inspector {
+	height: 100%;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+	font-size: 12px;
+	--studio-muted: var(--vscode-descriptionForeground);
+	--studio-line: var(--vscode-widget-border, var(--vscode-sideBar-border, color-mix(in srgb, currentColor 13%, transparent)));
+	--studio-accent: var(--vscode-textLink-foreground);
+}
+.studio-inspector button, .studio-inspector select { color: inherit; font: inherit; }
+.studio-inspector button {
+	cursor: pointer;
+	border: 0;
+	background: transparent;
+	padding: 0;
+}
+.studio-inspector button:focus-visible, .studio-inspector select:focus-visible, .studio-inspector summary:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+.studio-inspector button:disabled { opacity: .55; cursor: default; }
+.studio-inspector-tabs {
+	display: flex;
+	flex: none;
+	border-bottom: 1px solid var(--studio-line);
+	padding: 0 14px;
+	gap: 14px;
+}
+.studio-inspector-tabs button {
+	color: var(--studio-muted);
+	border-bottom: 2px solid transparent;
+	white-space: nowrap;
+	line-height: 34px;
+}
+.studio-inspector-tabs button[aria-selected="true"] {
+	color: var(--vscode-foreground);
+	font-weight: 600;
+	border-bottom-color: var(--studio-accent);
+}
+.studio-inspector-body { overflow: auto; overscroll-behavior: contain; padding: 4px 14px 20px; flex: 1 1 0; min-width: 0; }
+.studio-inspector-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; margin-top: 14px; }
+.studio-inspector-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.studio-inspector-heading > span, .studio-inspector-heading select { color: var(--studio-muted); font-size: 11px; }
+.studio-inspector-heading select {
+	max-width: 50%;
+	border: 1px solid var(--studio-line);
+	background: var(--vscode-dropdown-background);
+	border-radius: 4px;
+	padding: 2px;
+}
+.studio-inspector-heading button { padding: 4px; border-radius: 4px; }
+.studio-inspector-heading button:hover, .studio-inspector-file:hover { background: var(--vscode-list-hoverBackground); }
+.studio-inspector-summary { margin: 3px 0 12px; color: var(--studio-muted); font-size: 11px; line-height: 1.6; }
+.studio-inspector-empty { text-align: center; padding: 32px 8px; }
+.studio-inspector-empty > .codicon { color: var(--studio-muted); font-size: 25px; }
+.studio-inspector-empty h3 { margin: 12px 0 5px; font-size: 13px; font-weight: 550; }
+.studio-inspector-empty p { max-width: 230px; margin: 0 auto; color: var(--studio-muted); font-size: 12px; line-height: 1.7; }
+.studio-inspector-change { border-top: 1px solid var(--studio-line); padding: 10px 0; }
+.studio-inspector .studio-inspector-file { width: 100%; text-align: left; display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: 4px; }
+.studio-inspector-file > .codicon { color: var(--studio-muted); flex: none; }
+.studio-inspector-file > .codicon:last-child { opacity: 0; font-size: 12px; }
+.studio-inspector-file:is(:hover,:focus-visible) > .codicon:last-child { opacity: 1; }
+.studio-inspector-name { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.studio-inspector-name strong, .studio-inspector-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-inspector-name strong { font-size: 12px; font-weight: 550; }
+.studio-inspector-name small, .studio-inspector-event small, .studio-inspector-task small { font-size: 11px; color: var(--studio-muted); }
+.studio-inspector-change-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0; color: var(--studio-muted); font-size: 11px; }
+.studio-inspector-change-meta .studio-inspector-link { color: var(--studio-accent); }
+.studio-inspector-link:hover { text-decoration: underline; }
+.studio-inspector-reviewed { margin-left: auto; }
+.studio-inspector-fragment { overflow: hidden; border: 1px solid var(--studio-line); border-radius: 5px; }
+.studio-inspector-fragment code { display: block; padding: 4px 7px; font: 11px/1.4 var(--monaco-monospace-font); overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.studio-inspector-fragment .added { background: var(--vscode-diffEditor-insertedLineBackground); }
+.studio-inspector-fragment .removed { background: var(--vscode-diffEditor-removedLineBackground); }
+.studio-inspector-actions { display: flex; gap: 6px; margin-top: 8px; }
+.studio-inspector-actions button { padding: 2px 9px; border: 1px solid var(--studio-line); border-radius: 4px; line-height: 18px; }
+.studio-inspector-actions button:first-child { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+.studio-inspector-actions button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.studio-inspector-actions button:first-child:hover { background: var(--vscode-button-hoverBackground); }
+.studio-inspector-task, .studio-inspector-event summary { display: flex; align-items: baseline; gap: 8px; line-height: 1.5; padding: 6px 0; }
+.studio-inspector-task > .codicon, .studio-inspector-event summary > .codicon { color: var(--studio-muted); }
+.studio-inspector-task > span:not(.codicon), .studio-inspector-event summary > span:not(.codicon) { flex: 1; overflow-wrap: anywhere; }
+.studio-inspector-task small, .studio-inspector-event summary small { flex: none; }
+.studio-inspector-event { border-bottom: 1px solid var(--studio-line); }
+.studio-inspector-event summary { cursor: pointer; }
+.studio-inspector-event summary::-webkit-details-marker { display: none; }
+.studio-inspector-event[open] summary { color: var(--studio-accent); }
+.studio-inspector-event pre { margin: 3px 0 9px 2px; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 var(--monaco-monospace-font); border-left: 2px solid var(--studio-line); }

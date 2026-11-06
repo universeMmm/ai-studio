@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { chineseSettingCategory, chineseSettingTitle, useChineseSettingNames } from './chineseSettingNames.js';
 import * as arrays from '../../../../base/common/arrays.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { IJSONSchema } from '../../../../base/common/jsonSchema.js';
@@ -778,6 +779,7 @@ export function sanitizeId(id: string): string {
 }
 
 export function settingKeyToDisplayFormat(key: string, groupId: string = '', isLanguageTagSetting: boolean = false): { category: string; label: string } {
+	const settingId = key;
 	const lastDotIdx = key.lastIndexOf('.');
 	let category = '';
 	if (lastDotIdx >= 0) {
@@ -787,6 +789,10 @@ export function settingKeyToDisplayFormat(key: string, groupId: string = '', isL
 
 	groupId = groupId.replace(/\//g, '.');
 	category = trimCategoryForGroup(category, groupId);
+	if (!isLanguageTagSetting && useChineseSettingNames()) {
+		const label = chineseSettingTitle(settingId);
+		return label ? { category: chineseSettingCategory(category), label } : { category: '', label: settingId };
+	}
 	category = wordifyKey(category);
 
 	if (isLanguageTagSetting) {

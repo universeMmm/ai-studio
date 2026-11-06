@@ -36,42 +36,7 @@ async function makeTelemetryRequest(options: IRequestOptions, requestService: IR
 	};
 }
 
-/**
- * Complete a request to submit telemetry to the server utilizing the https module. Only used when the request service is not available
- * @param options The options which will be used to make the request
- * @returns An object containing the headers, statusCode, and responseData
- */
-async function makeLegacyTelemetryRequest(options: IRequestOptions): Promise<IResponseData> {
-	const https = await import('https'); // Lazy due to https://github.com/nodejs/node/issues/59686
-	const httpsOptions = {
-		method: options.type,
-		headers: options.headers
-	};
-	const responsePromise = new Promise<IResponseData>((resolve, reject) => {
-		const req = https.request(options.url ?? '', httpsOptions, res => {
-			res.on('data', function (responseData) {
-				resolve({
-					headers: res.headers as Record<string, string>,
-					statusCode: res.statusCode ?? 200,
-					responseData: responseData.toString()
-				});
-			});
-			// On response with error send status of 0 and a blank response to oncomplete so we can retry events
-			res.on('error', function (err) {
-				reject(err);
-			});
-		});
-		req.write(options.data, (err) => {
-			if (err) {
-				reject(err);
-			}
-		});
-		req.end();
-	});
-	return responsePromise;
-}
-
-async function sendPostAsync(requestService: IRequestService | undefined, payload: IPayloadData, oncomplete: OnCompleteFunc) {
+async function sendPostAsync(requestService: IRequestService, payload: IPayloadData, oncomplete: OnCompleteFunc) {
 	const telemetryRequestData = typeof payload.data === 'string' ? payload.data : new TextDecoder().decode(payload.data);
 	const requestOptions: IRequestOptions = {
 		type: 'POST',
@@ -86,7 +51,7 @@ async function sendPostAsync(requestService: IRequestService | undefined, payloa
 	};
 
 	try {
-		const responseData = requestService ? await makeTelemetryRequest(requestOptions, requestService) : await makeLegacyTelemetryRequest(requestOptions);
+		const responseData = await makeTelemetryRequest(requestOptions, requestService);
 		oncomplete(responseData.statusCode, responseData.headers, responseData.responseData);
 	} catch {
 		// If it errors out, send status of 0 and a blank response to oncomplete so we can retry events
@@ -98,7 +63,7 @@ async function sendPostAsync(requestService: IRequestService | undefined, payloa
 export class OneDataSystemAppender extends AbstractOneDataSystemAppender {
 
 	constructor(
-		requestService: IRequestService | undefined,
+		requestService: IRequestService,
 		isInternalTelemetry: boolean,
 		eventPrefix: string,
 		defaultData: { [key: string]: unknown } | null,

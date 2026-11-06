@@ -655,8 +655,6 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 
 	private readonly touchBarGroups: electron.TouchBarSegmentedControl[] = [];
 
-	private currentHttpProxy: string | undefined = undefined;
-	private currentNoProxy: string | undefined = undefined;
 
 	private customZoomLevel: number | undefined = undefined;
 
@@ -1107,39 +1105,6 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 			if (newMenuBarVisibility !== this.currentMenuBarVisibility) {
 				this.currentMenuBarVisibility = newMenuBarVisibility;
 				this.setMenuBarVisibility(newMenuBarVisibility);
-			}
-		}
-
-		// Proxy
-		if (!e || e.affectsConfiguration('http.proxy') || e.affectsConfiguration('http.noProxy')) {
-			const inspect = this.configurationService.inspect<string>('http.proxy');
-			let newHttpProxy = (inspect.userLocalValue || '').trim()
-				|| (process.env['https_proxy'] || process.env['HTTPS_PROXY'] || process.env['http_proxy'] || process.env['HTTP_PROXY'] || '').trim() // Not standardized.
-				|| undefined;
-
-			if (newHttpProxy?.indexOf('@') !== -1) {
-				const uri = URI.parse(newHttpProxy!);
-				const i = uri.authority.indexOf('@');
-				if (i !== -1) {
-					newHttpProxy = uri.with({ authority: uri.authority.substring(i + 1) })
-						.toString();
-				}
-			}
-			if (newHttpProxy?.endsWith('/')) {
-				newHttpProxy = newHttpProxy.substr(0, newHttpProxy.length - 1);
-			}
-
-			const newNoProxy = (this.configurationService.getValue<string[]>('http.noProxy') || []).map((item) => item.trim()).join(',')
-				|| (process.env['no_proxy'] || process.env['NO_PROXY'] || '').trim() || undefined; // Not standardized.
-			if ((newHttpProxy || '').indexOf('@') === -1 && (newHttpProxy !== this.currentHttpProxy || newNoProxy !== this.currentNoProxy)) {
-				this.currentHttpProxy = newHttpProxy;
-				this.currentNoProxy = newNoProxy;
-
-				const proxyRules = newHttpProxy || '';
-				const proxyBypassRules = newNoProxy ? `${newNoProxy},<local>` : '<local>';
-				this.logService.trace(`Setting proxy to '${proxyRules}', bypassing '${proxyBypassRules}'`);
-				this._win.webContents.session.setProxy({ proxyRules, proxyBypassRules, pacScript: '' });
-				electron.app.setProxy({ proxyRules, proxyBypassRules, pacScript: '' });
 			}
 		}
 	}

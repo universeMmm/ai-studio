@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { AbstractRequestService, AuthInfo, Credentials, IRequestService } from '../../../../platform/request/common/request.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
@@ -21,7 +20,6 @@ export class NativeRequestService extends AbstractRequestService implements IReq
 
 	constructor(
 		@INativeHostService private readonly nativeHostService: INativeHostService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ILoggerService loggerService: ILoggerService,
 	) {
 		const logger = loggerService.createLogger(`network`, { name: localize('network', "Network"), group: windowLogGroup });
@@ -32,9 +30,6 @@ export class NativeRequestService extends AbstractRequestService implements IReq
 	}
 
 	async request(options: IRequestOptions, token: CancellationToken): Promise<IRequestContext> {
-		if (!options.proxyAuthorization) {
-			options.proxyAuthorization = this.configurationService.inspect<string>('http.proxyAuthorization').userLocalValue;
-		}
 		return this.logAndRequest(options, () => request(options, token, () => navigator.onLine));
 	}
 

@@ -6,7 +6,7 @@
 import { IExtHostWorkspaceProvider } from '../common/extHostWorkspace.js';
 import { ConfigurationInspect, ExtHostConfigProvider } from '../common/extHostConfiguration.js';
 import { MainThreadTelemetryShape } from '../common/extHost.protocol.js';
-import { IExtensionHostInitData } from '../../services/extensions/common/extensionHostProtocol.js';
+import { IExtensionHostInitData, UIKind } from '../../services/extensions/common/extensionHostProtocol.js';
 import { ExtHostExtensionService } from './extHostExtensionService.js';
 import { URI } from '../../../base/common/uri.js';
 import { ILogService, LogLevel as LogServiceLevel } from '../../../platform/log/common/log.js';
@@ -19,6 +19,7 @@ import type * as undiciType from 'undici-types';
 import type * as tlsType from 'tls';
 import { lookupKerberosAuthorization } from '../../../platform/request/node/requestService.js';
 import * as proxyAgent from '@vscode/proxy-agent';
+import { getProxyURLFromResolverResult } from '@vscode/proxy-agent/out/agent.js';
 
 const require = createRequire(import.meta.url);
 const http = require('http');
@@ -44,15 +45,16 @@ export function connectProxyResolver(
 	const fallbackToLocalKerberos = useHostProxyDefault;
 	const loadLocalCertificates = useHostProxyDefault;
 	const isUseHostProxyEnabled = () => !isRemote || configProvider.getConfiguration('http').get<boolean>('useLocalProxyConfiguration', useHostProxyDefault);
+	const useDesktopSystemProxy = () => initData.uiKind === UIKind.Desktop && isUseHostProxyEnabled();
 	const timedResolveProxy = createTimedResolveProxy(extHostWorkspace, mainThreadTelemetry);
 	const params: ProxyAgentParams = {
 		resolveProxy: timedResolveProxy,
-		lookupProxyAuthorization: lookupProxyAuthorization.bind(undefined, extHostWorkspace, extHostLogService, mainThreadTelemetry, configProvider, {}, {}, initData.remote.isRemote, fallbackToLocalKerberos),
+		lookupProxyAuthorization: lookupProxyAuthorization.bind(undefined, extHostWorkspace, extHostLogService, mainThreadTelemetry, configProvider, {}, {}, isRemote, fallbackToLocalKerberos, useDesktopSystemProxy),
 		getProxyURL: () => getExtHostConfigValue<string>(configProvider, isRemote, 'http.proxy'),
-		getProxySupport: () => getExtHostConfigValue<ProxySupportSetting>(configProvider, isRemote, 'http.proxySupport') || 'off',
+		getProxySupport: () => useDesktopSystemProxy() ? 'override' : getExtHostConfigValue<ProxySupportSetting>(configProvider, isRemote, 'http.proxySupport') || 'off',
 		getNoProxyConfig: () => getExtHostConfigValue<string[]>(configProvider, isRemote, 'http.noProxy') || [],
-		isAdditionalFetchSupportEnabled: () => getExtHostConfigValue<boolean>(configProvider, isRemote, 'http.fetchAdditionalSupport', true),
-		isWebSocketPatchEnabled: () => getExtHostConfigValue<boolean>(configProvider, isRemote, 'http.webSocketAdditionalSupport', true),
+		isAdditionalFetchSupportEnabled: () => useDesktopSystemProxy() || getExtHostConfigValue<boolean>(configProvider, isRemote, 'http.fetchAdditionalSupport', true),
+		isWebSocketPatchEnabled: () => useDesktopSystemProxy() || getExtHostConfigValue<boolean>(configProvider, isRemote, 'http.webSocketAdditionalSupport', true),
 		addCertificatesV1: () => certSettingV1(configProvider, isRemote),
 		addCertificatesV2: () => certSettingV2(configProvider, isRemote),
 		loadSystemCertificatesFromNode: () => getExtHostConfigValue<boolean>(configProvider, isRemote, 'http.systemCertificatesNode', systemCertificatesNodeDefault),
@@ -112,7 +114,7 @@ export function connectProxyResolver(
 		},
 		env: process.env,
 	};
-	const { resolveProxyWithRequest, resolveProxyURL } = createProxyResolver(params);
+	const { resolveProxyWithRequest, resolveProxyURL } = createExtensionProxyResolver(params, useDesktopSystemProxy);
 	// eslint-disable-next-line local/code-no-any-casts
 	const target = (proxyAgent as any).default || proxyAgent;
 	target.resolveProxyURL = resolveProxyURL;
@@ -122,6 +124,31 @@ export function connectProxyResolver(
 
 	const lookup = createPatchedModules(params, resolveProxyWithRequest);
 	return configureModuleLoading(extensionService, lookup);
+}
+
+// Chromium resolves PAC rules for the full URL and tracks system proxy changes.
+// The generic Node resolver caches one route per origin, even across PAC changes.
+export function createExtensionProxyResolver(params: ProxyAgentParams, useDesktopSystemProxy: () => boolean): ReturnType<typeof createProxyResolver> {
+	const independent = createProxyResolver(params);
+	return {
+		resolveProxyURL: async url => {
+			if (!useDesktopSystemProxy()) {
+				return independent.resolveProxyURL(url);
+			}
+			return /^(https?|wss?):/i.test(url) ? getProxyURLFromResolverResult(await params.resolveProxy(url)).url : undefined;
+		},
+		resolveProxyWithRequest: (flags, req, options, url, callback) => {
+			if (!useDesktopSystemProxy()) {
+				return independent.resolveProxyWithRequest(flags, req, options, url, callback);
+			}
+			independent.resolveProxyWithRequest({ ...flags, useProxySettings: false }, req, options, url, () => {
+				// createHttpPatch supplies a Promise resolver here. Forwarding the promise
+				// also propagates a failed system lookup to ClientRequest's error event.
+				const resolve = callback as (value: string | Promise<string | undefined>) => void;
+				resolve(flags.useProxySettings ? params.resolveProxy(url) : 'DIRECT');
+			});
+		},
+	};
 }
 
 const unsafeHeaders = [
@@ -148,8 +175,10 @@ function patchGlobalFetch(params: ProxyAgentParams, configProvider: ExtHostConfi
 		(globalThis as any).__vscodePatchedFetch = patchedFetch;
 		// eslint-disable-next-line local/code-no-any-casts
 		(globalThis as any).__vscodeCreateFetchPatch = createPatchedFetch;
+		// Keep Node's fetch contract (streaming, Request/Response and custom dispatchers)
+		// for desktop extensions. Its HTTP(S) requests already use the system resolver.
 		let useElectronFetch = false;
-		if (!initData.remote.isRemote) {
+		if (!initData.remote.isRemote && initData.uiKind !== UIKind.Desktop) {
 			useElectronFetch = configProvider.getConfiguration('http').get<boolean>('electronFetch', useElectronFetchDefault);
 			disposables.add(configProvider.onDidChangeConfiguration(e => {
 				if (e.affectsConfiguration('http.electronFetch')) {
@@ -430,6 +459,7 @@ async function lookupProxyAuthorization(
 	basicAuthCache: Record<string, string | undefined>,
 	isRemote: boolean,
 	fallbackToLocalKerberos: boolean,
+	useDesktopSystemProxy: () => boolean,
 	proxyURL: string,
 	proxyAuthenticate: string | string[] | undefined,
 	state: { kerberosRequested?: boolean; basicAuthCacheUsed?: boolean; basicAuthAttempt?: number }
@@ -447,7 +477,7 @@ async function lookupProxyAuthorization(
 		state.kerberosRequested = true;
 
 		try {
-			const spnConfig = getExtHostConfigValue<string>(configProvider, isRemote, 'http.proxyKerberosServicePrincipal');
+			const spnConfig = useDesktopSystemProxy() ? undefined : getExtHostConfigValue<string>(configProvider, isRemote, 'http.proxyKerberosServicePrincipal');
 			const response = await lookupKerberosAuthorization(proxyURL, spnConfig, extHostLogService, 'ProxyResolver#lookupProxyAuthorization');
 			return 'Negotiate ' + response;
 		} catch (err) {

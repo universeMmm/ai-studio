@@ -81,7 +81,8 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 	) {
 		super({
-			showAlias: !Language.isDefaultVariant(),
+			// The original command alias remains searchable in the Chinese interface.
+			showAlias: Language.value() !== 'zh-cn' && !Language.isDefaultVariant(),
 			noResultsPick: () => ({
 				label: localize('noCommandResults', "No matching commands"),
 				commandId: ''

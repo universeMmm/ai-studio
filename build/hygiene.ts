@@ -23,6 +23,25 @@ const copyrightHeaderLines = [
 	' *--------------------------------------------------------------------------------------------*/',
 ];
 
+export function hasCopyrightHeader(lines: readonly string[]): boolean {
+	return copyrightHeaderLines.every((line, i) => {
+		if (i === 1) {
+			return lines[i] === line || lines[i] === ' *  Copyright (c) AI Studio contributors. All rights reserved.';
+		}
+		if (i === 2) {
+			return lines[i] === line || lines[i] === ' *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.';
+		}
+		return lines[i] === line;
+	});
+}
+
+export function findUnexpectedUnicode(line: string): RegExpExecArray | null {
+	// Chinese copy and comments are first-class in AI Studio. Continue rejecting
+	// replacement characters, invisible controls, and non-Han letter lookalikes.
+	// eslint-disable-next-line no-misleading-character-class
+	return /([^\t\n\r\x20-\x7E\p{Script=Han}，。；：？！、（）【】《》「」『』─–−›⊃⊇✔︎✓🎯🧪✍️⚠️🛑🔴🚗🚙🚕🎉✨❗⇧⌥⌘×÷¦⋯…↑↓￫→←↔⟷—·•●◆▼⟪⟫┌└├⏎↩√φ]+)/u.exec(line);
+}
+
 interface VinylFileWithLines extends VinylFile {
 	__lines: string[];
 }
@@ -69,9 +88,7 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 					line = index === -1 ? line : line.substring(0, index);
 				}
 			}
-			// Please do not add symbols that resemble ASCII letters!
-			// eslint-disable-next-line no-misleading-character-class
-			const m = /([^\t\n\r\x20-\x7E⊃⊇✔︎✓🎯🧪✍️⚠️🛑🔴🚗🚙🚕🎉✨❗⇧⌥⌘×÷¦⋯…↑↓￫→←↔⟷—·•●◆▼⟪⟫┌└├⏎↩√φ]+)/g.exec(line);
+			const m = findUnexpectedUnicode(line);
 			if (m) {
 				console.error(
 					file.relative + `(${i + 1},${m.index + 1}): Unexpected unicode character: "${m[0]}" (charCode: ${m[0].charCodeAt(0)}). To suppress, use // allow-any-unicode-next-line`
@@ -108,12 +125,9 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 	const copyrights = es.through(function (file: VinylFileWithLines) {
 		const lines = file.__lines;
 
-		for (let i = 0; i < copyrightHeaderLines.length; i++) {
-			if (lines[i] !== copyrightHeaderLines[i]) {
-				console.error(file.relative + ': Missing or bad copyright statement');
-				errorCount++;
-				break;
-			}
+		if (!hasCopyrightHeader(lines)) {
+			console.error(file.relative + ': Missing or bad copyright statement');
+			errorCount++;
 		}
 
 		this.emit('data', file);

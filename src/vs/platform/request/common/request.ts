@@ -8,6 +8,8 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { getErrorMessage } from '../../../base/common/errors.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { isElectron } from '../../../base/common/platform.js';
+import { env } from '../../../base/common/process.js';
 import { IHeaders, IRequestContext, IRequestOptions } from '../../../base/parts/request/common/request.js';
 import { localize } from '../../../nls.js';
 import { ConfigurationScope, Extensions, IConfigurationNode, IConfigurationRegistry } from '../../configuration/common/configurationRegistry.js';
@@ -170,20 +172,23 @@ export async function asJson<T = {}>(context: IRequestContext): Promise<T | null
 	}
 }
 
-export function updateProxyConfigurationsScope(useHostProxy: boolean, useHostProxyDefault: boolean): void {
-	registerProxyConfigurations(useHostProxy, useHostProxyDefault);
+export function updateProxyConfigurationsScope(useHostProxy: boolean | undefined, useHostProxyDefault: boolean): void {
+	registerProxyConfigurations(useHostProxy ?? useHostProxyDefault, useHostProxyDefault);
 }
 
-export const USER_LOCAL_AND_REMOTE_SETTINGS = [
+// The packaged CLI also reports an Electron version when running as plain Node.
+const usesDesktopNetwork = isElectron && !env['ELECTRON_RUN_AS_NODE'];
+
+// A desktop remote connection exposes its proxy controls only in remote settings.
+const certificateSettings = ['http.systemCertificates', 'http.systemCertificatesNode', 'http.experimental.systemCertificatesV2'];
+export const USER_LOCAL_AND_REMOTE_SETTINGS = usesDesktopNetwork ? certificateSettings : [
+	...certificateSettings,
 	'http.proxy',
 	'http.proxyStrictSSL',
 	'http.proxyKerberosServicePrincipal',
 	'http.noProxy',
 	'http.proxyAuthorization',
 	'http.proxySupport',
-	'http.systemCertificates',
-	'http.systemCertificatesNode',
-	'http.experimental.systemCertificatesV2',
 	'http.fetchAdditionalSupport',
 	'http.experimental.networkInterfaceCheckInterval',
 ];
@@ -193,7 +198,7 @@ export const systemCertificatesNodeDefault = false;
 let proxyConfiguration: IConfigurationNode[] = [];
 let previousUseHostProxy: boolean | undefined = undefined;
 let previousUseHostProxyDefault: boolean | undefined = undefined;
-function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = true): void {
+function registerProxyConfigurations(useHostProxy?: boolean, useHostProxyDefault = true): void {
 	if (previousUseHostProxy === useHostProxy && previousUseHostProxyDefault === useHostProxyDefault) {
 		return;
 	}
@@ -203,6 +208,8 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 
 	const configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
 	const oldProxyConfiguration = proxyConfiguration;
+	// Chromium owns local desktop routing. Manual routes apply only to a separate remote host.
+	const allowProxySettings = !usesDesktopNetwork || useHostProxy === false;
 	proxyConfiguration = [
 		{
 			id: 'http',
@@ -212,6 +219,7 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 			scope: ConfigurationScope.MACHINE,
 			properties: {
 				'http.useLocalProxyConfiguration': {
+					included: !usesDesktopNetwork || useHostProxy !== undefined,
 					type: 'boolean',
 					default: useHostProxyDefault,
 					markdownDescription: localize('useLocalProxy', "Controls whether in the remote extension host the local proxy configuration should be used. This setting only applies as a remote setting during [remote development](https://aka.ms/vscode-remote)."),
@@ -227,6 +235,7 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 			scope: ConfigurationScope.APPLICATION,
 			properties: {
 				'http.electronFetch': {
+					included: !usesDesktopNetwork,
 					type: 'boolean',
 					default: false,
 					description: localize('electronFetch', "Controls whether use of Electron's fetch implementation instead of Node.js' should be enabled. All local extensions will get Electron's fetch implementation for the global fetch API."),
@@ -239,38 +248,44 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 			order: 15,
 			title: localize('httpConfigurationTitle', "HTTP"),
 			type: 'object',
-			scope: useHostProxy ? ConfigurationScope.APPLICATION : ConfigurationScope.MACHINE,
+			scope: useHostProxy === false ? ConfigurationScope.MACHINE : ConfigurationScope.APPLICATION,
 			properties: {
 				'http.proxy': {
+					included: allowProxySettings,
 					type: 'string',
 					pattern: '^(https?|socks|socks4a?|socks5h?)://([^:]*(:[^@]*)?@)?([^:]+|\\[[:0-9a-fA-F]+\\])(:\\d+)?/?$|^$',
-					markdownDescription: localize('proxy', "The proxy setting to use. If not set, will be inherited from the `http_proxy` and `https_proxy` environment variables. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('proxy', "The proxy setting to use. If not set, will be inherited from the `http_proxy` and `https_proxy` environment variables."),
 					restricted: true
 				},
 				'http.proxyStrictSSL': {
+					included: allowProxySettings,
 					type: 'boolean',
 					default: true,
-					markdownDescription: localize('strictSSL', "Controls whether the proxy server certificate should be verified against the list of supplied CAs. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('strictSSL', "Controls whether the proxy server certificate should be verified against the list of supplied CAs."),
 					restricted: true
 				},
 				'http.proxyKerberosServicePrincipal': {
+					included: allowProxySettings,
 					type: 'string',
-					markdownDescription: localize('proxyKerberosServicePrincipal', "Overrides the principal service name for Kerberos authentication with the HTTP proxy. A default based on the proxy hostname is used when this is not set. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('proxyKerberosServicePrincipal', "Overrides the principal service name for Kerberos authentication with the HTTP proxy. A default based on the proxy hostname is used when this is not set."),
 					restricted: true
 				},
 				'http.noProxy': {
+					included: allowProxySettings,
 					type: 'array',
 					items: { type: 'string' },
-					markdownDescription: localize('noProxy', "Specifies domain names for which proxy settings should be ignored for HTTP/HTTPS requests. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('noProxy', "Specifies domain names for which proxy settings should be ignored for HTTP/HTTPS requests."),
 					restricted: true
 				},
 				'http.proxyAuthorization': {
+					included: allowProxySettings,
 					type: ['null', 'string'],
 					default: null,
-					markdownDescription: localize('proxyAuthorization', "The value to send as the `Proxy-Authorization` header for every network request. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('proxyAuthorization', "The value to send as the `Proxy-Authorization` header for every network request."),
 					restricted: true
 				},
 				'http.proxySupport': {
+					included: allowProxySettings,
 					type: 'string',
 					enum: ['off', 'on', 'fallback', 'override'],
 					enumDescriptions: [
@@ -280,20 +295,20 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 						localize('proxySupportOverride', "Enable proxy support for extensions, override request options."),
 					],
 					default: 'override',
-					markdownDescription: localize('proxySupport', "Use the proxy support for extensions. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('proxySupport', "Use the proxy support for extensions."),
 					restricted: true
 				},
 				'http.systemCertificates': {
 					type: 'boolean',
 					default: true,
-					markdownDescription: localize('systemCertificates', "Controls whether CA certificates should be loaded from the OS. On Windows and macOS, a reload of the window is required after turning this off. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('systemCertificates', "Controls whether CA certificates should be loaded from the OS. On Windows and macOS, a reload of the window is required after turning this off."),
 					restricted: true
 				},
 				'http.systemCertificatesNode': {
 					type: 'boolean',
 					tags: ['experimental'],
 					default: systemCertificatesNodeDefault,
-					markdownDescription: localize('systemCertificatesNode', "Controls whether system certificates should be loaded using Node.js built-in support. Reload the window after changing this setting. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('systemCertificatesNode', "Controls whether system certificates should be loaded using Node.js built-in support. Reload the window after changing this setting."),
 					restricted: true,
 					experiment: {
 						mode: 'auto'
@@ -303,27 +318,30 @@ function registerProxyConfigurations(useHostProxy = true, useHostProxyDefault = 
 					type: 'boolean',
 					tags: ['experimental'],
 					default: false,
-					markdownDescription: localize('systemCertificatesV2', "Controls whether experimental loading of CA certificates from the OS should be enabled. This uses a more general approach than the default implementation. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('systemCertificatesV2', "Controls whether experimental loading of CA certificates from the OS should be enabled. This uses a more general approach than the default implementation."),
 					restricted: true
 				},
 				'http.fetchAdditionalSupport': {
+					included: allowProxySettings,
 					type: 'boolean',
 					default: true,
-					markdownDescription: localize('fetchAdditionalSupport', "Controls whether Node.js' fetch implementation should be extended with additional support. Currently proxy support ({1}) and system certificates ({2}) are added when the corresponding settings are enabled. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`', '`#http.proxySupport#`', '`#http.systemCertificates#`'),
+					markdownDescription: localize('fetchAdditionalSupport', "Controls whether Node.js' fetch implementation should be extended with additional support. Currently proxy support ({0}) and system certificates ({1}) are added when the corresponding settings are enabled.", '`#http.proxySupport#`', '`#http.systemCertificates#`'),
 					restricted: true
 				},
 				'http.webSocketAdditionalSupport': {
+					included: allowProxySettings,
 					type: 'boolean',
 					default: true,
-					markdownDescription: localize('webSocketAdditionalSupport', "Controls whether the built-in WebSocket implementation should be extended with additional support. Currently proxy support ({1}) and system certificates ({2}) are added when the corresponding settings are enabled. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`', '`#http.proxySupport#`', '`#http.systemCertificates#`'),
+					markdownDescription: localize('webSocketAdditionalSupport', "Controls whether the built-in WebSocket implementation should be extended with additional support. Currently proxy support ({0}) and system certificates ({1}) are added when the corresponding settings are enabled.", '`#http.proxySupport#`', '`#http.systemCertificates#`'),
 					restricted: true
 				},
 				'http.experimental.networkInterfaceCheckInterval': {
+					included: allowProxySettings,
 					type: 'number',
 					default: 300,
 					minimum: -1,
 					tags: ['experimental'],
-					markdownDescription: localize('networkInterfaceCheckInterval', "Controls the interval in seconds for checking network interface changes to invalidate the proxy cache. Set to -1 to disable. When during [remote development](https://aka.ms/vscode-remote) the {0} setting is disabled this setting can be configured in the local and the remote settings separately.", '`#http.useLocalProxyConfiguration#`'),
+					markdownDescription: localize('networkInterfaceCheckInterval', "Controls the interval in seconds for checking network interface changes to invalidate the proxy cache. Set to -1 to disable."),
 					restricted: true,
 					experiment: {
 						mode: 'auto'

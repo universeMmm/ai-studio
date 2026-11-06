@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Agent Orchestration Tool Definitions
  *  Tools for sub-agent spawning, task management, inter-agent communication,
  *  and user memory recall. These complement the 11 built-in tools in aiTools.ts.
@@ -13,7 +18,7 @@ export function getAgentTools(): AITool[] {
 			name: 'Agent',
 			description: `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-The Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+The Agent tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
 Available agent types and the tools they have access to:
 - general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. (Tools: all)
@@ -22,9 +27,7 @@ Available agent types and the tools they have access to:
 - verification: Use this agent to verify that implementation work is correct before reporting completion. Outputs PASS/FAIL/PARTIAL verdict with evidence. (Tools: read_file, search_content, search_files, list_directory, run_command, read_lints)
 
 Usage notes:
-- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
 - When the agent is done, it will return a single message back to you
-- You can optionally run agents in the background using the run_in_background parameter
 - Clearly tell the agent whether you expect it to write code or just to do research`,
 			input_schema: {
 				type: 'object',
@@ -36,7 +39,6 @@ Usage notes:
 					},
 					description: { type: 'string', description: 'A short (3-5 word) description of the task' },
 					prompt: { type: 'string', description: 'The task for the agent to perform' },
-					run_in_background: { type: 'boolean', description: 'Set to true to run this agent in the background. You will be notified when it completes.' },
 					name: { type: 'string', description: 'Name for the spawned agent. Makes it addressable via SendMessage.' },
 					isolation: { type: 'string', enum: ['worktree'], description: 'Isolation mode. "worktree" creates a temporary git worktree for the sub-agent.' },
 				},
@@ -167,8 +169,7 @@ Approving shutdown terminates the sub-agent. Rejecting plan sends the teammate b
 							required: ['label', 'description'],
 						},
 						description: 'Available choices (2-4 options). The user can also provide custom text.',
-						} as any,
-
+					},
 					multiSelect: { type: 'boolean', description: 'Allow multiple answers (default false)' },
 				},
 				required: ['question', 'options'],
@@ -178,7 +179,7 @@ Approving shutdown terminates the sub-agent. Rejecting plan sends the teammate b
 		// --- EnterPlanMode (Phase 3) ---
 		{
 			name: 'EnterPlanMode',
-			description: 'Enter plan mode — restrict tools to read-only, explore the codebase, and write an implementation plan to a plan file. Call ExitPlanMode when the plan is ready for user approval.',
+			description: 'Enter plan mode — restrict tools to read-only, explore the codebase, and prepare an implementation plan. Call ExitPlanMode when the plan is ready for user approval.',
 			input_schema: {
 				type: 'object',
 				properties: {},
@@ -189,13 +190,14 @@ Approving shutdown terminates the sub-agent. Rejecting plan sends the teammate b
 		// --- ExitPlanMode (Phase 3) ---
 		{
 			name: 'ExitPlanMode',
-			description: 'Exit plan mode and present the implementation plan for user approval. The plan must already be written to a plan file.',
+			description: 'Exit plan mode and present the implementation plan for user approval. Pass the complete plan as Markdown content.',
 			input_schema: {
 				type: 'object',
 				properties: {
-					planFile: { type: 'string', description: 'Path to the written plan file (required)' },
+					content: { type: 'string', description: 'The complete proposed implementation plan in Markdown.' },
+					planFile: { type: 'string', description: 'An existing workspace plan file, if there is no inline content.' },
 				},
-				required: ['planFile'],
+				required: [],
 			},
 		},
 	];

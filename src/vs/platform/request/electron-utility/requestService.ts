@@ -6,7 +6,7 @@
 import { net } from 'electron';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { IRequestContext, IRequestOptions } from '../../../base/parts/request/common/request.js';
-import { IRawRequestFunction, RequestService as NodeRequestService } from '../node/requestService.js';
+import { IRawRequestFunction, nodeRequest, RequestService as NodeRequestService } from '../node/requestService.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { ILogService } from '../../log/common/log.js';
@@ -23,10 +23,11 @@ export class RequestService extends NodeRequestService {
 		@INativeEnvironmentService environmentService: INativeEnvironmentService,
 		@ILogService logService: ILogService,
 	) {
-		super('local', configurationService, environmentService, logService);
+		super('desktop', configurationService, environmentService, logService);
 	}
 
 	override request(options: IRequestOptions, token: CancellationToken): Promise<IRequestContext> {
-		return super.request({ ...(options || {}), getRawRequest, isChromiumNetwork: true }, token);
+		// Chromium resolves the system proxy and handles authentication for this request.
+		return this.logAndRequest(options, () => nodeRequest({ ...options, getRawRequest, isChromiumNetwork: true }, token));
 	}
 }

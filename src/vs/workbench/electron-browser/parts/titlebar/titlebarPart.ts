@@ -274,7 +274,14 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		super.layout(width, height);
 
 		if (useWindowControlsOverlay(this.configurationService)) {
-			const newHeight = Math.round(height * getZoomFactor(getWindow(this.element)));
+			const zoomFactor = getZoomFactor(getWindow(this.element));
+			const newHeight = Math.round(height * zoomFactor);
+			if (isMacintosh) {
+				// Cocoa offsets the controls by half the title bar height. Reserve the three
+				// buttons, their spacing, and a drag gap in native (unzoomed) points.
+				const inset = Math.ceil(newHeight / 2) + 68;
+				this.element.style.setProperty('--studio-mac-controls-width', `${inset / (this.preventZoom ? 1 : zoomFactor)}px`);
+			}
 			if (newHeight !== this.cachedWindowControlHeight) {
 				this.cachedWindowControlHeight = newHeight;
 				this.nativeHostService.updateWindowControls({

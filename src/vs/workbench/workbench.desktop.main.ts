@@ -21,6 +21,7 @@ import './workbench.common.main.js';
 
 import './electron-browser/desktop.main.js';
 import './electron-browser/desktop.contribution.js';
+import './contrib/studioShell/browser/studioShell.contribution.js';
 
 //#endregion
 
@@ -97,10 +98,13 @@ import './services/browserView/electron-browser/playwrightWorkbenchService.js';
 import './services/process/electron-browser/processService.js';
 import './services/power/electron-browser/powerService.js';
 
-import { registerSingleton } from '../platform/instantiation/common/extensions.js';
+import { InstantiationType, registerSingleton } from '../platform/instantiation/common/extensions.js';
+import { IUserDataSyncService } from '../platform/userDataSync/common/userDataSync.js';
+import { NullUserDataSyncService } from '../platform/userDataSync/common/nullUserDataSyncService.js';
 import { IUserDataInitializationService, UserDataInitializationService } from './services/userData/browser/userDataInit.js';
 import { SyncDescriptor } from '../platform/instantiation/common/descriptors.js';
 
+registerSingleton(IUserDataSyncService, NullUserDataSyncService, InstantiationType.Delayed);
 registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataInitializationService, [[]], true));
 
 

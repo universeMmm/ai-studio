@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Built-in Tool Definitions
  *  Describes the 11 tools available to the AI agent.
  *--------------------------------------------------------------------------------------------*/
@@ -75,11 +80,11 @@ export function getBuiltInTools(): AITool[] {
 		},
 		{
 			name: BuiltInToolName.SearchPattern,
-			description: 'Searches the codebase using a raw ripgrep command. Use for complex multi-file searches where you need full control over grep flags. Returns up to 100 matching lines with file paths.',
+			description: 'Searches workspace files with ripgrep. Supports text, regex, file type, glob, case, count and context options. Returns up to 100 matching lines with file paths.',
 			input_schema: {
 				type: 'object',
 				properties: {
-					rg_args: { type: 'string', description: 'Arguments to pass to ripgrep (without the "rg" prefix). Example: "--type ts -l" or "--glob \"*.css\" --max-count 5 search_term".' },
+					rg_args: { type: 'string', description: 'Arguments to pass to ripgrep (without the "rg" prefix). Example: "--type ts -l search_term" or "--glob \"*.css\" --max-count 5 search_term".' },
 				},
 				required: ['rg_args'],
 			},

@@ -1,21 +1,31 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Test Mock Factory
  *  Typed mock implementations of all AI service interfaces.
  *  Use these instead of hand-written `as any` mocks — constructor signature
  *  changes will cause compile-time errors here, not silent test failures.
  *--------------------------------------------------------------------------------------------*/
 
-import type { IAIModelService } from '../../../src/vs/platform/ai/browser/aiModelService.js';
-import type { IAIIndexService } from '../../../src/vs/platform/ai/browser/aiIndexService.js';
-import type { IAIContextService, BuildContextInput } from '../../../src/vs/platform/ai/browser/aiContextService.js';
-import type { AIMessage, AITool, AIRequestOptions, AIStreamCallbacks, AICompletionOptions, AICompletionCallbacks, FileContext, AIModel, CodeSnippet } from '../../../src/vs/platform/ai/common/aiTypes.js';
-import type { IFileService } from '../../../src/vs/platform/files/common/files.js';
-import type { ILogService } from '../../../src/vs/platform/log/common/log.js';
-import type { IConfigurationService } from '../../../src/vs/platform/configuration/common/configuration.js';
-import type { IDiffStore } from '../../../src/vs/workbench/contrib/aiDiffApply/browser/diffStore.js';
-import type { IMarkerService } from '../../../src/vs/platform/markers/common/markers.js';
-import type { IWorkspaceContextService } from '../../../src/vs/platform/workspace/common/workspace.js';
-import { Emitter } from '../../../src/vs/base/common/event.js';
+import type { IAIModelService } from '../../../../src/vs/platform/ai/browser/aiModelService.js';
+import type { IAIIndexService } from '../../../../src/vs/platform/ai/browser/aiIndexService.js';
+import type { IAIContextService, BuildContextInput } from '../../../../src/vs/platform/ai/browser/aiContextService.js';
+import type { AIMessage, AITool, AIRequestOptions, AIStreamCallbacks, AICompletionOptions, AICompletionCallbacks, FileContext, AIModel, CodeSnippet } from '../../../../src/vs/platform/ai/common/aiTypes.js';
+import type { IFileService } from '../../../../src/vs/platform/files/common/files.js';
+import type { ILogService } from '../../../../src/vs/platform/log/common/log.js';
+import type { IConfigurationService } from '../../../../src/vs/platform/configuration/common/configuration.js';
+import type { IDiffStore } from '../../../../src/vs/workbench/contrib/aiDiffApply/browser/diffStore.js';
+import type { IMarkerService } from '../../../../src/vs/platform/markers/common/markers.js';
+import { type IWorkspaceContextService, type IWorkspace, WorkspaceFolder } from '../../../../src/vs/platform/workspace/common/workspace.js';
+import { AIAgentService } from '../../../../src/vs/platform/ai/browser/aiAgentService.js';
+import { TaskManager } from '../../../../src/vs/platform/ai/common/taskManager.js';
+import { UserMemoryStore } from '../../../../src/vs/platform/ai/common/userMemoryStore.js';
+import { SubAgentManager } from '../../../../src/vs/platform/ai/browser/subAgentManager.js';
+import { Emitter } from '../../../../src/vs/base/common/event.js';
+import { URI } from '../../../../src/vs/base/common/uri.js';
 
 // ── AI Model Service ──────────────────────────────────────────
 
@@ -72,9 +82,9 @@ export class MockAIIndexService implements IAIIndexService {
 	stats = { totalFiles: 0, totalChunks: 0, lastIndexedAt: 0, isReady: false };
 
 	async search(_query: string, _topK: number): Promise<CodeSnippet[]> { return []; }
-	async reindex(): Promise<void> {}
-	async indexFile(_fp: string): Promise<void> {}
-	async removeFile(_fp: string): Promise<void> {}
+	async reindex(): Promise<void> { }
+	async indexFile(_fp: string): Promise<void> { }
+	async removeFile(_fp: string): Promise<void> { }
 }
 
 // ── Context Service ───────────────────────────────────────────
@@ -97,11 +107,11 @@ export class MockAIContextService implements IAIContextService {
 
 export class MockLogService implements ILogService {
 	declare readonly _serviceBrand: undefined;
-	info(..._args: any[]): void {}
-	error(..._args: any[]): void {}
-	warn(..._args: any[]): void {}
-	trace(..._args: any[]): void {}
-	debug(..._args: any[]): void {}
+	info(..._args: any[]): void { }
+	error(..._args: any[]): void { }
+	warn(..._args: any[]): void { }
+	trace(..._args: any[]): void { }
+	debug(..._args: any[]): void { }
 }
 
 // ── Configuration Service ─────────────────────────────────────
@@ -117,7 +127,7 @@ export class MockConfigurationService implements Partial<IConfigurationService> 
 	}
 
 	onDidChangeConfiguration = new Emitter<any>().event;
-	updateValue = async () => {};
+	updateValue = async () => { };
 }
 
 // ── File Service ──────────────────────────────────────────────
@@ -133,7 +143,7 @@ export class MockFileService implements Partial<IFileService> {
 		return { value: { toString: () => this._files.get(path) || '' } };
 	}
 
-	async writeFile(_uri: any, _content: any): Promise<void> {}
+	async writeFile(_uri: any, _content: any): Promise<void> { }
 
 	async resolve(_uri: any): Promise<{ children: Array<{ name: string; isDirectory: boolean }> }> {
 		return { children: [] };
@@ -147,10 +157,10 @@ export class MockDiffStore implements IDiffStore {
 	groups: any[] = [];
 	onDidChange = new Emitter<void>().event;
 
-	async initialize(_ws: string): Promise<void> {}
-	addGroup(_g: any): void {}
-	rejectHunk(_gid: string, _hid: string): void {}
-	rejectAll(_gid: string): void {}
+	async initialize(_ws: string): Promise<void> { }
+	addGroup(_g: any): void { }
+	rejectHunk(_gid: string, _hid: string): void { }
+	rejectAll(_gid: string): void { }
 	getAppliedHunksForFile(_fp: string): any[] { return []; }
 	getAllAppliedHunks(): any[] { return []; }
 }
@@ -166,7 +176,10 @@ export class MockMarkerService implements Partial<IMarkerService> {
 
 export class MockWorkspaceContextService implements Partial<IWorkspaceContextService> {
 	_serviceBrand: undefined;
-	getWorkspace = () => ({ folders: [{ uri: { fsPath: '/tmp/test-workspace' } }] }) as any;
+	getWorkspace = (): IWorkspace => ({
+		id: 'test-workspace',
+		folders: [new WorkspaceFolder({ uri: URI.file('/tmp/test-workspace'), name: 'test-workspace', index: 0 })],
+	});
 }
 
 // ── Agent Deps Factory ────────────────────────────────────────
@@ -196,4 +209,17 @@ export function createAgentDeps(overrides?: Partial<AgentTestDeps>): AgentTestDe
 		workspaceContextService: new MockWorkspaceContextService() as unknown as IWorkspaceContextService,
 	};
 	return { ...defaults, ...overrides };
+}
+
+export function createTestAgent(overrides?: Partial<AgentTestDeps>): AIAgentService {
+	const deps = createAgentDeps(overrides);
+	const subAgents = new SubAgentManager(
+		deps.aiModelService, deps.logService, deps.fileService, deps.workspaceContextService,
+		deps.configurationService, deps.indexService, deps.diffStore, deps.markerService,
+	);
+	return new AIAgentService(
+		deps.aiModelService, deps.indexService, deps.contextService, deps.fileService, deps.logService,
+		deps.configurationService, deps.diffStore, deps.markerService, deps.workspaceContextService,
+		new TaskManager(), subAgents, new UserMemoryStore(deps.fileService, deps.logService),
+	);
 }

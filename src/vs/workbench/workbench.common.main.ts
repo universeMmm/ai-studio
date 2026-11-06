@@ -119,15 +119,15 @@ import './services/views/browser/viewsService.js';
 import './services/quickinput/browser/quickInputService.js';
 // AI Studio: userDataSync disabled — using null implementation
 import './services/userDataSync/browser/nullUserDataSyncWorkbenchService.js';
-// AI Studio: authentication services disabled
+// The extension host requires these local services for its authentication and MCP RPC endpoints.
 // import './services/authentication/browser/authenticationService.js';
-// import './services/authentication/browser/authenticationExtensionsService.js';
+import './services/authentication/browser/authenticationExtensionsService.js';
 // import './services/authentication/browser/authenticationUsageService.js';
 // import './services/authentication/browser/authenticationAccessService.js';
 // import './services/authentication/browser/authenticationMcpUsageService.js';
 // import './services/authentication/browser/authenticationMcpAccessService.js';
 // import './services/authentication/browser/authenticationMcpService.js';
-// import './services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
+import './services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
 // import './services/authentication/browser/authenticationQueryService.js';
 import '../platform/hover/browser/hoverService.js';
 import '../platform/userInteraction/browser/userInteractionServiceImpl.js';
@@ -248,6 +248,7 @@ import '../platform/ai/browser/ai.contribution.js';
 import './contrib/aiChat/browser/aiStudioChatAgent.js';
 import './contrib/aiChat/browser/aiCommands.js';
 import './contrib/aiStatusBar/browser/aiStatusBar.contribution.js';
+import './contrib/aiContextView/browser/aiContextView.contribution.js';
 import './contrib/aiDiffApply/browser/diff.contribution.js';
 
 // Interactive

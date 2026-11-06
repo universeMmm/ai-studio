@@ -1,22 +1,27 @@
 /*---------------------------------------------------------------------------------------------
- *  AI Studio - Index Service
- *  Hybrid search: API-based semantic + ripgrep keyword. Falls back gracefully.
- *
- *  NOTE: child_process is imported dynamically to avoid static ESM
- *  resolution failures in Electron's sandboxed renderer process.
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from "../../../base/common/lifecycle.js";
-import { Emitter, Event } from "../../../base/common/event.js";
-import { createDecorator } from "../../../platform/instantiation/common/instantiation.js";
-import { IFileService } from "../../../platform/files/common/files.js";
-import { ILogService } from "../../../platform/log/common/log.js";
-import { IWorkspaceContextService } from "../../../platform/workspace/common/workspace.js";
-import { IAIModelService } from "./aiModelService.js";
-import type { CodeSnippet, IndexStats } from "../common/aiTypes.js";
-import { IndexBuilder } from "./indexBuilder.js";
+/*---------------------------------------------------------------------------------------------
+ *  AI Studio - Index Service
+ *  Hybrid search: API-based semantic + ripgrep keyword. Falls back gracefully.
+ *--------------------------------------------------------------------------------------------*/
 
-export const IAIIndexService = createDecorator<IAIIndexService>("aiIndexService");
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../base/common/event.js';
+import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
+import { IFileService } from '../../../platform/files/common/files.js';
+import { ILogService } from '../../../platform/log/common/log.js';
+import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { IAIModelService } from './aiModelService.js';
+import type { CodeSnippet, IndexStats } from '../common/aiTypes.js';
+import { isAbsolute, relative, resolve } from '../../../base/common/path.js';
+import { Schemas } from '../../../base/common/network.js';
+import { runIndexRipgrep } from './indexRipgrep.js';
+import { IndexBuilder } from './indexBuilder.js';
+
+export const IAIIndexService = createDecorator<IAIIndexService>('aiIndexService');
 
 export interface IAIIndexService {
 	readonly _serviceBrand: undefined;
@@ -29,128 +34,155 @@ export interface IAIIndexService {
 	removeFile(filePath: string): Promise<void>;
 }
 
-// --- Spawn helper (uses IPC bridge in sandboxed renderer) -------------------
-async function _spawnRg(args: string[], cwd: string, timeoutMs: number): Promise<string> {
-	// Try IPC bridge first (sandboxed renderer)
-	try {
-		const vscodeWin = (globalThis as any).vscode;
-		if (vscodeWin?.ipcRenderer?.invoke) {
-			const result = await vscodeWin.ipcRenderer.invoke(
-				'vscode:ai-studio:exec',
-				{ command: 'rg', args, cwd, timeout: timeoutMs }
-			);
-			if (result && typeof result === 'object') {
-				if (result.exitCode === 0 || (result.code === 0)) {
-					return String(result.stdout || '');
-				}
-				throw new Error(String(result.stderr || 'rg returned non-zero exit'));
-			}
-		}
-	} catch (e) { throw e; }
-
-	// Fallback: try dynamic import of child_process (works in non-sandboxed dev)
-	const spawn = (await import("child_process")).spawn;
-	return new Promise((resolve, reject) => {
-		const child = spawn("rg", args, { cwd, stdio: ["ignore", "pipe", "pipe"], shell: false });
-		let stdout = "";
-		let stderr = "";
-		const timer = setTimeout(() => {
-			child.kill("SIGTERM");
-			reject(new Error("rg timed out"));
-		}, timeoutMs);
-		child.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
-		child.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
-		child.on("close", code => {
-			clearTimeout(timer);
-			if (code === 0 || stdout) resolve(stdout);
-			else reject(new Error(stderr || "No matches found."));
-		});
-		child.on("error", err => { clearTimeout(timer); reject(err); });
-	});
+interface WorkspaceIndex {
+	builder: IndexBuilder;
+	initialized: Promise<void>;
+	firstScan: Promise<void>;
 }
 
 export class AIIndexService extends Disposable implements IAIIndexService {
 	declare readonly _serviceBrand: undefined;
 
-	private _builder: IndexBuilder | null = null;
+	private readonly indexes = new Map<string, WorkspaceIndex>();
 	private readonly _onDidBecomeReady = this._register(new Emitter<void>());
 	readonly onDidBecomeReady = this._onDidBecomeReady.event;
-	private _stats: IndexStats = { totalFiles: 0, totalChunks: 0, lastIndexedAt: 0, isReady: false };
+	private ready = false;
+	private lastIndexedAt = 0;
+	private generation = 0;
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IAIModelService private readonly modelService: IAIModelService,
-	) { super(); this._init(); }
-
-	get isReady() { return this._stats.isReady; }
-	get stats() { return this._stats; }
-
-	private async _init(): Promise<void> {
-		const root = this._getRoot();
-		this._builder = new IndexBuilder(root, this.fileService, this.logService, this.modelService);
-		try {
-			await this._builder.initialize();
-			await this._builder.fullIndex();
-			const s = await this._builder.getStore()?.getStats();
-			this._stats = { totalFiles: s?.totalFiles ?? 0, totalChunks: s?.totalChunks ?? 0, lastIndexedAt: Date.now(), isReady: true };
-		} catch (err) {
-			const detail = err instanceof Error ? err.message : String(err);
-			this.logService.warn("[AIIndexService] Index initialization failed: " + detail);
-			this.logService.warn("[AIIndexService] Semantic search is UNAVAILABLE. The AI will use keyword-only search.");
-			this.logService.warn("[AIIndexService] To enable semantic search, install: npm install @vscode/sqlite3 hnswlib-node");
-			this._stats = { totalFiles: 0, totalChunks: 0, lastIndexedAt: 0, isReady: true };
+	) {
+		super();
+		void this.syncFolders();
+		if (this.workspaceContextService.onDidChangeWorkspaceFolders) {
+			this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => { void this.syncFolders(); }));
 		}
-		this._onDidBecomeReady.fire();
+	}
+
+	get isReady(): boolean { return this.ready; }
+	get stats(): IndexStats {
+		let totalFiles = 0;
+		let totalChunks = 0;
+		for (const { builder } of this.indexes.values()) {
+			const stats = builder.getStore()?.stats;
+			totalFiles += stats?.totalFiles ?? 0;
+			totalChunks += stats?.totalChunks ?? 0;
+		}
+		return { totalFiles, totalChunks, lastIndexedAt: this.lastIndexedAt, isReady: this.ready };
+	}
+
+	private async syncFolders(): Promise<void> {
+		const generation = ++this.generation;
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		const roots = new Set(folders.filter(folder => folder.uri.scheme === Schemas.file).map(folder => folder.uri.fsPath));
+		for (const [root, { builder }] of this.indexes) {
+			if (!roots.has(root)) { builder.dispose(); this.indexes.delete(root); }
+		}
+		this.ready = false;
+		for (const root of roots) {
+			if (this.indexes.has(root)) { continue; }
+			const builder = new IndexBuilder(root, this.fileService, this.logService, this.modelService);
+			const initialized = builder.initialize();
+			const firstScan = initialized.then(() => builder.fullIndex()).catch(error => {
+				this.logService.warn('[AIIndexService] Cannot build index for ' + root, error);
+			});
+			this.indexes.set(root, { builder, initialized, firstScan });
+		}
+		await Promise.all([...this.indexes.values()].map(index => index.firstScan));
+		if (generation === this.generation) {
+			this.ready = true;
+			this.lastIndexedAt = Date.now();
+			this._onDidBecomeReady.fire();
+		}
 	}
 
 	async search(query: string, topK: number): Promise<CodeSnippet[]> {
-		const semantic = (async () => {
-			try {
-				if (!this._builder?.isReady()) return [];
-				const emb = await this._builder.embed(query);
-				return (await this._builder.getStore()?.searchSemantic(emb, topK * 2) ?? []).map((r: any) => ({
-					...r.chunk, score: r.score * 0.6,
-				}));
-			} catch { return []; }
-		})();
-
-		const keyword = this._keywordSearch(query, topK).then(r => r.map(s => ({ ...s, score: 0.4 })));
-
-		const [s, k] = await Promise.all([semantic, keyword]);
-		const map = new Map<string, CodeSnippet>();
-		for (const x of s) map.set(x.filePath + ":" + x.startLine, x);
-		for (const x of k) {
-			const key = x.filePath + ":" + x.startLine;
-			if (map.has(key)) {
-				map.get(key)!.score += 0.4;
-			} else {
-				map.set(key, x);
-			}
+		if (!query.trim() || topK <= 0) { return []; }
+		const indexes = [...this.indexes.values()];
+		const multiRoot = indexes.length > 1;
+		const matches = new Map<string, CodeSnippet>();
+		const indexed = indexes.find(({ builder }) => builder.isReady() && builder.getStore()?.stats.totalChunks);
+		const semantic = indexed ? indexed.builder.embed(query).then(async embedding => {
+			const hits = await Promise.all(indexes.filter(({ builder }) => builder.isReady())
+				.map(({ builder }) => builder.getStore()!.searchSemantic(embedding, topK)));
+			return hits.flat().map(({ chunk, score }) => ({ ...chunk, score: score * 0.6 }));
+		}).catch(() => []) : Promise.resolve([]);
+		const keyword = Promise.all(indexes.map(({ builder }) => this.keywordSearch(builder.workspaceRoot, query, topK)));
+		const [vectors, lines] = await Promise.all([semantic, keyword]);
+		for (const snippet of [...vectors, ...lines.flat()]) {
+			const key = snippet.filePath + ':' + snippet.startLine;
+			const existing = matches.get(key);
+			if (existing) { existing.score += snippet.score; } else { matches.set(key, snippet); }
 		}
-		return [...map.values()].sort((a, b) => b.score - a.score).slice(0, topK);
+		const results = [...matches.values()].sort((a, b) => b.score - a.score).slice(0, topK);
+		return multiRoot ? results : results.map(item => ({ ...item, filePath: relative(indexes[0].builder.workspaceRoot, item.filePath) }));
 	}
 
-	private async _keywordSearch(query: string, topK: number): Promise<CodeSnippet[]> {
-		const words = query.split(/\s+/).filter(w => w.length > 1);
-		if (!words.length) return [];
+	private async keywordSearch(root: string, query: string, topK: number): Promise<CodeSnippet[]> {
+		const words = query.split(/\s+/).filter(word => word.length > 1);
+		if (!words.length) { return []; }
 		try {
-			const out = await _spawnRg(["--line-number", "--max-count=" + (topK * 3), words.join("|")], this._getRoot(), 10_000);
-			return out.trim().split("\n").slice(0, topK).map(line => {
-				const m = line.match(/^(.+?):(\d+):(.*)$/);
-				return m ? { filePath: m[1], startLine: parseInt(m[2]), endLine: parseInt(m[2]), content: m[3], score: 0.4 } : null;
-			}).filter(Boolean) as CodeSnippet[];
-		} catch { return []; }
+			const args = ['--with-filename', '--line-number', '--fixed-strings', '--max-count=' + topK, '--glob', '!**/node_modules/**'];
+			for (const word of words) { args.push('-e', word); }
+			args.push('--', '.');
+			const output = await runIndexRipgrep(args, root);
+			const matches: CodeSnippet[] = [];
+			for (const line of output.split('\n')) {
+				const match = /^(.+?):(\d+):(.*)$/.exec(line);
+				if (match) {
+					const lineNumber = Number(match[2]);
+					matches.push({ filePath: resolve(root, match[1]), startLine: lineNumber, endLine: lineNumber, content: match[3], score: 0.4 });
+					if (matches.length === topK) { break; }
+				}
+			}
+			return matches;
+		} catch (error) {
+			this.logService.warn('[AIIndexService] Cannot search ' + root, error);
+			return [];
+		}
 	}
 
 	async reindex(): Promise<void> {
-		if (this._builder) { await this._builder.fullIndex(); this._stats.lastIndexedAt = Date.now(); }
+		await Promise.all([...this.indexes.values()].map(async ({ builder, firstScan }) => {
+			await firstScan;
+			await builder.fullIndex(true);
+		}));
+		this.lastIndexedAt = Date.now();
 	}
-	async indexFile(fp: string): Promise<void> { await this._builder?.indexFile(fp); }
-	async removeFile(fp: string): Promise<void> { await this._builder?.removeFile(fp); }
 
-	private _getRoot(): string {
-		return this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || ".";
+	private indexFor(path: string): WorkspaceIndex | undefined {
+		const primary = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath;
+		if (!isAbsolute(path)) { return primary ? this.indexes.get(primary) : undefined; }
+		return [...this.indexes.values()].filter(({ builder }) => builder.contains(path))
+			.sort((a, b) => b.builder.workspaceRoot.length - a.builder.workspaceRoot.length)[0];
+	}
+
+	async indexFile(path: string): Promise<void> {
+		const index = this.indexFor(path);
+		if (index) {
+			await index.initialized;
+			await index.builder.indexFile(path);
+			this.lastIndexedAt = Date.now();
+		}
+	}
+
+	async removeFile(path: string): Promise<void> {
+		const index = this.indexFor(path);
+		if (index) {
+			await index.initialized;
+			await index.builder.removeFile(path);
+			this.lastIndexedAt = Date.now();
+		}
+	}
+
+	override dispose(): void {
+		this.generation++;
+		for (const { builder } of this.indexes.values()) { builder.dispose(); }
+		this.indexes.clear();
+		super.dispose();
 	}
 }

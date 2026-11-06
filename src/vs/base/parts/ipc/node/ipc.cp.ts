@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ChildProcess, fork, ForkOptions } from 'child_process';
-import { createCancelablePromise, Delayer } from '../../../common/async.js';
+import { createCancelablePromise, RunOnceScheduler } from '../../../common/async.js';
 import { VSBuffer } from '../../../common/buffer.js';
 import { CancellationToken } from '../../../common/cancellation.js';
 import { isRemoteConsoleLog, log } from '../../../common/console.js';
@@ -14,24 +14,27 @@ import { dispose, IDisposable, toDisposable } from '../../../common/lifecycle.js
 import { deepClone } from '../../../common/objects.js';
 import { createQueuedSender } from '../../../node/processes.js';
 import { removeDangerousEnvVariables } from '../../../common/processes.js';
-import { ChannelClient as IPCClient, ChannelServer as IPCServer, IChannel, IChannelClient } from '../common/ipc.js';
+import { ChannelClient as IPCClient, ChannelServer as IPCServer, IChannel, IChannelClient, IMessagePassingProtocol, IServerChannel } from '../common/ipc.js';
 
 /**
  * This implementation doesn't perform well since it uses base64 encoding for buffers.
  * We should move all implementations to use named ipc.net, so we stop depending on cp.fork.
  */
 
-export class Server<TContext extends string> extends IPCServer<TContext> {
-	constructor(ctx: TContext) {
-		super({
-			send: r => {
-				try {
-					process.send?.((<Buffer>r.buffer).toString('base64'));
-				} catch (e) { /* not much to do */ }
-			},
-			onMessage: Event.fromNodeEventEmitter(process, 'message', msg => VSBuffer.wrap(Buffer.from(msg, 'base64')))
-		}, ctx);
+export function createChildProcessProtocol(): IMessagePassingProtocol {
+	return {
+		send: r => {
+			try {
+				process.send?.((<Buffer>r.buffer).toString('base64'));
+			} catch (e) { /* not much to do */ }
+		},
+		onMessage: Event.fromNodeEventEmitter(process, 'message', msg => VSBuffer.wrap(Buffer.from(msg, 'base64')))
+	};
+}
 
+export class Server<TContext extends string> extends IPCServer<TContext> {
+	constructor(ctx: TContext, protocol = createChildProcessProtocol()) {
+		super(protocol, ctx);
 		process.once('disconnect', () => this.dispose());
 	}
 }
@@ -42,6 +45,9 @@ export interface IIPCOptions {
 	 * A descriptive name for the server this connection is to. Used in logging.
 	 */
 	serverName: string;
+
+	/** Channels the child may call on the parent. */
+	parentChannels?: Readonly<Record<string, IServerChannel>>;
 
 	/**
 	 * Time in millies before killing the ipc process. The next request after killing will start it again.
@@ -83,7 +89,7 @@ export interface IIPCOptions {
 
 export class Client implements IChannelClient, IDisposable {
 
-	private disposeDelayer: Delayer<void> | undefined;
+	private disposeDelayer: RunOnceScheduler | undefined;
 	private activeRequests = new Set<IDisposable>();
 	private child: ChildProcess | null;
 	private _client: IPCClient | null;
@@ -94,7 +100,7 @@ export class Client implements IChannelClient, IDisposable {
 
 	constructor(private modulePath: string, private options: IIPCOptions) {
 		const timeout = options.timeout || 60000;
-		this.disposeDelayer = new Delayer<void>(timeout);
+		this.disposeDelayer = new RunOnceScheduler(() => this.disposeClient(), timeout);
 		this.child = null;
 		this._client = null;
 	}
@@ -131,16 +137,14 @@ export class Client implements IChannelClient, IDisposable {
 		const disposable = toDisposable(() => result.cancel());
 		this.activeRequests.add(disposable);
 
-		result.finally(() => {
+		return result.finally(() => {
 			cancellationTokenListener.dispose();
 			this.activeRequests.delete(disposable);
 
 			if (this.activeRequests.size === 0 && this.disposeDelayer) {
-				this.disposeDelayer.trigger(() => this.disposeClient());
+				this.disposeDelayer.schedule();
 			}
 		});
-
-		return result;
 	}
 
 	protected requestEvent<T>(channelName: string, name: string, arg?: any): Event<T> {
@@ -164,7 +168,7 @@ export class Client implements IChannelClient, IDisposable {
 				listener.dispose();
 
 				if (this.activeRequests.size === 0 && this.disposeDelayer) {
-					this.disposeDelayer.trigger(() => this.disposeClient());
+					this.disposeDelayer.schedule();
 				}
 			}
 		});
@@ -226,6 +230,19 @@ export class Client implements IChannelClient, IDisposable {
 			const protocol = { send, onMessage };
 
 			this._client = new IPCClient(protocol);
+			const parentChannels = this.options.parentChannels;
+			if (parentChannels) {
+				// Start the reverse channel after the child has attached its IPC listeners.
+				const child = this.child;
+				const onReady = Event.once(this._client.onDidInitialize)(() => {
+					const server = new IPCServer(protocol, 'parent');
+					for (const [name, channel] of Object.entries(parentChannels)) {
+						server.registerChannel(name, channel);
+					}
+					child.once('exit', () => server.dispose());
+				});
+				child.once('exit', () => onReady.dispose());
+			}
 
 			const onExit = () => this.disposeClient();
 			process.once('exit', onExit);
@@ -276,7 +293,7 @@ export class Client implements IChannelClient, IDisposable {
 
 	dispose() {
 		this._onDidProcessExit.dispose();
-		this.disposeDelayer?.cancel();
+		this.disposeDelayer?.dispose();
 		this.disposeDelayer = undefined;
 		this.disposeClient();
 		this.activeRequests.clear();

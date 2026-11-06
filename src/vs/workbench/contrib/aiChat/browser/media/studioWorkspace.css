@@ -1,0 +1,210 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* AI Studio conversation and session navigation. Workbench colors follow the active theme. */
+.monaco-workbench .studio-chat-editor {
+	--studio-line: var(--vscode-panel-border, color-mix(in srgb, currentColor 16%, transparent));
+	--studio-accent: var(--vscode-textLink-foreground);
+	height: 100%;
+	overflow: hidden;
+	container-type: size;
+}
+.studio-thread-header {
+	height: 44px;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 0 clamp(12px, 3.5%, 36px);
+	border-bottom: 1px solid var(--studio-line);
+}
+.studio-thread-folder, .studio-header-button, .studio-starter, .studio-nav-button, .studio-session-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.studio-thread-folder, .studio-header-button {
+	color: var(--vscode-descriptionForeground);
+	font-family: inherit;
+	font-size: 12px;
+}
+.studio-thread-folder span:not(.codicon), .studio-session-row .session-title {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.studio-header-button, .studio-starter, .studio-session-navigation button {
+	background: transparent;
+	color: inherit;
+	border: none;
+	cursor: pointer;
+	font: inherit;
+	text-align: start;
+}
+.studio-header-button:focus-visible, .studio-starter:focus-visible, .studio-session-navigation button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+.studio-chat-editor .studio-header-button {
+	border-radius: 6px;
+	padding: 5px 8px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+.studio-header-button:hover, .studio-session-navigation button:hover { background: var(--vscode-list-hoverBackground); }
+.studio-thread {
+	margin: auto;
+	width: min(800px, calc(100% - clamp(12px, 6%, 72px)));
+}
+.studio-chat-editor .studio-welcome[hidden], .studio-chat-editor .studio-starters[hidden] { display: none; }
+.studio-chat-editor.studio-new-session .chat-welcome-view-container,
+.studio-chat-editor.studio-new-session .chat-getting-started-tip-container { display: none !important; }
+.studio-new-session .interactive-session {
+	box-sizing: border-box;
+	justify-content: safe center;
+	overflow-y: auto;
+	padding-block: 0 clamp(12px, 6vh, 80px);
+}
+.studio-welcome {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 18px;
+	margin: 0 16px 18px;
+}
+.studio-agent-mark {
+	height: 48px;
+	width: 48px;
+	background: url('../../../../browser/media/code-icon.png') center / contain no-repeat;
+}
+.studio-welcome h1 {
+	color: var(--vscode-editor-foreground);
+	font: 500 clamp(30px, 5.4cqw, 48px)/1.16 Georgia, 'Songti SC', 'Noto Serif CJK SC', serif;
+	letter-spacing: -.045em;
+	margin: 0;
+	text-wrap: balance;
+}
+.studio-new-session .interactive-input-part { flex: 0 0 auto; }
+.studio-chat-editor .interactive-session .chat-input-container {
+	border-radius: 15px;
+	border: 1px solid color-mix(in srgb, var(--vscode-foreground) 22%, var(--vscode-editor-background));
+	box-shadow: 0 3px 12px color-mix(in srgb, var(--vscode-widget-shadow, #000) 13%, transparent);
+}
+.studio-chat-editor .interactive-session .chat-input-container.focused {
+	border-color: var(--vscode-focusBorder);
+}
+.studio-chat-editor .interactive-session .interactive-input-editor { margin-top: 5px; }
+.studio-starters {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	margin: 2px 16px 0;
+}
+.studio-chat-editor .studio-starter {
+	font-size: 12px;
+	line-height: 1.4;
+	border: 1px solid var(--studio-line);
+	border-radius: 9px;
+	padding: 12px 10px;
+	color: var(--vscode-descriptionForeground);
+}
+.studio-chat-editor .studio-starter:hover, .studio-chat-editor .studio-starter:focus-visible {
+	color: var(--vscode-foreground);
+	background: var(--vscode-list-hoverBackground);
+	border-color: color-mix(in srgb, var(--studio-accent) 48%, var(--studio-line));
+}
+.studio-starter > .codicon:first-child { color: var(--studio-accent); }
+.studio-starter > .codicon:last-child { margin-left: auto; font-size: 12px; }
+.studio-chat-editor .interactive-item-container { padding: 12px 16px 16px; }
+.studio-chat-editor .interactive-response .rendered-markdown { line-height: 1.6; }
+.studio-chat-editor .interactive-session .interactive-item-container.interactive-request .value .rendered-markdown {
+	box-sizing: border-box;
+	overflow-wrap: anywhere;
+	background: var(--vscode-chat-requestBubbleBackground, var(--vscode-sideBar-background));
+	border: 1px solid var(--studio-line);
+	border-radius: 12px;
+	padding: 10px 15px;
+}
+.studio-chat-editor .chat-tool-invocation-part { border-radius: 8px; }
+.studio-session-navigation {
+	display: flex;
+	height: 100%;
+	flex-direction: column;
+	box-sizing: border-box;
+	padding: 12px 10px;
+	color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+}
+.studio-session-navigation .studio-nav-button {
+	padding: 8px 10px;
+	width: 100%;
+	border-radius: 7px;
+	font-size: 13px;
+}
+.studio-session-navigation .studio-new-button {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	justify-content: center;
+	font-weight: 600;
+	min-height: 34px;
+	margin-bottom: 10px;
+}
+.studio-session-navigation .studio-new-button .codicon { color: inherit; }
+.studio-session-navigation .studio-new-button:hover { background: var(--vscode-button-hoverBackground); }
+.studio-nav-section {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border));
+	padding: 12px 7px 6px;
+	margin-top: 12px;
+}
+.studio-nav-section h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--vscode-descriptionForeground); }
+.studio-session-navigation .studio-filter-toggle {
+	display: grid;
+	place-items: center;
+	width: 25px;
+	height: 25px;
+	border-radius: 5px;
+}
+.studio-nav-filter {
+	box-sizing: border-box;
+	border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+	color: var(--vscode-input-foreground);
+	background: var(--vscode-input-background);
+	border-radius: 6px;
+	margin: 2px 0 8px;
+	padding: 6px 8px;
+	width: 100%;
+	font: inherit;
+}
+.studio-session-list { overflow: auto; min-height: 0; flex: 1; }
+.studio-session-list .studio-session-row {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 32px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	font-size: 12px;
+}
+.studio-session-row .codicon { color: var(--vscode-descriptionForeground); font-size: 14px; }
+.studio-session-row[aria-current=true] {
+	color: var(--vscode-list-activeSelectionForeground);
+	background: var(--vscode-list-activeSelectionBackground);
+}
+.studio-session-row[aria-current=true] .codicon { color: inherit; }
+.studio-session-empty { color: var(--vscode-descriptionForeground); margin: 9px 8px; line-height: 1.5; font-size: 12px; }
+.studio-nav-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border); }
+@container (max-width: 640px) {
+	.studio-starters { grid-template-columns: 1fr; gap: 0; }
+	.studio-chat-editor .studio-starter { border: none; border-bottom: 1px solid var(--studio-line); border-radius: 0; padding: 9px 5px; }
+	.studio-welcome { margin-bottom: 10px; gap: 10px; }
+}
+@container (max-height: 440px) {
+	.studio-new-session .interactive-session { padding-block: 10px; }
+	.studio-agent-mark { display: none; }
+	.studio-welcome h1 { font-size: 28px; }
+}

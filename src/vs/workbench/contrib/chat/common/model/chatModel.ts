@@ -709,7 +709,7 @@ class AbstractResponse implements IResponse {
 		// Handle different types of tool invocations
 		if (toolInvocation.toolSpecificData) {
 			if (toolInvocation.toolSpecificData.kind === 'terminal') {
-				message = 'Ran terminal command';
+				message = localize('studio.ranTerminal', 'Ran terminal command');
 				const terminalData = migrateLegacyTerminalToolSpecificData(toolInvocation.toolSpecificData);
 				input = getTerminalDisplayInput(terminalData);
 			}
@@ -725,11 +725,12 @@ class AbstractResponse implements IResponse {
 		if (toolInvocation.kind === 'toolInvocationSerialized' || (toolInvocation.kind === 'toolInvocation' && IChatToolInvocation.isComplete(toolInvocation))) {
 			const resultDetails = IChatToolInvocation.resultDetails(toolInvocation);
 			if (resultDetails && 'input' in resultDetails) {
-				const resultPrefix = toolInvocation.kind === 'toolInvocationSerialized' || IChatToolInvocation.isComplete(toolInvocation) ? 'Completed' : 'Errored';
 				const resultInput = toolInvocation.toolSpecificData?.kind === 'terminal'
 					? getTerminalDisplayInput(migrateLegacyTerminalToolSpecificData(toolInvocation.toolSpecificData))
 					: resultDetails.input;
-				text += `\n${resultPrefix} with input: ${resultInput}`;
+				text += '\n' + (resultDetails.isError
+					? localize('studio.failedWithInput', 'Failed with input: {0}', resultInput)
+					: localize('studio.completedWithInput', 'Completed with input: {0}', resultInput));
 			}
 		}
 

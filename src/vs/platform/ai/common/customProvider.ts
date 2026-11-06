@@ -1,16 +1,23 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — OpenAI / Custom Provider
  *  Uses native fetch() to call any OpenAI-compatible API — no npm SDK needed.
  *--------------------------------------------------------------------------------------------*/
 
+import { decodeToolArguments } from './toolRuntime.js';
+import { providerEvents } from './providerEvents.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import type { IAIProvider } from './aiProvider.js';
 import type {
-	AIMessage, AITool, AIRequestOptions, AIStreamCallbacks,
+	AIMessage, AIMessageContent, StopReason, AITool, AIRequestOptions, AIStreamCallbacks,
 	AICompletionOptions, AICompletionCallbacks, FileContext, AIModel,
 } from './aiTypes.js';
-import { SYSTEM_PROMPT, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
+import { withSystemPrompt, COMPLETION_SYSTEM_PROMPT } from './systemPrompt.js';
 
 export class CustomProvider extends Disposable implements IAIProvider {
 	declare readonly _serviceBrand: undefined;
@@ -34,60 +41,57 @@ export class CustomProvider extends Disposable implements IAIProvider {
 
 	private async _streamChat(messages: AIMessage[], tools: AITool[], options: AIRequestOptions, callbacks: AIStreamCallbacks, signal: AbortSignal): Promise<void> {
 		try {
-			const body: any = {
+			const body: Record<string, unknown> = {
 				model: this.modelId,
 				max_tokens: options.maxTokens || 16000,
 				temperature: options.temperature ?? 0,
-				messages: [{ role: 'system', content: this._systemPrompt() }, ...this._convertMessages(messages)],
+				messages: this._convertMessages(withSystemPrompt(messages)),
+				stream_options: { include_usage: true },
 				stream: true,
 			};
-			if (tools.length) body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+			if (tools.length) { body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })); }
 
-			const res = await this._fetch('/chat/completions', body, signal);
-			const reader = res.body!.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '', toolCallId = '', toolName = '', toolArgs = '', toolIdx = -1;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || '';
-
-				for (const line of lines) {
-					if (!line.startsWith('data: ')) continue;
-					const data = line.slice(6).trim();
-					if (data === '[DONE]') { callbacks.onDone('end_turn'); return; }
-					try {
-						const json = JSON.parse(data);
-						if (json.usage) {
-							callbacks.onUsage?.({ inputTokens: json.usage.prompt_tokens, outputTokens: json.usage.completion_tokens });
-						}
-						const delta = json.choices?.[0]?.delta;
-						if (delta?.content) callbacks.onToken(delta.content);
-						if (delta?.tool_calls) {
-							for (const tc of delta.tool_calls) {
-								if (tc.index !== toolIdx) {
-									if (toolCallId) { try { callbacks.onToolUse(toolName, JSON.parse(toolArgs), toolCallId); } catch { callbacks.onToolUse(toolName, {}, toolCallId); } }
-									toolIdx = tc.index!; toolCallId = tc.id ?? ''; toolName = tc.function?.name ?? ''; toolArgs = '';
-								}
-								if (tc.function?.arguments) toolArgs += tc.function.arguments;
-							}
-						}
-						const reason = json.choices?.[0]?.finish_reason;
-						if (reason === 'stop') { callbacks.onDone('end_turn'); return; }
-						if (reason === 'tool_calls') { if (toolCallId) { try { callbacks.onToolUse(toolName, JSON.parse(toolArgs), toolCallId); } catch { callbacks.onToolUse(toolName, {}, toolCallId); } } callbacks.onDone('tool_use'); return; }
-						if (reason === 'length') { callbacks.onDone('max_tokens'); return; }
-					} catch {
-						// JSON spans chunk boundary — re-append for next chunk
-						buffer = line + '\n' + buffer;
-					}
+			let res: Response;
+			try {
+				res = await this._fetch('/chat/completions', body, signal);
+			} catch (err) {
+				// Some compatible endpoints explicitly reject this optional OpenAI field.
+				if (!(err instanceof Error && /^API (400|422):/i.test(err.message) && /stream_options|include_usage/i.test(err.message))) {
+					throw err;
+				}
+				delete body.stream_options;
+				res = await this._fetch('/chat/completions', body, signal);
+			}
+			const calls = new Map<number, { id: string; name: string; args: string }>();
+			let reason: StopReason = 'end_turn';
+			let finished = false;
+			for await (const data of providerEvents(res)) {
+				if (data.trim() === '[DONE]') { finished = true; break; }
+				const event = JSON.parse(data);
+				if (event.error) { throw new Error(event.error.message || 'Model stream error'); }
+				if (event.usage) { callbacks.onUsage?.({ inputTokens: event.usage.prompt_tokens ?? 0, outputTokens: event.usage.completion_tokens ?? 0 }); }
+				const choice = event.choices?.[0];
+				if (choice?.delta?.content) { callbacks.onToken(choice.delta.content); }
+				for (const fragment of choice?.delta?.tool_calls ?? []) {
+					const index = fragment.index ?? 0;
+					const call = calls.get(index) ?? { id: '', name: '', args: '' };
+					if (fragment.id) { call.id = fragment.id; }
+					call.name += fragment.function?.name ?? '';
+					call.args += fragment.function?.arguments ?? '';
+					calls.set(index, call);
+				}
+				if (choice?.finish_reason) {
+					finished = true;
+					if (choice.finish_reason === 'length') { reason = 'max_tokens'; }
 				}
 			}
-			callbacks.onDone('end_turn');
-		} catch (err: any) { if (err?.name !== 'AbortError') { this.logService.error('[CustomProvider]', err); callbacks.onError(err); } }
+			if (calls.size && (!finished || reason === 'max_tokens')) { throw new Error('Incomplete model tool call batch'); }
+			for (const [, call] of [...calls].sort(([left], [right]) => left - right)) {
+				const { input, error } = decodeToolArguments(call.args);
+				callbacks.onToolUse(call.name, input, call.id, error);
+			}
+			callbacks.onDone(calls.size ? 'tool_use' : reason);
+		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { this.logService.error('[CustomProvider]', err); callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
 	// ── Streaming Completion ─────────────────────────────────
@@ -107,14 +111,14 @@ export class CustomProvider extends Disposable implements IAIProvider {
 			let buffer = '', full = '';
 			while (true) {
 				const { done, value } = await reader.read();
-				if (done) break;
+				if (done) { break; }
 				buffer += decoder.decode(value, { stream: true });
 
 				const lines = buffer.split('\n');
 				buffer = lines.pop() || '';
 
 				for (const line of lines) {
-					if (!line.startsWith('data: ')) continue;
+					if (!line.startsWith('data: ')) { continue; }
 					const data = line.slice(6).trim();
 					if (data === '[DONE]') { callbacks.onDone(full); return; }
 					try { const t = JSON.parse(data).choices?.[0]?.delta?.content; if (t) { full += t; callbacks.onToken(t); } } catch {
@@ -123,16 +127,16 @@ export class CustomProvider extends Disposable implements IAIProvider {
 				}
 			}
 			callbacks.onDone(full);
-		} catch (err: any) { if (err?.name !== 'AbortError') callbacks.onError(err); }
+		} catch (err: unknown) { if (!(err instanceof Error && err.name === 'AbortError')) { callbacks.onError(err instanceof Error ? err : new Error(String(err))); } }
 	}
 
 	// ── Embeddings + Models ──────────────────────────────────
 
 	async embed(texts: string[]): Promise<number[][]> {
 		const res = await this._fetch('/embeddings', { model: 'text-embedding-3-small', input: texts }, new AbortController().signal);
-		const json: any = await res.json();
-		if (!json.data?.length) throw new Error("Empty embedding response");
-		return json.data.map((d: any) => d.embedding);
+		const json: { data?: { embedding: number[] }[] } = await res.json();
+		if (!json.data?.length) { throw new Error('Empty embedding response'); }
+		return json.data.map(d => d.embedding);
 	}
 
 	async listModels(): Promise<AIModel[]> {
@@ -146,7 +150,7 @@ export class CustomProvider extends Disposable implements IAIProvider {
 
 	// ── Helpers ──────────────────────────────────────────────
 
-	private async _fetch(path: string, body: any, signal: AbortSignal): Promise<Response> {
+	private async _fetch(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
 		const url = (this.apiBase.endsWith('/') ? this.apiBase.slice(0, -1) : this.apiBase) + path;
 		const res = await fetch(url, {
 			method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + this.apiKey, 'HTTP-Referer': 'ai-studio', 'X-Title': 'AI Studio' }, body: JSON.stringify(body), signal,
@@ -155,15 +159,60 @@ export class CustomProvider extends Disposable implements IAIProvider {
 		return res;
 	}
 
-	private _systemPrompt() { return SYSTEM_PROMPT; }
-
-	private _convertMessages(msgs: AIMessage[]): any[] {
-		return msgs.map(msg => {
-			if (typeof msg.content === 'string') return { role: msg.role, content: msg.content };
-			const toolCalls: any[] = []; let text = '';
-			for (const b of msg.content) { if (b.type === 'text') text += (b.text || ''); if (b.type === 'tool_use') toolCalls.push({ id: b.id || '', type: 'function', function: { name: b.name || '', arguments: JSON.stringify(b.input || {}) } }); }
-			const r: any = { role: msg.role }; if (text) r.content = text; if (toolCalls.length) r.tool_calls = toolCalls;
-			return r;
-		});
+	private _convertMessages(messages: AIMessage[]): unknown[] {
+		const result: unknown[] = [];
+		let pendingImages: ReturnType<typeof imagePart>[] = [];
+		const flushImages = () => {
+			if (pendingImages.length) {
+				result.push({ role: 'user', content: pendingImages });
+				pendingImages = [];
+			}
+		};
+		for (const msg of messages) {
+			if (msg.role !== 'tool') {
+				flushImages();
+			}
+			if (typeof msg.content === 'string') {
+				result.push({ role: msg.role, content: msg.content, ...(msg.toolCallId ? { tool_call_id: msg.toolCallId } : {}) });
+				continue;
+			}
+			if (msg.role === 'tool') {
+				const results = msg.content.filter(block => block.type === 'tool_result');
+				if (!results.length) {
+					results.push({ type: 'tool_result', tool_use_id: msg.toolCallId, content: msg.content });
+				}
+				for (const block of results) {
+					const parts = block.content;
+					let text = '';
+					if (typeof parts === 'string') {
+						text = parts;
+					} else if (parts) {
+						for (const part of parts) {
+							if (part.type === 'text') { text += part.text ?? ''; }
+							if (part.type === 'image' && part.source) { pendingImages.push(imagePart(part.source)); }
+						}
+					}
+					// Chat Completions accepts images on user messages, while tool messages carry text and the call ID.
+					result.push({ role: 'tool', tool_call_id: block.tool_use_id ?? msg.toolCallId, content: text });
+				}
+				continue;
+			}
+			const toolCalls = msg.content.filter(block => block.type === 'tool_use').map(block => ({
+				id: block.id, type: 'function', function: { name: block.name, arguments: JSON.stringify(block.input ?? {}) },
+			}));
+			const parts: ({ type: 'text'; text: string } | ReturnType<typeof imagePart>)[] = [];
+			for (const block of msg.content) {
+				if (block.type === 'text') { parts.push({ type: 'text', text: block.text ?? '' }); }
+				if (block.type === 'image' && block.source) { parts.push(imagePart(block.source)); }
+			}
+			const content = parts.every(part => part.type === 'text') ? parts.map(part => part.text).join('') : parts;
+			result.push({ role: msg.role, content: content || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
+		}
+		flushImages();
+		return result;
 	}
+}
+
+function imagePart(source: NonNullable<AIMessageContent['source']>) {
+	return { type: 'image_url' as const, image_url: { url: `data:${source.media_type};base64,${source.data}` } };
 }

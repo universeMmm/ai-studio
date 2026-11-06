@@ -1,70 +1,116 @@
 /*---------------------------------------------------------------------------------------------
- *  AI Studio — Diff Apply Controller
- *  Handles Reject (undo) for individual hunks or all hunks in a group.
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------------------------
+ *  AI Studio — Review changes that have already been written to the workspace.
+ *--------------------------------------------------------------------------------------------*/
+
+import { resolve } from '../../../../base/common/path.js';
+import { Queue } from '../../../../base/common/async.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
+import { URI } from '../../../../base/common/uri.js';
+import { FileSystemProviderCapabilities, IFileService } from '../../../../platform/files/common/files.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
 import { IDiffStore } from './diffStore.js';
 import type { DiffHunk } from '../common/diffTypes.js';
-import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
-import { URI } from '../../../../base/common/uri.js';
-import { VSBuffer } from '../../../../base/common/buffer.js';
-import { Range } from '../../../../editor/common/core/range.js';
-import type { ITextModel } from '../../../../editor/common/model.js';
+
+export const IDiffApplyController = createDecorator<DiffApplyController>('aiDiffApplyController');
+const conflict = () => new Error('文件已发生变化。请打开文件，核对当前内容后再撤销。');
+
+function originalContent(content: string, hunk: DiffHunk): string {
+	if (hunk.kind === 'write') {
+		if (content !== hunk.modifiedText) { throw conflict(); }
+		return hunk.originalText;
+	}
+
+	let start = 0;
+	for (let line = 1; line < hunk.modifiedStartLine; line++) {
+		const newline = content.indexOf('\n', start);
+		if (newline === -1) { throw conflict(); }
+		start = newline + 1;
+	}
+	const lineEnd = content.indexOf('\n', start);
+	const end = lineEnd === -1 ? content.length : lineEnd;
+	if (hunk.modifiedStartColumn !== undefined) {
+		if (hunk.modifiedStartColumn < 1 || start + hunk.modifiedStartColumn - 1 > end) { throw conflict(); }
+		start += hunk.modifiedStartColumn - 1;
+	} else {
+		// Legacy changes recorded a line but no column. Only undo an unambiguous match on that line.
+		if (!hunk.modifiedText) { throw conflict(); }
+		const match = content.indexOf(hunk.modifiedText, start);
+		const another = content.indexOf(hunk.modifiedText, match + 1);
+		if (match < 0 || match > end || (another >= 0 && another <= end)) { throw conflict(); }
+		start = match;
+	}
+	if (!content.startsWith(hunk.modifiedText, start)) { throw conflict(); }
+	if (hunk.beforeAnchor !== undefined && !content.slice(0, start).endsWith(hunk.beforeAnchor)) { throw conflict(); }
+	if (hunk.afterAnchor !== undefined && !content.startsWith(hunk.afterAnchor, start + hunk.modifiedText.length)) { throw conflict(); }
+	return content.slice(0, start) + hunk.originalText + content.slice(start + hunk.modifiedText.length);
+}
 
 export class DiffApplyController extends Disposable {
+	declare readonly _serviceBrand: undefined;
+	private readonly edits = this._register(new Queue<void>());
+
 	constructor(
-		@IDiffStore private readonly diffStore: IDiffStore,
-		@IEditorService private readonly editorService: IEditorService,
-		@IFileService private readonly fileService: IFileService,
+		@IDiffStore private readonly store: IDiffStore,
+		@ITextFileService private readonly textFiles: ITextFileService,
+		@IFileService private readonly files: IFileService,
+		@IWorkspaceContextService private readonly workspace: IWorkspaceContextService,
 	) { super(); }
 
-	async rejectHunk(groupId: string, hunkId: string): Promise<void> {
-		let target: DiffHunk | null = null;
-		for (const g of this.diffStore.groups) {
-			if (g.id !== groupId) continue;
-			for (const h of g.hunks) { if (h.id === hunkId && h.status === 'applied') { target = h; break; } }
-			break;
-		}
-		if (!target) return;
-		await this._reverseEdit(target);
-		this.diffStore.rejectHunk(groupId, hunkId);
+	acceptHunk(groupId: string, hunkId: string): Promise<void> {
+		return this.edits.queue(async () => this.store.acceptHunk(groupId, hunkId));
 	}
 
-	async rejectAll(groupId: string): Promise<void> {
-		let hunks: DiffHunk[] = [];
-		for (const g of this.diffStore.groups) { if (g.id === groupId) { hunks = g.hunks.filter((h: any) => h.status === 'applied'); break; } }
-		for (let i = hunks.length - 1; i >= 0; i--) await this._reverseEdit(hunks[i]);
-		this.diffStore.rejectAll(groupId);
+	rejectHunk(groupId: string, hunkId: string): Promise<void> {
+		return this.edits.queue(() => this.rejectOne(groupId, hunkId));
 	}
 
-	private async _reverseEdit(hunk: DiffHunk): Promise<void> {
-		const uri = URI.file(hunk.filePath);
-		for (const ed of this.editorService.visibleTextEditorControls) {
-			const model = ed.getModel() as ITextModel;
-			if (model?.uri?.toString() === uri.toString()) {
-				model.pushEditOperations(null, [{ range: new Range(hunk.modifiedStartLine, 1, hunk.modifiedEndLine + 1, 1), text: hunk.originalText || '' }], () => null);
-				return;
+	rejectAll(groupId: string): Promise<void> {
+		return this.edits.queue(async () => {
+			const group = this.store.groups.find(g => g.id === groupId);
+			if (group) {
+				for (const hunk of [...group.hunks].reverse()) { await this.rejectOne(groupId, hunk.id); }
 			}
-		}
-		// Fallback: file not open → replace the modified line range directly.
-		const content = (await this.fileService.readFile(uri)).value.toString();
-		const startOffset = this._offsetForLine(content, hunk.modifiedStartLine);
-		const endOffset = this._offsetForLine(content, hunk.modifiedEndLine + 1);
-		const nextContent = content.slice(0, startOffset) + (hunk.originalText || '') + content.slice(endOffset);
-		await this.fileService.writeFile(uri, VSBuffer.fromString(nextContent));
+		});
 	}
 
-	private _offsetForLine(content: string, lineNumber: number): number {
-		if (lineNumber <= 1) return 0;
-		let currentLine = 1;
-		for (let i = 0; i < content.length; i++) {
-			if (content.charCodeAt(i) === 10) {
-				currentLine++;
-				if (currentLine === lineNumber) return i + 1;
+	private async rejectOne(groupId: string, hunkId: string): Promise<void> {
+		const hunk = this.store.groups.find(g => g.id === groupId)?.hunks.find(h => h.id === hunkId && h.status === 'applied');
+		if (!hunk) { return; }
+		const uri = URI.file(resolve(hunk.filePath));
+		if (!this.workspace.isInsideWorkspace(uri)) { throw new Error('该文件位于当前工作区之外。'); }
+		if (this.textFiles.isDirty(uri)) { throw new Error('请先保存文件中的编辑，再撤销助手的变更。'); }
+
+		const file = await this.files.readFile(uri);
+		if (this.textFiles.isDirty(uri)) { throw conflict(); }
+		const content = file.value.toString();
+		if (hunk.kind === 'create') {
+			if (content !== hunk.modifiedText) { throw conflict(); }
+			// Capture the file before deleting. A concurrent replacement at its original path
+			// must survive even when it has the same size as the agent's version.
+			const captured = URI.joinPath(uri, '..', '.ai-studio-review-' + generateUuid());
+			await this.files.move(uri, captured, false);
+			try {
+				const latest = await this.files.readFile(captured);
+				if (!latest.value.equals(file.value) || this.textFiles.isDirty(uri)) { throw conflict(); }
+				await this.files.del(captured, { useTrash: this.files.hasCapability(captured, FileSystemProviderCapabilities.Trash) });
+			} catch (error) {
+				try { await this.files.move(captured, uri, false); }
+				catch { throw new Error('文件在撤销期间发生变化。原文件保存在 ' + captured.fsPath); }
+				throw error;
 			}
+		} else {
+			const previous = originalContent(content, hunk);
+			await this.files.writeFile(uri, VSBuffer.fromString(previous), { etag: file.etag, mtime: file.mtime });
 		}
-		return content.length;
+		this.store.rejectHunk(groupId, hunkId);
 	}
 }

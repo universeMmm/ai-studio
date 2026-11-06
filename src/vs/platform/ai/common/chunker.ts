@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Code Chunker
  *  Splits source files into function/class/method-level chunks for embedding.
  *--------------------------------------------------------------------------------------------*/
@@ -31,7 +36,7 @@ export function chunkFile(filePath: string, content: string, languageId: string)
 		const start = found[i].line;
 		const end = i + 1 < found.length ? found[i + 1].line - 1 : lines.length;
 		const chunkContent = lines.slice(start - 1, end).join('\n');
-		if (!chunkContent.trim()) continue;
+		if (!chunkContent.trim()) { continue; }
 		chunks.push({ id: _hash(filePath + ':' + start + ':' + chunkContent.slice(0, 100)), filePath, startLine: start, endLine: end, content: chunkContent, kind: found[i].kind, name: found[i].name });
 	}
 	return chunks;

@@ -107,28 +107,17 @@ protocol.registerSchemesAsPrivileged([
 // Global app listeners
 registerListeners();
 
-/**
- * We can resolve the NLS configuration early if it is defined
- * in argv.json before `app.ready` event. Otherwise we can only
- * resolve NLS after `app.ready` event to resolve the OS locale.
- */
-let nlsConfigurationPromise: Promise<INLSConfiguration> | undefined = undefined;
-
-// Use the most preferred OS language for language recommendation.
-// The API might return an empty array on Linux, such as when
-// the 'C' locale is the user's only configured locale.
-// No matter the OS, if the array is empty, default back to 'en'.
+// Resolve the display language before the first window, independently of the OS language.
 const osLocale = processZhLocale((app.getPreferredSystemLanguages()?.[0] ?? 'en').toLowerCase());
-const userLocale = getUserDefinedLocale(argvConfig);
-if (userLocale) {
-	nlsConfigurationPromise = resolveNLSConfiguration({
-		userLocale,
-		osLocale,
-		commit: product.commit,
-		userDataPath,
-		nlsMetadataPath: import.meta.dirname
-	});
-}
+const configuredLocale = args['locale'] || (typeof argvConfig.locale === 'string' && argvConfig.locale) || 'zh-cn';
+const userLocale = processZhLocale(configuredLocale.toLowerCase());
+const nlsConfigurationPromise = resolveNLSConfiguration({
+	userLocale,
+	osLocale,
+	commit: product.commit,
+	userDataPath,
+	nlsMetadataPath: import.meta.dirname
+});
 
 // Pass in the locale to Electron so that the
 // Windows Control Overlay is rendered correctly on Windows.
@@ -139,7 +128,7 @@ if (userLocale) {
 // In that case, use `en` as the Electron locale.
 
 if (process.platform === 'win32' || process.platform === 'linux') {
-	const electronLocale = (!userLocale || userLocale === 'qps-ploc') ? 'en' : userLocale;
+	const electronLocale = (userLocale === 'qps-ploc') ? 'en' : userLocale;
 	app.commandLine.appendSwitch('lang', electronLocale);
 }
 
@@ -188,7 +177,7 @@ async function onReady() {
 	try {
 		const [, nlsConfig] = await Promise.all([
 			mkdirpIgnoreError(codeCachePath),
-			resolveNlsConfiguration()
+			nlsConfigurationPromise
 		]);
 
 		await startup(codeCachePath, nlsConfig);
@@ -213,6 +202,10 @@ async function startup(codeCachePath: string | undefined, nlsConfig: INLSConfigu
 }
 
 function configureCommandlineSwitchesSync(cliArgs: NativeParsedArgs) {
+	// Let Chromium use the system proxy, including its PAC script and bypass rules.
+	for (const flag of ['no-proxy-server', 'proxy-server', 'proxy-pac-url', 'proxy-bypass-list', 'proxy-auto-detect']) {
+		app.commandLine.removeSwitch(flag);
+	}
 	const SUPPORTED_ELECTRON_SWITCHES = [
 
 		// alias from us for --disable-gpu
@@ -223,9 +216,6 @@ function configureCommandlineSwitchesSync(cliArgs: NativeParsedArgs) {
 
 		// disable LCD font rendering, a Chromium flag
 		'disable-lcd-text',
-
-		// bypass any specified proxy for the given semi-colon-separated list of hosts
-		'proxy-bypass-list',
 
 		'remote-debugging-port'
 	];
@@ -363,7 +353,6 @@ interface IArgvConfig {
 	[key: string]: string | string[] | boolean | undefined;
 	readonly locale?: string;
 	readonly 'disable-lcd-text'?: boolean;
-	readonly 'proxy-bypass-list'?: string;
 	readonly 'disable-hardware-acceleration'?: boolean;
 	readonly 'force-color-profile'?: string;
 	readonly 'enable-crash-reporter'?: boolean;
@@ -666,64 +655,6 @@ function processZhLocale(appLocale: string): string {
 	}
 
 	return appLocale;
-}
-
-/**
- * Resolve the NLS configuration
- */
-async function resolveNlsConfiguration(): Promise<INLSConfiguration> {
-
-	// First, we need to test a user defined locale.
-	// If it fails we try the app locale.
-	// If that fails we fall back to English.
-
-	const nlsConfiguration = nlsConfigurationPromise ? await nlsConfigurationPromise : undefined;
-	if (nlsConfiguration) {
-		return nlsConfiguration;
-	}
-
-	// Try to use the app locale which is only valid
-	// after the app ready event has been fired.
-
-	let userLocale = app.getLocale();
-	if (!userLocale) {
-		return {
-			userLocale: 'en',
-			osLocale,
-			resolvedLanguage: 'en',
-			defaultMessagesFile: path.join(import.meta.dirname, 'nls.messages.json'),
-
-			// NLS: below 2 are a relic from old times only used by vscode-nls and deprecated
-			locale: 'en',
-			availableLanguages: {}
-		};
-	}
-
-	// See above the comment about the loader and case sensitiveness
-	userLocale = processZhLocale(userLocale.toLowerCase());
-
-	return resolveNLSConfiguration({
-		userLocale,
-		osLocale,
-		commit: product.commit,
-		userDataPath,
-		nlsMetadataPath: import.meta.dirname
-	});
-}
-
-/**
- * Language tags are case insensitive however an ESM loader is case sensitive
- * To make this work on case preserving & insensitive FS we do the following:
- * the language bundles have lower case language tags and we always lower case
- * the locale we receive from the user or OS.
- */
-function getUserDefinedLocale(argvConfig: IArgvConfig): string | undefined {
-	const locale = args['locale'];
-	if (locale) {
-		return locale.toLowerCase(); // a directly provided --locale always wins
-	}
-
-	return typeof argvConfig?.locale === 'string' ? argvConfig.locale.toLowerCase() : undefined;
 }
 
 //#endregion

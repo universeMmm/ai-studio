@@ -5,9 +5,13 @@
 
 import { join } from '../common/path.js';
 import { promises } from 'fs';
+import { createHash } from 'crypto';
 import { mark } from '../common/performance.js';
-import { ILanguagePacks, INLSConfiguration } from '../../nls.js';
+import { ILanguagePack, ILanguagePacks, INLSConfiguration } from '../../nls.js';
 import { Promises } from './pfs.js';
+
+const bundledChineseFolder = 'studio-language-pack-zh-cn';
+type TranslationBundle = { contents: Record<string, Record<string, string>> };
 
 export interface IResolveNLSConfigurationContext {
 
@@ -42,20 +46,22 @@ export interface IResolveNLSConfigurationContext {
 export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPath, commit, nlsMetadataPath }: IResolveNLSConfigurationContext): Promise<INLSConfiguration> {
 	mark('code/willGenerateNls');
 
+	const dev = Boolean(process.env['VSCODE_DEV'] || !commit);
 	if (
-		process.env['VSCODE_DEV'] ||
+		(dev && userLocale !== 'zh-cn') ||
 		userLocale === 'pseudo' ||
 		userLocale.startsWith('en') ||
-		!commit ||
 		!userDataPath
 	) {
 		return defaultNLSConfiguration(userLocale, osLocale, nlsMetadataPath);
 	}
 
 	try {
-		const languagePacks = await getLanguagePackConfigurations(userDataPath);
-		if (!languagePacks) {
-			return defaultNLSConfiguration(userLocale, osLocale, nlsMetadataPath);
+		const languagePacks = await getLanguagePackConfigurations(userDataPath) ?? {};
+		const extensionsPath = join(nlsMetadataPath, '..', 'extensions');
+		const installedChinese = languagePacks['zh-cn']?.translations?.vscode;
+		if (userLocale === 'zh-cn' && (dev || !installedChinese || !(await Promises.exists(installedChinese)))) {
+			languagePacks['zh-cn'] = await getBundledChineseLanguagePack(extensionsPath);
 		}
 
 		const resolvedLanguage = resolveLanguagePackLanguage(languagePacks, userLocale);
@@ -77,8 +83,8 @@ export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPa
 
 		const languagePackId = `${languagePack.hash}.${resolvedLanguage}`;
 		const globalLanguagePackCachePath = join(userDataPath, 'clp', languagePackId);
-		const commitLanguagePackCachePath = join(globalLanguagePackCachePath, commit);
-		const languagePackMessagesFile = join(commitLanguagePackCachePath, 'nls.messages.json');
+		const commitLanguagePackCachePath = join(globalLanguagePackCachePath, commit ?? 'dev');
+		const languagePackMessagesFile = dev ? join(nlsMetadataPath, 'nls.dev.zh-cn.json') : join(commitLanguagePackCachePath, 'nls.messages.json');
 		const translationsConfigFile = join(globalLanguagePackCachePath, 'tcf.json');
 		const languagePackCorruptMarkerFile = join(globalLanguagePackCachePath, 'corrupted.info');
 
@@ -108,7 +114,17 @@ export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPa
 			_corruptedFile: languagePackCorruptMarkerFile
 		};
 
-		if (await Promises.exists(languagePackMessagesFile)) {
+		if (dev) {
+			if (!(await Promises.exists(languagePackMessagesFile))) {
+				return defaultNLSConfiguration(userLocale, osLocale, nlsMetadataPath);
+			}
+			await promises.mkdir(globalLanguagePackCachePath, { recursive: true });
+			await Promises.writeFile(translationsConfigFile, JSON.stringify(languagePack.translations));
+			mark('code/didGenerateNls');
+			return result;
+		}
+
+		if (await Promises.exists(languagePackMessagesFile) && await Promises.exists(translationsConfigFile)) {
 			touch(commitLanguagePackCachePath).catch(() => { }); // We don't wait for this. No big harm if we can't touch
 			mark('code/didGenerateNls');
 			return result;
@@ -117,14 +133,16 @@ export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPa
 		const [
 			nlsDefaultKeys,
 			nlsDefaultMessages,
-			nlsPackdata
+			nlsPackdata,
+			supplement
 		]:
-			[Array<[string, string[]]>, string[], { contents: Record<string, Record<string, string>> }]
+			[Array<[string, string[]]>, string[], TranslationBundle, TranslationBundle | undefined]
 			//      ^moduleId ^nlsKeys                               ^moduleId      ^nlsKey ^nlsValue
 			= await Promise.all([
 				promises.readFile(join(nlsMetadataPath, 'nls.keys.json'), 'utf-8').then(content => JSON.parse(content)),
 				promises.readFile(join(nlsMetadataPath, 'nls.messages.json'), 'utf-8').then(content => JSON.parse(content)),
 				promises.readFile(mainLanguagePackPath, 'utf-8').then(content => JSON.parse(content)),
+				resolvedLanguage === 'zh-cn' ? readBundledChineseSupplement(extensionsPath) : undefined
 			]);
 
 		const nlsResult: string[] = [];
@@ -138,7 +156,7 @@ export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPa
 		for (const [moduleId, nlsKeys] of nlsDefaultKeys) {
 			const moduleTranslations = nlsPackdata.contents[moduleId];
 			for (const nlsKey of nlsKeys) {
-				nlsResult.push(moduleTranslations?.[nlsKey] || nlsDefaultMessages[nlsIndex]);
+				nlsResult.push(supplement?.contents[moduleId]?.[nlsKey] ?? moduleTranslations?.[nlsKey] ?? nlsDefaultMessages[nlsIndex]);
 				nlsIndex++;
 			}
 		}
@@ -158,6 +176,37 @@ export async function resolveNLSConfiguration({ userLocale, osLocale, userDataPa
 	}
 
 	return defaultNLSConfiguration(userLocale, osLocale, nlsMetadataPath);
+}
+
+async function readBundledChineseSupplement(extensionsPath: string): Promise<TranslationBundle | undefined> {
+	const supplement = join(extensionsPath, bundledChineseFolder, 'translations', 'studio.i18n.json');
+	if (await Promises.exists(supplement)) {
+		return JSON.parse(await promises.readFile(supplement, 'utf8'));
+	}
+	return undefined;
+}
+
+/** The bundled pack is available before the extension service or gallery starts. */
+export async function getBundledChineseLanguagePack(extensionsPath: string): Promise<ILanguagePack | undefined> {
+	const root = join(extensionsPath, bundledChineseFolder);
+	try {
+		const manifest: {
+			publisher: string; name: string; version: string; upstreamCommit: string;
+			contributes: { localizations: { localizedLanguageName: string; translations: { id: string; path: string }[] }[] };
+		} = JSON.parse(await promises.readFile(join(root, 'package.json'), 'utf8'));
+		const localization = manifest.contributes.localizations[0];
+		return {
+			hash: createHash('sha256').update(manifest.upstreamCommit).update(root).digest('hex'),
+			label: localization.localizedLanguageName,
+			extensions: [{ extensionIdentifier: { id: manifest.publisher + '.' + manifest.name }, version: manifest.version }],
+			translations: Object.fromEntries(localization.translations.map(({ id, path }) => [id, join(root, path)]))
+		};
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+			console.error('Failed to read the built-in Simplified Chinese pack.', error);
+		}
+		return undefined;
+	}
 }
 
 /**

@@ -1025,7 +1025,7 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 		template.containerElement.setAttribute(AbstractSettingRenderer.SETTING_KEY_ATTR, element.setting.key);
 		template.containerElement.setAttribute(AbstractSettingRenderer.SETTING_ID_ATTR, element.id);
 
-		const titleTooltip = setting.key + (element.isConfigured ? ' - Modified' : '');
+		const titleTooltip = element.isConfigured ? setting.key + ' · ' + localize('settings.Modified', 'Modified.') : setting.key;
 		template.categoryElement.textContent = element.displayCategory ? (element.displayCategory + ': ') : '';
 		template.elementDisposables.add(this._hoverService.setupDelayedHover(template.categoryElement, { content: titleTooltip }));
 
@@ -2417,7 +2417,7 @@ function fixSettingLinks(text: string, linkify = true): string {
 	return text.replace(/`#([^#\s`]+)#`|'#([^#\s']+)#'/g, (match, backticksGroup, quotesGroup) => {
 		const settingKey: string = backticksGroup ?? quotesGroup;
 		const targetDisplayFormat = settingKeyToDisplayFormat(settingKey);
-		const targetName = `${targetDisplayFormat.category}: ${targetDisplayFormat.label}`;
+		const targetName = targetDisplayFormat.category ? `${targetDisplayFormat.category}: ${targetDisplayFormat.label}` : targetDisplayFormat.label;
 		return linkify ?
 			`[${targetName}](#${settingKey} "${settingKey}")` :
 			`"${targetName}"`;

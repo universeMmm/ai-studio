@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { app, BrowserWindow, desktopCapturer, Details, GPUFeatureStatus, powerMonitor, protocol, screen as electronScreen, session, Session, systemPreferences, WebFrameMain } from 'electron';
+import { app, BrowserWindow, desktopCapturer, Details, GPUFeatureStatus, net, powerMonitor, protocol, screen as electronScreen, session, Session, systemPreferences, WebFrameMain, type WebContents } from 'electron';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { hostname, release } from 'os';
@@ -27,6 +27,10 @@ import { Client as MessagePortClient } from '../../base/parts/ipc/electron-main/
 import { Server as NodeIPCServer } from '../../base/parts/ipc/node/ipc.net.js';
 import { IProxyAuthService, ProxyAuthService } from '../../platform/native/electron-main/auth.js';
 import { localize } from '../../nls.js';
+import { fetchWebPage } from '../../platform/ai/electron-main/webFetch.js';
+import { searchWeb } from '../../platform/ai/node/webSearch.js';
+import { restoreRollbackFile } from '../../platform/ai/node/restoreRollbackFile.js';
+import { AICommandOptions, runAICommand } from '../../platform/ai/node/commandRunner.js';
 import { IBackupMainService } from '../../platform/backup/electron-main/backup.js';
 import { BackupMainService } from '../../platform/backup/electron-main/backupMainService.js';
 import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
@@ -611,43 +615,33 @@ export class CodeApplication extends Disposable {
 			}
 		});
 
-		// AI Studio: execute subprocess commands from sandboxed renderer
-		validatedIpcMain.handle('vscode:ai-studio:exec', async (event, opts: {
-			command?: string;
-			args?: string[];
-			shell?: boolean;
-			cwd?: string;
-			timeout?: number;
-		}) => {
-			const { exec, spawn } = await import('child_process');
-			const timeout = opts.timeout ?? 30_000;
-			const cwd = opts.cwd ?? process.cwd();
+		validatedIpcMain.handle('vscode:ai-studio:restoreRollback', (_event, recovery: string, target: string) => restoreRollbackFile(recovery, target));
 
-			if (opts.shell || !opts.command) {
-				// Shell command mode
-				const cmd = typeof opts.command === 'string' ? opts.command : '';
-				return new Promise((resolve) => {
-					exec(cmd, { cwd, timeout, maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' }, (error, stdout, stderr) => {
-						resolve({ stdout: stdout || '', stderr: stderr || '', exitCode: error ? (error as any).code ?? 1 : 0 });
-					});
-				});
-			} else {
-				// Spawn mode with args array
-				return new Promise((resolve) => {
-					const child = spawn(opts.command!, opts.args ?? [], { cwd, timeout, shell: false });
-					let stdout = '';
-					let stderr = '';
-					child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-					child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-					child.on('close', code => {
-						resolve({ stdout, stderr, exitCode: code ?? 0 });
-					});
-					child.on('error', err => {
-						resolve({ stdout, stderr: err.message, exitCode: -1 });
-					});
-				});
-			}
+		// Keep cancellation in the originating renderer. AbortSignal cannot be sent over IPC.
+		const aiCommands = new Map<string, AbortController>();
+		validatedIpcMain.handle('vscode:ai-studio:cancelExec', async (event, requestId: string) => {
+			aiCommands.get(`${event.sender.id}:${requestId}`)?.abort();
 		});
+		const withCancellation = async <T>(sender: WebContents, requestId: string, run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+			const key = `${sender.id}:${requestId}`;
+			if (aiCommands.has(key)) { throw new Error('Duplicate request'); }
+			const controller = new AbortController();
+			const onDestroyed = () => controller.abort();
+			aiCommands.set(key, controller);
+			sender.once('destroyed', onDestroyed);
+			try {
+				return await run(controller.signal);
+			} finally {
+				sender.removeListener('destroyed', onDestroyed);
+				aiCommands.delete(key);
+			}
+		};
+		validatedIpcMain.handle('vscode:ai-studio:exec', (event, opts: AICommandOptions) =>
+			withCancellation(event.sender, opts.requestId ?? generateUuid(), signal => runAICommand(opts, signal)));
+		validatedIpcMain.handle('vscode:ai-studio:webFetch', (event, opts: { requestId: string; url: unknown }) =>
+			withCancellation(event.sender, opts.requestId, signal => fetchWebPage(opts.url, options => net.request(options), signal)));
+		validatedIpcMain.handle('vscode:ai-studio:webSearch', (event, opts: { requestId: string; query: unknown; num_results?: unknown }) =>
+			withCancellation(event.sender, opts.requestId, signal => searchWeb(opts, (url, init) => net.fetch(url, init), signal)));
 
 		//#endregion
 	}
@@ -656,6 +650,11 @@ export class CodeApplication extends Disposable {
 		this.logService.debug('Starting VS Code');
 		this.logService.debug(`from: ${this.environmentMainService.appRoot}`);
 		this.logService.debug('args:', this.environmentMainService.args);
+
+		// Window and main-process requests use the default session. Utility-process
+		// requests use the app network context. Let Chromium resolve both through the OS.
+		const proxy: Electron.ProxyConfig = { mode: 'system' };
+		await Promise.all([session.defaultSession.setProxy(proxy), app.setProxy(proxy)]);
 
 		// Make sure we associate the program with the app user model id
 		// This will help Windows to associate the running program with

@@ -455,6 +455,9 @@ export class OpenModelPickerAction extends Action2 {
 	}
 }
 
+// The local Studio editor uses the workspace runtime and its command approval policy.
+const nativeAgentPickerVisible = ContextKeyExpr.or(ChatContextKeys.inChatEditor.negate(), ChatContextKeys.lockedToCodingAgent);
+
 export class OpenPermissionPickerAction extends Action2 {
 	static readonly ID = 'workbench.action.chat.openPermissionPicker';
 
@@ -473,6 +476,7 @@ export class OpenPermissionPickerAction extends Action2 {
 				when:
 					ContextKeyExpr.and(
 						ChatContextKeys.enabled,
+						nativeAgentPickerVisible,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.chatModeKind.notEqualsTo(ChatModeKind.Ask),
 						ChatContextKeys.inQuickChat.negate(),
@@ -519,6 +523,7 @@ export class OpenModePickerAction extends Action2 {
 					order: 1,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.enabled,
+						nativeAgentPickerVisible,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
 						ContextKeyExpr.or(
@@ -561,6 +566,7 @@ export class OpenSessionTargetPickerAction extends Action2 {
 					order: 0,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.enabled,
+						nativeAgentPickerVisible,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
 						ChatContextKeys.chatSessionIsEmpty,
@@ -572,6 +578,7 @@ export class OpenSessionTargetPickerAction extends Action2 {
 					order: 0,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.enabled,
+						nativeAgentPickerVisible,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
 						IsSessionsWindowContext.negate(),
@@ -608,6 +615,7 @@ export class OpenDelegationPickerAction extends Action2 {
 					order: 0.5,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.enabled,
+						nativeAgentPickerVisible,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
 						ChatContextKeys.chatSessionSupportsDelegation,

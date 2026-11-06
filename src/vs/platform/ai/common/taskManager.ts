@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Task Manager
  *  Manages agent tasks with dependency graphs, state machine, and cycle detection.
  *  Replaces the older AgentPlan auto-generation with Claude Code-style task tracking.
@@ -20,6 +25,7 @@ export interface ITaskManager {
 	get(id: string): Task | null;
 	list(filter?: { status?: TaskStatus; owner?: string }): Task[];
 	getAvailable(): Task[];
+	restore(tasks: readonly Task[]): void;
 	clear(): void;
 }
 
@@ -31,6 +37,11 @@ export class TaskManager implements ITaskManager {
 	readonly onDidChange = this._onDidChange.event;
 
 	get tasks(): readonly Task[] { return this._tasks; }
+
+	restore(tasks: readonly Task[]): void {
+		this._tasks = [...tasks];
+		this._onDidChange.fire([...this._tasks]);
+	}
 
 	private _nextId(): string {
 		return 'task_' + Math.random().toString(16).slice(2, 10);
@@ -74,38 +85,38 @@ export class TaskManager implements ITaskManager {
 		metadata?: Record<string, unknown>;
 	}): Task | null {
 		const task = this._tasks.find(t => t.id === id);
-		if (!task) return null;
+		if (!task) { return null; }
 		if (patch.status) {
-			if (task.status === 'deleted') return null;
+			if (task.status === 'deleted') { return null; }
 			task.status = patch.status;
 		}
-		if (patch.owner !== undefined) task.owner = patch.owner;
-		if (patch.subject !== undefined) task.subject = patch.subject;
-		if (patch.description !== undefined) task.description = patch.description;
-		if (patch.activeForm !== undefined) task.activeForm = patch.activeForm;
+		if (patch.owner !== undefined) { task.owner = patch.owner; }
+		if (patch.subject !== undefined) { task.subject = patch.subject; }
+		if (patch.description !== undefined) { task.description = patch.description; }
+		if (patch.activeForm !== undefined) { task.activeForm = patch.activeForm; }
 		if (patch.metadata) {
 			task.metadata = { ...(task.metadata || {}), ...patch.metadata };
 		}
 		if (patch.addBlocks?.length) {
 			for (const blockedId of patch.addBlocks) {
-				if (!task.blocks.includes(blockedId)) task.blocks.push(blockedId);
+				if (!task.blocks.includes(blockedId)) { task.blocks.push(blockedId); }
 			}
 			if (this._hasCycle()) {
 				for (const blockedId of patch.addBlocks) {
 					const idx = task.blocks.indexOf(blockedId);
-					if (idx >= 0) task.blocks.splice(idx, 1);
+					if (idx >= 0) { task.blocks.splice(idx, 1); }
 				}
 				throw new Error('Adding blocks would create a dependency cycle');
 			}
 		}
 		if (patch.addBlockedBy?.length) {
 			for (const blockerId of patch.addBlockedBy) {
-				if (!task.blockedBy.includes(blockerId)) task.blockedBy.push(blockerId);
+				if (!task.blockedBy.includes(blockerId)) { task.blockedBy.push(blockerId); }
 			}
 			if (this._hasCycle()) {
 				for (const blockerId of patch.addBlockedBy) {
 					const idx = task.blockedBy.indexOf(blockerId);
-					if (idx >= 0) task.blockedBy.splice(idx, 1);
+					if (idx >= 0) { task.blockedBy.splice(idx, 1); }
 				}
 				throw new Error('Adding blockedBy would create a dependency cycle');
 			}
@@ -120,15 +131,15 @@ export class TaskManager implements ITaskManager {
 
 	list(filter?: { status?: TaskStatus; owner?: string }): Task[] {
 		let result = this._tasks.filter(t => t.status !== 'deleted');
-		if (filter?.status) result = result.filter(t => t.status === filter.status);
-		if (filter?.owner) result = result.filter(t => t.owner === filter.owner);
+		if (filter?.status) { result = result.filter(t => t.status === filter.status); }
+		if (filter?.owner) { result = result.filter(t => t.owner === filter.owner); }
 		return result;
 	}
 
 	getAvailable(): Task[] {
 		return this._tasks.filter(t => {
-			if (t.status !== 'pending') return false;
-			if (!t.blockedBy.length) return true;
+			if (t.status !== 'pending') { return false; }
+			if (!t.blockedBy.length) { return true; }
 			return t.blockedBy.every(id => {
 				const blocker = this._tasks.find(b => b.id === id);
 				return blocker && blocker.status === 'completed';
@@ -145,21 +156,21 @@ export class TaskManager implements ITaskManager {
 		const visited = new Set<string>();
 		const inStack = new Set<string>();
 		const dfs = (id: string): boolean => {
-			if (inStack.has(id)) return true;
-			if (visited.has(id)) return false;
+			if (inStack.has(id)) { return true; }
+			if (visited.has(id)) { return false; }
 			visited.add(id);
 			inStack.add(id);
 			const task = this._tasks.find(t => t.id === id);
 			if (task) {
 				for (const blockedId of task.blocks) {
-					if (dfs(blockedId)) return true;
+					if (dfs(blockedId)) { return true; }
 				}
 			}
 			inStack.delete(id);
 			return false;
 		};
 		for (const t of this._tasks) {
-			if (dfs(t.id)) return true;
+			if (dfs(t.id)) { return true; }
 		}
 		return false;
 	}

@@ -1,101 +1,113 @@
-﻿/*---------------------------------------------------------------------------------------------
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - Configuration Registration
  *  Exposes ai.* settings in VS Code''s Settings UI.
  *--------------------------------------------------------------------------------------------*/
 
-import type { IConfigurationNode } from "../../../platform/configuration/common/configurationRegistry.js";
+import { localize } from '../../../nls.js';
+import type { IConfigurationNode } from '../../../platform/configuration/common/configurationRegistry.js';
 
 export const aiConfigurationNode: IConfigurationNode = {
-	id: "ai",
+	id: 'ai',
 	order: 50,
-	title: "AI",
-	type: "object",
+	title: 'AI',
+	type: 'object',
 	properties: {
-		"ai.modelName": {
-			type: "string",
-			default: "",
-			description: "AI model display name shown in the status bar. Leave empty to show the model ID.",
+		'ai.modelName': {
+			type: 'string',
+			default: '',
+			description: localize("studio.settings.modelName", "状态栏显示的模型名称。留空时显示模型 ID。"),
 		},
-		"ai.apiType": {
-			type: "string",
-			enum: ["openai", "anthropic"],
-			default: "openai",
-			description: "API type. \"openai\" for OpenAI or any OpenAI-compatible API (OpenRouter, DeepSeek, Ollama, etc.). \"anthropic\" for the official Anthropic API.",
+		'ai.apiType': {
+			type: 'string',
+			enum: ['openai', 'anthropic'],
+			enumItemLabels: ['OpenAI', 'Anthropic'],
+			default: 'openai',
+			description: localize("studio.settings.apiType", "选择模型接口类型。OpenAI 兼容接口也适用于 OpenRouter、DeepSeek 和 Ollama。"),
 			enumDescriptions: [
-				"OpenAI or any OpenAI-compatible API endpoint",
-				"Anthropic official API",
+				localize("studio.settings.openAi", "OpenAI 或兼容 OpenAI 的接口"),
+				localize("studio.settings.anthropic", "Anthropic 官方接口"),
 			],
 		},
-		"ai.modelId": {
-			type: "string",
-			default: "",
-			description: "Model identifier. A single model is shared across all features (Chat, Agent, inline completion).",
+		'ai.modelId': {
+			type: 'string',
+			default: '',
+			description: localize("studio.settings.modelId", "模型标识符。对话、智能体和行内补全共用此模型。"),
 		},
-		"ai.apiKey": {
-			type: "string",
-			default: "",
-			description: "Legacy fallback API key for the selected provider. Prefer storing keys in AI Studio secure credentials instead of settings.",
+		'ai.apiKey': {
+			type: 'string',
+			default: '',
+			description: localize("studio.settings.apiKey", "兼容旧版设置的 API 密钥。建议将密钥保存到 AI Studio 的安全凭据中。"),
 			restricted: true,
 			ignoreSync: true,
 		},
-		"ai.apiBase": {
-			type: "string",
-			default: "",
-			description: "Custom API base URL. Leave empty to use the official endpoint. Example: https://api.openrouter.ai/v1",
+		'ai.apiBase': {
+			type: 'string',
+			default: '',
+			description: localize("studio.settings.apiBase", "模型服务的 API 地址。留空时使用所选服务的官方地址。"),
 		},
-		"ai.completion.enabled": {
-			type: "boolean",
+		'ai.completion.enabled': {
+			type: 'boolean',
 			default: true,
-			description: "Enable inline Tab code completion.",
+			description: localize("studio.settings.completionEnabled", "启用按 Tab 接受的行内代码补全。"),
 		},
-		"ai.completion.delay": {
-			type: "number",
+		'ai.completion.delay': {
+			type: 'number',
 			default: 150,
 			minimum: 50,
 			maximum: 2000,
-			description: "Delay in milliseconds before triggering a completion request after the user stops typing.",
+			description: localize("studio.settings.completionDelay", "停止输入后等待多少毫秒再请求补全。"),
 		},
-		"ai.chat.maxTokens": {
-			type: "number",
+		'ai.chat.maxTokens': {
+			type: 'number',
 			default: 16000,
 			minimum: 256,
 			maximum: 200000,
-			description: "Maximum tokens per chat response.",
+			description: localize("studio.settings.chatMaxTokens", "每次对话回复最多可使用的词元数。"),
 		},
-		"ai.agent.maxSteps": {
-			type: "number",
+		'ai.agent.maxSteps': {
+			type: 'number',
 			default: 20,
 			minimum: 1,
 			maximum: 100,
-			description: "Maximum number of steps the agent may take before being force-stopped.",
+			description: localize("studio.settings.agentMaxSteps", "智能体每次任务最多可执行的步骤数。"),
 		},
-		"ai.agent.maxSubAgents": {
+		'ai.agent.maxSubAgents': {
 			type: 'number',
 			default: 3,
 			minimum: 1,
 			maximum: 16,
-			description: 'Maximum number of sub-agents that can run in parallel',
+			description: localize("studio.settings.maxSubAgents", "可同时运行的子智能体数量上限。"),
 		},
-		"ai.commandApproval": {
-			type: "string",
-			enum: ["all", "unsafe", "none"],
-			default: "unsafe",
-			description: "Command execution approval policy. \"unsafe\" approves only read-only/safe commands automatically. \"all\" requires approval for every command. \"none\" disables approval (not recommended).",
+		'ai.commandApproval': {
+			type: 'string',
+			enum: ['all', 'unsafe', 'none'],
+			enumItemLabels: [
+				localize("studio.settings.confirmAlways", "逐条审批"),
+				localize("studio.settings.confirmUnsafe", "按需审批"),
+				localize("studio.settings.confirmNever", "自动执行"),
+			],
+			default: 'unsafe',
+			description: localize("studio.settings.commandApproval", "选择运行终端命令时的审批方式。"),
 			enumDescriptions: [
-				"Approve every shell command before execution",
-				"Auto-approve safe/read-only commands, require approval for potentially destructive ones",
-				"Skip all approval - execute any command automatically",
+				localize("studio.settings.approveAll", "运行每条命令前请求批准"),
+				localize("studio.settings.approveUnsafe", "自动放行已识别的只读命令，其他命令需要批准"),
+				localize("studio.settings.approveNone", "自动运行允许执行的命令"),
 			],
 		},
-		"ai.slashCommands": {
-			type: "object",
+		'ai.slashCommands': {
+			type: 'object',
 			default: {},
-			markdownDescription: "User-defined slash commands. Each key is a command name (without /), value is an object with `description` (optional) and `prompt` (required). Example: `{ \"deploy\": { \"description\": \"Deploy the current project\", \"prompt\": \"Run the deploy script and verify\" } }`",
+			markdownDescription: localize("studio.settings.slashCommands", "自定义斜杠命令。键为命令名称（省略 /），值包含必填的 `prompt` 和可选的 `description`。例如 `{ \"test\": { \"description\": \"运行测试\", \"prompt\": \"请运行项目测试并汇总结果\" } }`。"),
 		},
-		"ai.index.enabled": {
-			type: "boolean",
+		'ai.index.enabled': {
+			type: 'boolean',
 			default: true,
-			description: "Enable codebase indexing so the AI understands your project structure.",
+			description: localize("studio.settings.indexEnabled", "为工作区代码建立索引，以便智能体检索项目结构与实现。"),
 		},
 	},
 };

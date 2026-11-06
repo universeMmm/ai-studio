@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio - Index Builder
  *  Orchestrates full + incremental code indexing.
  *  Embeddings: primary path uses the configured AI model embedding API;
@@ -6,141 +11,149 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../base/common/uri.js';
-import { Disposable } from "../../../base/common/lifecycle.js";
-import { IFileService } from "../../../platform/files/common/files.js";
-import { ILogService } from "../../../platform/log/common/log.js";
-import { IAIModelService } from "./aiModelService.js";
-import { IndexStore } from "../common/indexStore.js";
-import { chunkFile } from "../common/chunker.js";
-
-/**
- * Inline path polyfill — the sandboxed renderer cannot access Node.js "path".
- */
-const _sep = (typeof process !== 'undefined' && process.platform === 'win32') ? '\\' : '/';
-const _isWin = _sep === '\\';
-
-function _normalizePath(p: string): string {
-	if (!p) return '.';
-	let isAbs = false;
-	let prefix = '';
-	if (_isWin) {
-		const m = p.match(/^([a-zA-Z]:)([\\/]?)/);
-		if (m) { prefix = m[1]; p = p.slice(m[0].length); isAbs = true; }
-	} else if (p.startsWith('/')) {
-		isAbs = true;
-	}
-	const parts = p.replace(/\\/g, '/').split('/').filter(s => s !== '' && s !== '.');
-	const resolved: string[] = [];
-	for (const part of parts) {
-		if (part === '..') { resolved.pop(); continue; }
-		resolved.push(part);
-	}
-	let result = resolved.join('/');
-	if (_isWin) {
-		result = prefix + (result ? '\\' + result.replace(/\//g, '\\') : '\\');
-	} else if (isAbs) {
-		result = '/' + result;
-	}
-	return result || (isAbs ? (_isWin ? prefix + '\\' : '/') : '.');
-}
-
-function _join(...segments: string[]): string {
-	return _normalizePath(segments.filter(Boolean).join('/'));
-}
-
-function _isAbsolute(p: string): boolean {
-	if (_isWin) return /^[a-zA-Z]:[\\/]/.test(p);
-	return p.startsWith('/');
-}
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { ILogService } from '../../../platform/log/common/log.js';
+import { IAIModelService } from './aiModelService.js';
+import { IndexedDB } from '../../../base/browser/indexedDB.js';
+import { Sequencer, SequencerByKey } from '../../../base/common/async.js';
+import { isEqualOrParent } from '../../../base/common/extpath.js';
+import { resolve } from '../../../base/common/path.js';
+import { isLinux } from '../../../base/common/platform.js';
+import { IFileService, FileOperationResult, toFileOperationResult } from '../../files/common/files.js';
+import { runIndexRipgrep } from './indexRipgrep.js';
+import { IndexStore, type IndexedChunk } from '../common/indexStore.js';
+import { chunkFile } from '../common/chunker.js';
 
 const MAX_FILE_SIZE = 100 * 1024;
 const MAX_FILE_LINES = 1000;
 
 export class IndexBuilder extends Disposable {
-	private __store: IndexStore | null = null;
-	private _embeddingAvailable = false;
-	private _isIndexing = false;
+	private store: IndexStore | null = null;
+	private disposed = false;
+	private embeddingAvailable = false;
+	private readonly fileQueue = new SequencerByKey<string>();
+	private readonly scanQueue = new Sequencer();
 
 	constructor(
-		private readonly workspaceRoot: string,
+		readonly workspaceRoot: string,
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
 		@IAIModelService private readonly modelService: IAIModelService,
 	) { super(); }
 
 	async initialize(): Promise<void> {
-		this.__store = new IndexStore(this.workspaceRoot);
-		await this.__store.initialize();
-		try {
-			const embeddings = await this.modelService.embed(["test probe"]);
-			if (embeddings.length > 0 && embeddings[0].some((v: number) => v !== 0)) {
-				this._embeddingAvailable = true;
-				this.logService.info("[IndexBuilder] Embedding API available. Semantic search enabled.");
+		let database: IndexedDB | undefined;
+		if (typeof indexedDB !== 'undefined') {
+			try {
+				database = await IndexedDB.create('ai-studio-index:' + this.workspaceRoot, 1, ['files']);
+			} catch (error) {
+				this.logService.warn('[IndexBuilder] Workspace index will use memory', error);
 			}
+		}
+		const browserDatabase = database;
+		let store = new IndexStore(browserDatabase ? {
+			getFiles: () => browserDatabase.getKeyValues('files', (value): value is IndexedChunk[] => Array.isArray(value)),
+			replaceFile: async (filePath, entries) => {
+				if (entries.length) {
+					await browserDatabase.runInTransaction('files', 'readwrite', storage => storage.put(entries, filePath));
+				} else {
+					await browserDatabase.runInTransaction('files', 'readwrite', storage => storage.delete(filePath));
+				}
+			},
+			close: () => browserDatabase.close(),
+		} : undefined);
+		if (!database && typeof process !== 'undefined' && process.versions?.node) {
+			const { createNodeIndexStore } = await import('../node/indexStore.js');
+			store = await createNodeIndexStore(this.workspaceRoot);
+		}
+		await store.initialize();
+		if (this.disposed) { store.close(); return; }
+		this.store = store;
+		await this.checkEmbedding();
+	}
+
+	private async checkEmbedding(): Promise<void> {
+		try {
+			const [probe] = await this.modelService.embed(['test probe']);
+			this.embeddingAvailable = !!probe?.some(value => value !== 0) && probe.every(Number.isFinite);
 		} catch {
-			this.logService.warn("[IndexBuilder] Embedding API unavailable - keyword-only search.");
+			this.logService.warn('[IndexBuilder] Embedding API unavailable - keyword-only search.');
 		}
 	}
 
-	async fullIndex(): Promise<void> {
-		if (!this.__store || this._isIndexing) return;
-		this._isIndexing = true;
-		const files = await this._collectFiles();
-		for (const f of files) { await this._indexOne(f); }
-		this._isIndexing = false;
+	async fullIndex(retryEmbedding = false): Promise<void> {
+		await this.scanQueue.queue(async () => {
+			if (retryEmbedding && !this.disposed && !this.embeddingAvailable) { await this.checkEmbedding(); }
+			if (!this.isReady() || !this.store) { return; }
+			const files = await runIndexRipgrep(['--files', '--null', '--glob', '!**/node_modules/**', '--', '.'], this.workspaceRoot);
+			const current = new Set(files.split('\0').filter(Boolean).map(path => resolve(this.workspaceRoot, path)));
+			for (const indexed of [...this.store.filePaths]) {
+				if (!current.has(indexed)) { await this.removeFile(indexed); }
+			}
+			for (const file of current) {
+				if (this.disposed) { break; }
+				await this.indexFile(file);
+			}
+		});
 	}
 
-	async indexFile(fp: string): Promise<void> { await this._indexOne(fp); }
+	async indexFile(path: string): Promise<void> {
+		const file = resolve(this.workspaceRoot, path);
+		if (!this.contains(file)) { return; }
+		await this.fileQueue.queue(file, async () => {
+			if (!this.isReady() || !this.store) { return; }
+			const entries: IndexedChunk[] = [];
+			try {
+				const { value } = await this.fileService.readFile(URI.file(file), { limits: { size: MAX_FILE_SIZE } });
+				const text = value.toString();
+				if (value.byteLength <= MAX_FILE_SIZE && !text.includes('\0') && text.split('\n').length <= MAX_FILE_LINES) {
+					for (const chunk of chunkFile(file, text, _extToLang(file))) {
+						entries.push({ chunk, embedding: await this.embed(chunk.content) });
+					}
+				}
+			} catch (error) {
+				if (this.disposed) { return; }
+				const result = toFileOperationResult(error as Error);
+				// A missing, oversized or changed file must not keep its previous searchable text.
+				entries.length = 0;
+				if (result !== FileOperationResult.FILE_NOT_FOUND && result !== FileOperationResult.FILE_TOO_LARGE) {
+					this.logService.warn('[IndexBuilder] Cannot index ' + file, error);
+				}
+			}
+			if (!this.disposed) { await this.store.replaceFile(file, entries); }
+		});
+	}
 
-	async removeFile(fp: string): Promise<void> { await this.__store?.removeFile(fp); }
+	async removeFile(path: string): Promise<void> {
+		const file = resolve(this.workspaceRoot, path);
+		if (this.contains(file)) {
+			await this.fileQueue.queue(file, async () => {
+				if (!this.disposed) { await this.store?.replaceFile(file, []); }
+			});
+		}
+	}
 
-	getStore() { return this.__store; }
-	isReady() { return this.__store !== null && this._embeddingAvailable; }
+	contains(file: string): boolean { return isEqualOrParent(file, this.workspaceRoot, !isLinux); }
+	getStore(): IndexStore | null { return this.store; }
+	isReady(): boolean { return !this.disposed && this.store !== null && this.embeddingAvailable; }
 
 	async embed(text: string): Promise<Float32Array> {
-		if (!this._embeddingAvailable) throw new Error("Embeddings not available");
-		const embeddings = await this.modelService.embed([text]);
-		if (!embeddings.length || embeddings[0].every((v: number) => v === 0)) {
-			throw new Error("Empty embedding returned");
+		const [vector] = await this.modelService.embed([text]);
+		if (!vector?.length || !vector.some(value => value !== 0) || !vector.every(Number.isFinite)) {
+			throw new Error('Invalid embedding returned');
 		}
-		return new Float32Array(embeddings[0]);
+		return new Float32Array(vector);
 	}
 
-	private async _indexOne(fp: string): Promise<void> {
-		if (!this.__store) return;
-		const fullPath = _isAbsolute(fp) ? fp : _join(this.workspaceRoot, fp);
-		try {
-			await this.__store.removeFile(fullPath);
-			const text = (await this.fileService.readFile(URI.file(fullPath))).value.toString();
-			if (text.length > MAX_FILE_SIZE || text.split("\n").length > MAX_FILE_LINES) return;
-			const chunks = chunkFile(fullPath, text, _extToLang(fullPath));
-			for (const c of chunks) {
-				let embedding: Float32Array | null = null;
-				if (this._embeddingAvailable) {
-					try { embedding = await this.embed(c.content); } catch { /* skip chunk */ }
-				}
-				if (embedding) {
-					await this.__store.add(c.id, { filePath: c.filePath, startLine: c.startLine, endLine: c.endLine, content: c.content, kind: c.kind, name: c.name, }, embedding);
-				}
-			}
-		} catch (err) {
-			this.logService.error("[IndexBuilder] " + fullPath + ": " + (err instanceof Error ? err.message : String(err)));
-		}
-	}
-
-	private async _collectFiles(): Promise<string[]> {
-		try {
-			const { execSync } = await import("child_process");
-			return String(execSync("rg --files --no-ignore-vcs", {
-				cwd: this.workspaceRoot, maxBuffer: 10 * 1024 * 1024,
-				encoding: "utf-8", timeout: 30000,
-			})).trim().split("\n").filter(Boolean);
-		} catch { return []; }
+	override dispose(): void {
+		this.disposed = true;
+		this.store?.close();
+		super.dispose();
 	}
 }
 
 function _extToLang(fp: string): string {
-	const ext = fp.split(".").pop()?.toLowerCase() || "";
-	const m: Record<string, string> = { ts: "typescript", tsx: "typescriptreact", js: "javascript", jsx: "javascriptreact", py: "python", go: "go", rs: "rust", java: "java", kt: "kotlin", cs: "csharp", rb: "ruby", };
+	const ext = fp.split('.').pop()?.toLowerCase() || '';
+	const m: Record<string, string> = { ts: 'typescript', tsx: 'typescriptreact', js: 'javascript', jsx: 'javascriptreact', py: 'python', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', cs: 'csharp', rb: 'ruby', };
 	return m[ext] || ext;
 }

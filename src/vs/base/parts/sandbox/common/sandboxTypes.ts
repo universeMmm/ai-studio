@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import type { NLSMessages } from '../../../../nls.js';
 import { IProcessEnvironment } from '../../../common/platform.js';
 import { IProductConfiguration } from '../../../common/product.js';
 
@@ -63,7 +64,7 @@ export interface ISandboxConfiguration {
 		 * All NLS messages produced by `localize` and `localize2` calls
 		 * under `src/vs`.
 		 */
-		messages: string[];
+		messages: NLSMessages;
 
 		/**
 		 * The actual language of the NLS messages (e.g. 'en', de' or 'pt-br').

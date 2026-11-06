@@ -1,48 +1,29 @@
 /*---------------------------------------------------------------------------------------------
- *  AI Studio — Token Counter
- *  BPE-based token counting using a lightweight built-in vocabulary.
- *  Model-agnostic: splits on common boundaries, handles code tokens well.
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-const TOKEN_PATTERN = /[A-Za-z_]\w*|\d+(?:\.\d+)?|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|```[\s\S]*?```|`[^`]*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\n]*|\n\s*\n|[^\S\n]+|./g;
+/*---------------------------------------------------------------------------------------------
+ *  AI Studio — Token Counter
+ *  Lightweight estimate for context compaction when provider usage is unavailable.
+ *--------------------------------------------------------------------------------------------*/
 
-const CHAR_WEIGHTS: Record<string, number> = {
-	word: 0.28,
-	whitespace: 0.05,
-	newline: 0.85,
-	number: 0.55,
-	string: 0.22,
-	punctuation: 0.9,
-	default: 0.75,
-};
-
-function charType(ch: string): string {
-	if (/[A-Za-z_]/.test(ch)) return 'word';
-	if (/[0-9]/.test(ch)) return 'number';
-	if (ch === '\n') return 'newline';
-	if (/[^\S\n]/.test(ch)) return 'whitespace';
-	if (/['"`]/.test(ch)) return 'string';
-	if (/[.,;:!?(){}\[\]<>+\-*/%=&|^~@#$]/.test(ch)) return 'punctuation';
-	return 'default';
-}
+// A leading space is commonly encoded with the following word or symbol.
+// Keep comments and string literals tokenized like the text they contain.
+const TOKEN_PIECES = / ?[A-Za-z_]\w*| ?[0-9]+| ?[\p{P}\p{S}]+|\r\n|[\r\n]|[^\S\r\n]+|./gu;
 
 export function countTokens(text: string): number {
 	let total = 0;
-	const matches = text.match(TOKEN_PATTERN);
-	if (!matches) return 0;
-
-	for (const m of matches) {
-		if (m.length === 1) {
-			total += CHAR_WEIGHTS[charType(m)] || CHAR_WEIGHTS.default;
+	for (const [piece] of text.matchAll(TOKEN_PIECES)) {
+		const content = piece.trimStart();
+		if (!content) {
+			total += Math.ceil(piece.length / 8);
+		} else if (/^[A-Za-z_]/.test(content)) {
+			total += Math.max(1, content.length / 5);
+		} else if (/^[0-9]/.test(content)) {
+			total += Math.ceil(content.length / 3);
 		} else {
-			const type = charType(m[0]);
-			if (type === 'string') {
-				total += Math.ceil(m.length * CHAR_WEIGHTS.string);
-			} else if (type === 'word') {
-				total += Math.max(1, Math.ceil(m.length * CHAR_WEIGHTS.word));
-			} else {
-				total += Math.ceil(m.length * CHAR_WEIGHTS.default);
-			}
+			total += Math.ceil(content.length / 2);
 		}
 	}
 	return Math.ceil(total);

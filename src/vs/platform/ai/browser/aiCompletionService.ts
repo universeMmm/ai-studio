@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — Completion Service
  *  Manages inline code completion with debounce + FIM prompting + cancellation.
  *--------------------------------------------------------------------------------------------*/
@@ -51,7 +56,7 @@ export class AICompletionService extends Disposable implements IAICompletionServ
 				const t = setTimeout(resolve, delay);
 				signal.addEventListener('abort', () => { clearTimeout(t); resolve(); });
 			});
-			if (signal.aborted) return null;
+			if (signal.aborted) { return null; }
 		}
 
 		const neighborCtx = await ctxPromise;
@@ -75,7 +80,7 @@ export class AICompletionService extends Disposable implements IAICompletionServ
 	private async _buildNeighborContext(fc: FileContext): Promise<string> {
 		try {
 			const dir = fc.filePath.substring(0, fc.filePath.lastIndexOf('/'));
-			if (!dir) return '';
+			if (!dir) { return ''; }
 			const siblings = await this._listSiblings(dir);
 			const relevant = siblings.filter(s => this._sameExt(s, fc.filePath)).slice(0, 3);
 			let ctx = '';
@@ -93,7 +98,7 @@ export class AICompletionService extends Disposable implements IAICompletionServ
 	private async _listSiblings(dir: string): Promise<string[]> {
 		try {
 			const stat = await this.fileService.resolve(URI.file(dir));
-			return (stat.children || []).map((c: any) => dir + '/' + c.name);
+			return (stat.children || []).map(c => dir + '/' + c.name);
 		} catch { return []; }
 	}
 

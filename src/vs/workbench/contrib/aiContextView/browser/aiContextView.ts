@@ -1,105 +1,354 @@
-﻿/*---------------------------------------------------------------------------------------------
- *  AI Studio - AI Context Sidebar View
- *  Four-section panel showing Agent's current knowledge state.
- *  Registered via ViewsRegistry into the explorer container.
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from "../../../../base/common/lifecycle.js";
-import { IAIAgentService } from "../../../../platform/ai/browser/aiAgentService.js";
-import { IAIContextService } from "../../../../platform/ai/browser/aiContextService.js";
-import { IAIIndexService } from "../../../../platform/ai/browser/aiIndexService.js";
+/*---------------------------------------------------------------------------------------------
+ *  AI Studio — Native session inspector. All sections use live workbench state.
+ *--------------------------------------------------------------------------------------------*/
 
-const HTML_TEMPLATE = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-body { font-family: var(--vscode-font-family); font-size: 12px; padding: 8px; color: var(--vscode-foreground); margin: 0; }
-.section { margin-bottom: 12px; }
-.section-title { font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; font-size: 11px; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
-.section-title .codicon { font-size: 14px; }
-.stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
-.stat-label { color: var(--vscode-descriptionForeground); }
-.stat-value { font-weight: 500; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%%; display: inline-block; margin-right: 4px; }
-.status-ready { background: var(--vscode-testing-iconPassed); }
-.status-offline { background: var(--vscode-errorForeground); }
-.file-item { padding: 1px 0; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.file-score { color: var(--vscode-descriptionForeground); font-size: 10px; margin-left: 4px; }
-</style></head><body>
-<div id="editor-section" class="section"></div>
-<div id="index-section" class="section"></div>
-<div id="memory-section" class="section"></div>
-<div id="search-section" class="section"></div>
-</body></html>`;
+import { append, $, isHTMLElement } from '../../../../base/browser/dom.js';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
+import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { isAbsolute } from '../../../../base/common/path.js';
+import { URI } from '../../../../base/common/uri.js';
+import { AgentSession, AgentStep, DiffGroup, DiffHunk, Task } from '../../../../platform/ai/common/aiTypes.js';
+import { MemoryStore } from '../../../../platform/ai/common/memoryStore.js';
+import { IAIAgentService } from '../../../../platform/ai/browser/aiAgentService.js';
+import { IAIIndexService } from '../../../../platform/ai/browser/aiIndexService.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { getCodeEditor } from '../../../../editor/browser/editorBrowser.js';
+import { ViewPane } from '../../../browser/parts/views/viewPane.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { IDiffStore } from '../../aiDiffApply/browser/diffStore.js';
+import { IChatWidgetService } from '../../chat/browser/chat.js';
+import { studioToolLabel } from '../../aiChat/browser/studioToolLabels.js';
+import './media/inspector.css';
 
-export class AIContextView extends Disposable {
-	private _view: any = null;
-	private _refreshTimer: any = null;
+export type InspectorTab = 'changes' | 'activity' | 'context';
+const tabs: Record<InspectorTab, string> = { changes: '变更', activity: '执行记录', context: '上下文' };
 
-	constructor(
-		@IAIAgentService private readonly agentService: IAIAgentService,
-		@IAIContextService private readonly contextService: IAIContextService,
-		@IAIIndexService private readonly indexService: IAIIndexService,
-	) { super(); }
+export class AIContextView extends ViewPane {
+	static readonly ID = 'ai-studio.context';
+	private content?: InspectorContent;
+	private tab: InspectorTab = 'changes';
 
-	resolveWebviewView(view: any, _ctx: unknown): void {
-		this._view = view;
-		view.webview.options = { enableScripts: false };
-		view.webview.html = HTML_TEMPLATE;
-		this._refresh();
-
-		// Refresh every 2 seconds while visible
-		this._refreshTimer = setInterval(() => this._refresh(), 2000);
-		view.onDidChangeVisibility(() => {
-			if (view.visible) { this._refresh(); }
-		});
-		view.onDidDispose(() => { clearInterval(this._refreshTimer); });
+	protected override renderBody(parent: HTMLElement): void {
+		super.renderBody(parent);
+		this.content = this._register(this.instantiationService.createInstance(InspectorContent, parent));
+		this.content.selectTab(this.tab);
 	}
-
-	private _refresh(): void {
-		if (!this._view?.visible) return;
-		const editor = this.contextService.getEditorContext();
-		const stats = this.indexService.stats;
-		const memory = this.agentService?.memory;
-		const plan = this.agentService?.plan;
-
-		let html = "";
-
-		// 1. Editor section
-		html += '<div class="section-title"><span class="codicon codicon-file-code"></span>Current Editor</div>';
-		if (editor.filePath) {
-			html += '<div class="stat-row"><span class="stat-label">File</span><span class="stat-value">' + _esc(editor.filePath.split("/").pop() || editor.filePath) + '</span></div>';
-			html += '<div class="stat-row"><span class="stat-label">Language</span><span class="stat-value">' + _esc(editor.languageId) + '</span></div>';
-			html += '<div class="stat-row"><span class="stat-label">Cursor</span><span class="stat-value">L' + editor.line + ', C' + editor.column + '</span></div>';
-		} else {
-			html += '<div class="stat-row"><span class="stat-value">No editor open</span></div>';
-		}
-
-		// 2. Index section
-		const indexReady = stats.isReady;
-		html += '<div class="section-title"><span class="codicon codicon-database"></span>Code Index</div>';
-		html += '<div class="stat-row"><span class="stat-label">Status</span><span class="stat-value"><span class="status-dot ' + (indexReady ? 'status-ready' : 'status-offline') + '"></span>' + (indexReady ? 'Ready' : 'Offline') + '</span></div>';
-		html += '<div class="stat-row"><span class="stat-label">Files</span><span class="stat-value">' + (stats.totalFiles || 0) + '</span></div>';
-		html += '<div class="stat-row"><span class="stat-label">Chunks</span><span class="stat-value">' + (stats.totalChunks || 0) + '</span></div>';
-
-		// 3. Memory section
-		html += '<div class="section-title"><span class="codicon codicon-comment-discussion"></span>Conversation</div>';
-		if (memory) {
-			html += '<div class="stat-row"><span class="stat-label">Messages</span><span class="stat-value">' + memory.messageCount + '</span></div>';
-			html += '<div class="stat-row"><span class="stat-label">Est. Tokens</span><span class="stat-value">~' + memory.estimatedTokens + '</span></div>';
-		}
-		if (plan) {
-			html += '<div class="stat-row"><span class="stat-label">Plan Steps</span><span class="stat-value">' + plan.steps.filter(s => s.status === "completed").length + '/' + plan.steps.length + ' done</span></div>';
-		}
-
-		// 4. Search section (placeholder for recent hits)
-		html += '<div class="section-title"><span class="codicon codicon-search"></span>Recent Context</div>';
-		html += '<div class="file-item">(last search results appear here)</div>';
-
-		this._view.webview.postMessage({ html });
-		// Fallback: direct HTML update if postMessage not supported
-		this._view.webview.html = HTML_TEMPLATE.replace("</body>", html + "</body>");
-	}
+	selectTab(tab: InspectorTab): void { this.tab = tab; this.content?.selectTab(tab); }
+	override focus(): void { super.focus(); this.content?.focus(); }
 }
 
-function _esc(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function icon(parent: HTMLElement, name: string): void {
+	append(parent, $('span.codicon.codicon-' + name, { 'aria-hidden': 'true' }));
+}
+
+function empty(parent: HTMLElement, symbol: string, title: string, text: string): void {
+	const box = append(parent, $('.studio-inspector-empty'));
+	icon(box, symbol);
+	append(box, $('h3', {}, title));
+	append(box, $('p', {}, text));
+}
+
+class InspectorContent extends Disposable {
+	private readonly root: HTMLElement;
+	private readonly nav: HTMLElement;
+	private readonly body: HTMLElement;
+	private readonly tabButtons = new Map<InspectorTab, HTMLButtonElement>();
+	private readonly focusableElements = new Map<string, HTMLElement>();
+	private tab: InspectorTab = 'changes';
+	private allChanges = false;
+	private session?: string;
+	private archive: AgentSession | null = null;
+	private loadingHistory = false;
+	private readonly selection = this._register(new MutableDisposable());
+	private readonly refresh = this._register(new RunOnceScheduler(() => this.render(), 35));
+	private readonly expanded = new Set<string>();
+	private readonly busy = new Set<string>();
+
+	constructor(
+		parent: HTMLElement,
+		@IDiffStore private readonly diffs: IDiffStore,
+		@IAIAgentService private readonly agent: IAIAgentService,
+		@IAIIndexService private readonly index: IAIIndexService,
+		@IEditorService private readonly editors: IEditorService,
+		@IChatWidgetService private readonly chats: IChatWidgetService,
+		@IWorkspaceContextService private readonly workspace: IWorkspaceContextService,
+		@IFileService private readonly files: IFileService,
+		@ILabelService private readonly labels: ILabelService,
+		@ICommandService private readonly commands: ICommandService,
+		@ILogService private readonly log: ILogService,
+		@INotificationService private readonly notifications: INotificationService,
+	) {
+		super();
+		this.root = append(parent, $('.studio-inspector'));
+		this.nav = append(this.root, $('.studio-inspector-tabs', { role: 'tablist', 'aria-label': '任务详情' }));
+		this.body = append(this.root, $('.studio-inspector-body', { role: 'tabpanel', tabindex: '0' }));
+		for (const tab of Object.keys(tabs) as InspectorTab[]) {
+			const button = this.action(this.nav, tabs[tab], () => this.selectTab(tab), tab);
+			this.tabButtons.set(tab, button);
+			button.setAttribute('role', 'tab');
+			button.onkeydown = e => {
+				const keys = Object.keys(tabs) as InspectorTab[];
+				let next = keys.indexOf(tab);
+				if (e.key === 'ArrowRight') { next = (next + 1) % keys.length; }
+				else if (e.key === 'ArrowLeft') { next = (next + keys.length - 1) % keys.length; }
+				else if (e.key === 'Home') { next = 0; }
+				else if (e.key === 'End') { next = keys.length - 1; }
+				else { return; }
+				e.preventDefault();
+				this.selectTab(keys[next]);
+				this.focus();
+			};
+		}
+		this._register(this.diffs.onDidChange(() => this.refresh.schedule()));
+		this._register(this.agent.onDidChangeStatus(() => this.refresh.schedule()));
+		this._register(this.agent.onDidAddStep(() => this.refresh.schedule()));
+		this._register(this.agent.onDidChangeTasks(() => this.refresh.schedule()));
+		this._register(this.index.onDidBecomeReady(() => this.refresh.schedule()));
+		this._register(this.chats.onDidChangeFocusedSession(() => this.updateSession()));
+		this._register(this.editors.onDidActiveEditorChange(() => this.watchEditor()));
+		this.watchEditor();
+		this.updateSession();
+	}
+
+	selectTab(tab: InspectorTab): void {
+		this.tab = tab;
+		for (const [key, button] of this.tabButtons) {
+			const active = key === tab;
+			button.setAttribute('aria-selected', String(active));
+			button.tabIndex = active ? 0 : -1;
+		}
+		this.body.setAttribute('aria-label', tabs[tab]);
+		this.body.scrollTop = 0;
+		this.render();
+	}
+
+	focus(): void { this.tabButtons.get(this.tab)?.focus(); }
+
+	private watchEditor(): void {
+		const editor = getCodeEditor(this.editors.activeTextEditorControl);
+		this.selection.value = editor?.onDidChangeCursorSelection(() => { if (this.tab === 'context') { this.refresh.schedule(); } });
+		this.refresh.schedule();
+	}
+
+	private updateSession(): void {
+		const session = this.chats.lastFocusedWidget?.viewModel?.sessionResource.toString();
+		if (this.session === session) { return; }
+		this.session = session;
+		this.archive = null;
+		this.allChanges = false;
+		this.expanded.clear();
+		const folder = this.workspace.getWorkspace().folders[0];
+		this.loadingHistory = !!(session && folder);
+		if (session && folder) {
+			void new MemoryStore(folder.uri.fsPath, this.files, this.log).loadLatestForChat(session).then(value => {
+				if (this.session === session && !this._store.isDisposed) {
+					this.archive = value;
+					this.loadingHistory = false;
+					this.refresh.schedule();
+				}
+			});
+		}
+		this.refresh.schedule();
+	}
+
+	private render(): void {
+		const active = this.body.ownerDocument.activeElement;
+		const focus = isHTMLElement(active) && this.body.contains(active) ? active.dataset.focus : undefined;
+		const scroll = this.body.scrollTop;
+		this.focusableElements.clear();
+		this.body.replaceChildren();
+		if (this.tab === 'changes') { this.renderChanges(); }
+		if (this.tab === 'activity') { this.renderActivity(); }
+		if (this.tab === 'context') { this.renderContext(); }
+		if (focus) {
+			const next = this.focusableElements.get(focus);
+			(next ?? this.body).focus({ preventScroll: true });
+		}
+		this.body.scrollTop = scroll;
+	}
+
+	private action(parent: HTMLElement, label: string, run: () => void, key: string, glyph?: string): HTMLButtonElement {
+		const button = append(parent, $<HTMLButtonElement>('button', { type: 'button', title: label, 'aria-label': label, 'data-focus': key }));
+		if (glyph) { icon(button, glyph); } else { button.textContent = label; }
+		button.onclick = run;
+		if (!this.focusableElements.has(key)) { this.focusableElements.set(key, button); }
+		return button;
+	}
+
+	private async perform(key: string, operation: () => Promise<unknown>): Promise<void> {
+		if (this.busy.has(key)) { return; }
+		this.busy.add(key);
+		this.render();
+		try { await operation(); }
+		catch (error) { this.notifications.error(error instanceof Error ? error : String(error)); }
+		finally {
+			this.busy.delete(key);
+			if (!this._store.isDisposed) { this.render(); }
+		}
+	}
+
+	private section(text: string, detail?: string): HTMLElement {
+		const head = append(this.body, $('.studio-inspector-heading'));
+		append(head, $('h3', {}, text));
+		if (detail) { append(head, $('span', {}, detail)); }
+		return head;
+	}
+
+	private fileButton(parent: HTMLElement, uri: URI, line = 1): void {
+		const name = this.labels.getUriBasenameLabel(uri);
+		const button = this.action(parent, '打开 ' + name, () => void this.perform('open:' + uri, () =>
+			this.editors.openEditor({ resource: uri, options: { selection: { startLineNumber: Math.max(1, line), startColumn: 1 }, pinned: true } })), 'file:' + uri + ':' + line);
+		button.textContent = '';
+		button.classList.add('studio-inspector-file');
+		icon(button, 'file-code');
+		const nameBlock = append(button, $('span.studio-inspector-name'));
+		append(nameBlock, $('strong', {}, name));
+		append(nameBlock, $('small', {}, this.labels.getUriLabel(uri, { relative: true })));
+		icon(button, 'go-to-file');
+	}
+
+	private renderChanges(): void {
+		const head = this.section('文件变更');
+		const outsideSession = this.session && this.diffs.groups.some(g => g.sessionId !== this.session);
+		if (outsideSession) {
+			const scope = append(head, $<HTMLSelectElement>('select', { 'aria-label': '变更范围', 'data-focus': 'scope' }));
+			this.focusableElements.set('scope', scope);
+			append(scope, $('option', { value: 'chat' }, '当前会话'));
+			append(scope, $('option', { value: 'workspace' }, '工作区'));
+			scope.value = this.allChanges ? 'workspace' : 'chat';
+			scope.onchange = () => { this.allChanges = scope.value === 'workspace'; this.render(); };
+		}
+		const groups = this.diffs.groups.filter(g => !this.session || this.allChanges || g.sessionId === this.session);
+		const pending = groups.flatMap(g => g.hunks.filter(h => h.status === 'applied'));
+		if (!groups.length) {
+			empty(this.body, 'diff', '暂无文件变更', '助手编辑文件后，可以在这里查看对比、保留或撤销更改。');
+			return;
+		}
+		append(this.body, $('p.studio-inspector-summary', {}, pending.length ? `${new Set(pending.map(h => h.filePath)).size} 个文件 · ${pending.length} 处待审查` : '所有变更均已审查'));
+		for (const group of [...groups].reverse()) {
+			for (const hunk of group.hunks) { this.change(group, hunk); }
+		}
+	}
+
+	private change(group: DiffGroup, hunk: DiffHunk): void {
+		const item = append(this.body, $('article.studio-inspector-change'));
+		this.fileButton(item, URI.file(hunk.filePath), hunk.modifiedStartLine);
+		const id = group.id + '/' + hunk.id;
+		const row = append(item, $('.studio-inspector-change-meta'));
+		append(row, $('span', {}, hunk.kind === 'create' ? '新增文件' : `第 ${hunk.modifiedStartLine} 行`));
+		const preview = this.action(row, '查看对比', () => void this.perform('diff:' + id, () => this.commands.executeCommand('aiDiff.openPreview', group.id, hunk.id)), 'diff:' + id);
+		preview.classList.add('studio-inspector-link');
+		if (hunk.status !== 'applied') {
+			append(row, $('span.studio-inspector-reviewed', {}, hunk.status === 'accepted' ? '已保留' : '已撤销'));
+			return;
+		}
+		const fragment = append(item, $('.studio-inspector-fragment', { 'aria-label': '变更片段' }));
+		if (hunk.originalText) { append(fragment, $('code.removed', {}, '− ' + this.sample(hunk.originalText, hunk.modifiedText))); }
+		if (hunk.modifiedText) { append(fragment, $('code.added', {}, '+ ' + this.sample(hunk.modifiedText, hunk.originalText))); }
+		const actions = append(item, $('.studio-inspector-actions'));
+		for (const [label, command] of [['保留', 'aiDiff.acceptHunk'], ['撤销', 'aiDiff.rejectHunk']]) {
+			const button = this.action(actions, label, () => void this.perform(id, () => this.commands.executeCommand(command, group.id, hunk.id)), command + id);
+			button.disabled = this.busy.has(id);
+		}
+	}
+
+	private sample(text: string, other: string): string {
+		let start = 0;
+		let line = 0;
+		while (start < text.length && start < other.length && text[start] === other[start]) {
+			if (text[start] === '\n') { line = start + 1; }
+			start++;
+		}
+		const end = text.indexOf('\n', line);
+		return text.slice(line, Math.min(end < 0 ? text.length : end, line + 180)) || '（空行）';
+	}
+
+	private get live(): boolean { return this.session === this.agent.sessionId; }
+	private get steps(): readonly AgentStep[] { return this.live ? this.agent.steps : this.archive?.steps ?? []; }
+	private get tasks(): readonly Task[] { return (this.live ? this.agent.tasks : this.archive?.taskSnapshot ?? []).filter(t => t.status !== 'deleted'); }
+
+	private renderActivity(): void {
+		const tasks = this.tasks;
+		if (tasks.length) {
+			this.section('执行计划', `${tasks.filter(t => t.status === 'completed').length}/${tasks.length}`);
+			for (const task of tasks) {
+				const row = append(this.body, $('.studio-inspector-task'));
+				icon(row, task.status === 'completed' ? 'check' : task.status === 'in_progress' ? 'circle-filled' : 'circle-outline');
+				append(row, $('span', {}, task.subject));
+				append(row, $('small', {}, task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待处理'));
+			}
+		}
+		this.section('执行记录');
+		const steps = this.steps;
+		if (!steps.length) {
+			empty(this.body, 'history', this.loadingHistory ? '正在读取记录' : '暂无执行记录', '发送任务后，这里会显示工具调用、运行结果和执行计划。');
+			return;
+		}
+		const results = new Map(steps.filter(s => s.type === 'tool_result' && s.toolCallId).map(s => [s.toolCallId, s]));
+		const calls = new Set(steps.filter(s => s.type === 'tool_use' && s.toolCallId).map(s => s.toolCallId));
+		for (const step of steps) {
+			if (step.type === 'tool_result' && calls.has(step.toolCallId)) { continue; }
+			const result = step.type === 'tool_use' && step.toolCallId ? results.get(step.toolCallId) : undefined;
+			const title = step.type === 'tool_use' ? studioToolLabel(step.toolName ?? '工具调用') :
+				{ thought: '任务消息', plan: '计划', error: '执行出错', tool_result: '工具结果' }[step.type];
+			const key = 'step:' + step.stepNumber;
+			const details = append(this.body, $<HTMLDetailsElement>('details.studio-inspector-event'));
+			details.open = this.expanded.has(key);
+			details.ontoggle = () => {
+				if (details.isConnected) {
+					if (details.open) { this.expanded.add(key); } else { this.expanded.delete(key); }
+				}
+			};
+			const summary = append(details, $('summary', { 'data-focus': key }));
+			this.focusableElements.set(key, summary);
+			icon(summary, step.type === 'error' || step.isError || result?.isError ? 'warning' : step.type === 'tool_use' ? 'tools' : step.type === 'plan' ? 'checklist' : 'comment');
+			append(summary, $('span', {}, title));
+			const runStatus = this.live && this.agent.status === 'waiting_for_approval' ? '等待确认' : this.live && this.agent.status === 'running' ? '执行中' : '未完成';
+			const settled = result?.outcome ? { success: '完成', error: '失败', denied: '已拒绝', cancelled: '已取消' }[result.outcome] : result?.isError ? '失败' : '完成';
+			const status = step.type === 'tool_use' && step.toolCallId ? (result ? settled : runStatus) : '';
+			append(summary, $('small', {}, status || new Date(step.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })));
+			if (step.toolInput) { append(details, $('pre', {}, JSON.stringify(step.toolInput, null, 2))); }
+			const output = result?.content ?? (step.type === 'tool_use' ? '' : step.content);
+			if (output) { append(details, $('pre', {}, output)); }
+		}
+	}
+
+	private renderContext(): void {
+		this.section('当前编辑器');
+		const editor = getCodeEditor(this.editors.activeTextEditorControl);
+		const model = editor?.getModel();
+		if (model && model.uri.scheme === 'file') {
+			const position = editor?.getPosition();
+			this.fileButton(this.body, model.uri, position?.lineNumber);
+			append(this.body, $('p.studio-inspector-summary', {}, `${model.getLanguageId()} · 第 ${position?.lineNumber ?? 1} 行，第 ${position?.column ?? 1} 列`));
+		} else { append(this.body, $('p.studio-inspector-summary', {}, '未打开代码文件')); }
+
+		this.section('会话文件');
+		const root = this.workspace.getWorkspace().folders[0]?.uri;
+		const touched = new Map<string, URI>();
+		for (const step of this.steps) {
+			const path = step.toolInput?.path;
+			if (step.type !== 'tool_use' || typeof path !== 'string' || !['read_file', 'write_file', 'edit_file'].includes(step.toolName ?? '')) { continue; }
+			const uri = isAbsolute(path) ? URI.file(path) : root && URI.joinPath(root, path);
+			if (uri && this.workspace.isInsideWorkspace(uri)) { touched.set(uri.toString(), uri); }
+		}
+		for (const uri of touched.values()) { this.fileButton(this.body, uri); }
+		if (!touched.size) { append(this.body, $('p.studio-inspector-summary', {}, '本轮尚未读取或编辑文件')); }
+
+		const head = this.section('代码索引');
+		const reindex = this.action(head, '重建索引', () => void this.perform('reindex', () => this.index.reindex()), 'reindex', 'refresh');
+		reindex.disabled = this.busy.has('reindex') || !root;
+		const stats = this.index.stats;
+		append(this.body, $('p.studio-inspector-summary', {}, this.busy.has('reindex') ? '正在建立索引…' : !root ? '请先打开工作区' : stats.isReady ? `${stats.totalFiles} 个文件 · ${stats.totalChunks} 个代码块` : '索引尚未就绪'));
+	}
 }

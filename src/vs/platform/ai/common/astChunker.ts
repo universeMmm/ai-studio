@@ -1,4 +1,9 @@
 /*---------------------------------------------------------------------------------------------
+ *  Copyright (c) AI Studio contributors. All rights reserved.
+ *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------------
  *  AI Studio — AST-Aware Code Chunker
  *  Structural chunking based on indentation + keyword analysis.
  *  Falls back to regex chunker from chunker.ts for unsupported languages.
@@ -38,7 +43,7 @@ export function astChunkFile(filePath: string, content: string, languageId: stri
 		const start = boundaries[i].line;
 		const end = i + 1 < boundaries.length ? boundaries[i + 1].line - 1 : lines.length;
 		const chunkContent = lines.slice(start - 1, end).join('\n');
-		if (!chunkContent.trim()) continue;
+		if (!chunkContent.trim()) { continue; }
 		chunks.push({
 			id: _hash(filePath + ':' + start + ':' + chunkContent.slice(0, 100)),
 			filePath, startLine: start, endLine: end,
@@ -61,11 +66,11 @@ function _findStructuralBoundaries(lines: string[], lang: string): Boundary[] {
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		const trimmed = line.trimStart();
-		if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+		if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*') || trimmed.startsWith('*')) { continue; }
 
 		const indent = line.length - trimmed.length;
 		const b = _matchBoundary(trimmed, lang, i + 1, indent);
-		if (b) boundaries.push(b);
+		if (b) { boundaries.push(b); }
 	}
 
 	return boundaries.filter(b => b.indent <= 2 || b.kind === 'class' || b.kind === 'function' || b.kind === 'method');
@@ -78,12 +83,12 @@ function _matchBoundary(line: string, lang: string, lineNum: number, indent: num
 		case 'typescriptreact':
 		case 'javascriptreact': {
 			let m: RegExpMatchArray | null;
-			if ((m = line.match(/^\s*export\s+(?:async\s+)?function\s+(\w+)/))) return { line: lineNum, kind: 'function', name: m[1], indent };
-			if ((m = line.match(/^\s*(?:async\s+)?function\s+(\w+)/))) return { line: lineNum, kind: 'function', name: m[1], indent };
-			if ((m = line.match(/^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/))) return { line: lineNum, kind: 'class', name: m[1], indent };
-			if ((m = line.match(/^\s*(?:export\s+)?interface\s+(\w+)/))) return { line: lineNum, kind: 'class', name: m[1], indent };
-			if ((m = line.match(/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(/))) return { line: lineNum, kind: 'function', name: m[1], indent };
-			if ((m = line.match(/^\s*(?:public|private|protected|async\s+)?(\w+)\s*\([^)]*\)\s*[:{]/))) return { line: lineNum, kind: 'method', name: m[1], indent };
+			if ((m = line.match(/^\s*export\s+(?:async\s+)?function\s+(\w+)/))) { return { line: lineNum, kind: 'function', name: m[1], indent }; }
+			if ((m = line.match(/^\s*(?:async\s+)?function\s+(\w+)/))) { return { line: lineNum, kind: 'function', name: m[1], indent }; }
+			if ((m = line.match(/^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/))) { return { line: lineNum, kind: 'class', name: m[1], indent }; }
+			if ((m = line.match(/^\s*(?:export\s+)?interface\s+(\w+)/))) { return { line: lineNum, kind: 'class', name: m[1], indent }; }
+			if ((m = line.match(/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(/))) { return { line: lineNum, kind: 'function', name: m[1], indent }; }
+			if ((m = line.match(/^\s*(?:public|private|protected|async\s+)?(\w+)\s*\([^)]*\)\s*[:{]/))) { return { line: lineNum, kind: 'method', name: m[1], indent }; }
 			return null;
 		}
 		case 'python': {
@@ -148,7 +153,7 @@ function _regexChunk(filePath: string, content: string, languageId: string): Chu
 		const start = found[i].line;
 		const end = i + 1 < found.length ? found[i + 1].line - 1 : lines.length;
 		const chunkContent = lines.slice(start - 1, end).join('\n');
-		if (!chunkContent.trim()) continue;
+		if (!chunkContent.trim()) { continue; }
 		chunks.push({ id: _hash(filePath + ':' + start + ':' + chunkContent.slice(0, 100)), filePath, startLine: start, endLine: end, content: chunkContent, kind: found[i].kind, name: found[i].name });
 	}
 	return chunks;

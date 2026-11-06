@@ -1,0 +1,711 @@
+{
+	"contents": {
+		"vs/editor/common/config/editorConfigurationSchema": {
+			"diffAlgorithm.advancedExternal": "使用外部 `@vscode/diff` 包提供的高级差异算法(纯 JavaScript)。",
+			"diffAlgorithm.advancedWasm": "使用外部 `@vscode/diff` 包提供的高级差异算法(WebAssembly)。"
+		},
+		"vs/platform/files/browser/indexedDBFileSystemProvider": {
+			"dirIsNotEmpty": "目录不为空",
+			"fileExceedsStorageQuota": "文件超出可用存储空间",
+			"fileIsDirectory": "该路径指向目录",
+			"fileNotDirectory": "该路径未指向目录",
+			"fileNotExists": "文件不存在",
+			"internal": "IndexedDB 文件系统发生内部错误。({0})"
+		},
+		"vs/platform/theme/common/sizes/baseSizes": {
+			"codiconFontSizeCompact": "condicons 的紧凑字号。"
+		},
+		"vs/server/node/serverEnvironmentService": {
+			"agent-host-bridge-connection-token": "使用 --agent-host-bridge-port 时，连接外部智能体宿主所需的令牌。",
+			"agent-host-bridge-host": "使用 --agent-host-bridge-port 时，指定外部智能体宿主的地址。默认值为 localhost。",
+			"agent-host-bridge-path": "通过此套接字路径将渲染进程连接到正在运行的智能体宿主。",
+			"agent-host-bridge-port": "通过此端口将渲染进程连接到正在运行的智能体宿主。",
+			"agent-host-path": "智能体宿主 WebSocket 服务监听的套接字文件路径。",
+			"agent-host-port": "智能体宿主 WebSocket 服务应监听的端口。"
+		},
+		"vs/sessions/browser/accountTitleBarState": {
+			"aiStudioAllQuotaReachedAria": "AI Studio 对话和行内建议的配额均已用尽",
+			"aiStudioChatQuotaReachedAria": "AI Studio 对话配额已用尽",
+			"aiStudioCompletionsQuotaReachedAria": "AI Studio 行内建议配额已用尽",
+			"aiStudioQuotaReached": "配额已用尽",
+			"aiStudioTokensRemaining": "剩余词元数",
+			"aiStudioTokensRemainingAria": "AI Studio 剩余词元配额为 {0}%",
+			"aiStudioUnavailable": "AI Studio 暂不可用",
+			"aiStudioUnavailableDisabledAria": "AI Studio 已禁用",
+			"aiStudioUnavailableUntrustedAria": "此工作区尚未受信任，因此无法使用 AI Studio"
+		},
+		"vs/sessions/browser/actions/vscodeActions": {
+			"openInVSCode": "在编辑器中打开"
+		},
+		"vs/sessions/browser/parts/projectBarPart": {
+			"projectbar.customize": "自定义",
+			"projectbar.customize.icon": "图标",
+			"projectbar.customize.icon.description": "选择一个图标来标识工作区",
+			"projectbar.customize.letter": "字母",
+			"projectbar.customize.letter.description": "显示工作区名称的首字母",
+			"projectbar.customize.placeholder": "选择工作区在项目栏中的显示方式",
+			"projectbar.customize.title": "自定义工作区外观",
+			"projectbar.removeFolder": "移除文件夹"
+		},
+		"vs/sessions/contrib/aiCustomizationTreeView/browser/aiCustomizationOverviewView": {
+			"agents": "智能体",
+			"instructions": "指令",
+			"mcpServers": "MCP 服务器",
+			"openOverview": "打开对话自定义编辑器",
+			"overviewSectionAriaLabelWithCount": "{0}，{1} 项",
+			"plugins": "插件",
+			"skills": "技能"
+		},
+		"vs/sessions/contrib/chat/browser/repoPicker": {
+			"browseRepo": "浏览...",
+			"pickRepo": "选择仓库",
+			"repoPicker.ariaLabel": "存储库选取器",
+			"repoPicker.filter": "筛选仓库…",
+			"repoPicker.triggerAriaLabel": "选择仓库，{0}"
+		},
+		"vs/sessions/contrib/chat/browser/slashCommands": {
+			"slashCommand.models": "打开模型选取器"
+		},
+		"vs/sessions/contrib/providers/copilotChatSessions/browser/copilotChatSessions.contribution": {
+			"sessions.aiStudio.multiChatSessions": "是否允许在 AI Studio 对话会话提供程序的同一会话中开启多个对话。"
+		},
+		"vs/sessions/contrib/providers/copilotChatSessions/browser/copilotChatSessionsProvider": {
+			"aiStudioChatSessionsProvider": "AI Studio 对话",
+			"aiStudioCloud": "云"
+		},
+		"vs/sessions/contrib/providers/copilotChatSessions/browser/mobilePermissionPicker": {
+			"permissions.default.subtext": "AI Studio 使用你配置的设置"
+		},
+		"vs/sessions/contrib/providers/copilotChatSessions/browser/permissionPicker": {
+			"permissions.default.subtext": "AI Studio 使用你配置的设置"
+		},
+		"vs/sessions/contrib/providers/localChatSessions/browser/localChatSessions.contribution": {
+			"sessions.chat.localAgent.enabled": "在智能体窗口中启用本地 VS Code 聊天会话。重新加载窗口以使更改生效。"
+		},
+		"vs/sessions/contrib/providers/localChatSessions/browser/localChatSessionsProvider": {
+			"localChatSessionsProvider": "本地聊天",
+			"localSession": "本地",
+			"newSession": "新会话"
+		},
+		"vs/sessions/contrib/sessions/browser/sessionHoverContent": {
+			"agentSessions.fileChanged": "已更改 1 个文件",
+			"agentSessions.filesChanged": "已更改 {0} 个文件",
+			"agentSessions.newSession": "新会话"
+		},
+		"vs/sessions/contrib/sessions/browser/views/sessionsList": {
+			"showMoreWorkspaceAria": "显示另外 {0} 个工作区",
+			"showMoreWorkspaceCompact": "+{0} 个工作区"
+		},
+		"vs/workbench/browser/actions/quickAccessActions": {
+			"quickOpenWithModes": "快速打开"
+		},
+		"vs/workbench/browser/parts/editor/editorStatus": {
+			"inputModeOvertype": "覆盖"
+		},
+		"vs/workbench/browser/web.main": {
+			"reset": "重置用户数据",
+			"reset user data message": "要重置用户数据并重新加载吗？此操作会重置设置、键盘快捷方式、扩展、代码片段和界面状态。"
+		},
+		"vs/workbench/contrib/accessibility/browser/accessibilityConfiguration": {
+			"studio.signalGeneralDelay": "设置常规辅助信号的延迟。光标所在位置的错误和警告使用各自的延迟设置。"
+		},
+		"vs/workbench/contrib/browserView/electron-browser/browserEditor": {
+			"browser.errorUrlLabel": "网址："
+		},
+		"vs/workbench/contrib/browserView/electron-browser/features/browserEditorChatFeatures": {
+			"browser.addScreenshotToChatAction": "将屏幕截图添加到聊天",
+			"browser.chatActionsSubmenu": "添加到聊天",
+			"browserScreenshot": "浏览器屏幕截图"
+		},
+		"vs/workbench/contrib/browserView/electron-browser/features/browserEditorEmulationFeatures": {
+			"browser.device.dimensionsLabel": "尺寸:",
+			"browser.device.dprAriaLabel": "设备像素率",
+			"browser.device.dprLabel": "设备像素比：",
+			"browser.device.dprTitle": "设备像素率(留空 = 系统默认值)",
+			"browser.device.heightAriaLabel": "视区高度",
+			"browser.device.inputPlaceholderAuto": "自动",
+			"browser.device.scaleLabel": "缩放:",
+			"browser.device.swapDimensionsTitle": "交换尺寸",
+			"browser.device.widthAriaLabel": "视区宽度",
+			"browser.device.zoomAriaLabel": "缩放倍数",
+			"browser.device.zoomAuto": "自动({0}%)",
+			"browser.devicePresets.mobileTag": "移动设备",
+			"browser.devicePresets.placeholder": "选择设备预设",
+			"browser.emulationHasUserAgent": "浏览器模拟是否使用自定义用户代理",
+			"browser.emulationIsMobile": "浏览器模拟是否处于移动模式",
+			"browser.emulationToolbar.close": "关闭",
+			"browser.emulationToolbar.mobile": "移动设备模拟",
+			"browser.emulationToolbar.presets": "应用预设...",
+			"browser.emulationToolbar.reset": "重置",
+			"browser.emulationToolbar.userAgent": "设置用户代理...",
+			"browser.emulationToolbarVisible": "浏览器模拟工具栏是否可见",
+			"browser.hideEmulationToolbar": "隐藏模拟工具栏",
+			"browser.pickDevicePreset": "模拟设备...",
+			"browser.resetEmulation": "重置模拟",
+			"browser.setUserAgent": "模拟用户代理...",
+			"browser.showEmulationToolbar": "显示模拟工具栏",
+			"browser.toggleMobileEmulation": "切换移动设备模拟",
+			"browser.userAgent.prompt": "用户代理字符串(留空则使用 VS Code 默认值)"
+		},
+		"vs/workbench/contrib/chat/browser/actions/chatActions": {
+			"aiStudioQuotaReached": "AI Studio 配额已用尽",
+			"manageChat": "管理 AI Studio 设置",
+			"showAiStudioUsageExtensions": "显示使用 AI Studio 的扩展"
+		},
+		"vs/workbench/contrib/chat/browser/aiCustomization/aiCustomizationListWidget": {
+			"createFirstInstructions": "添加说明，教 AI Studio 了解你的代码库",
+			"skillsDescription": "当相关时，AI Studio 会加载包含指令、脚本和资源的文件夹，以执行专用任务。"
+		},
+		"vs/workbench/contrib/chat/browser/chat.shared.contribution": {
+			"chat.disableAIFeatures": "禁用和隐藏 AI Studio 提供的内置 AI 功能，包括聊天和内联建议。"
+		},
+		"vs/workbench/contrib/chat/browser/chatDebug/chatDebugCacheExplorerView": {
+			"chatDebug.cache.endTime": "结束时间",
+			"chatDebug.cache.ttft": "首个令牌延迟"
+		},
+		"vs/workbench/contrib/chat/browser/chatDebug/chatDebugHomeView": {
+			"chatDebug.aiStudioCliSessionWithId": "AI Studio 命令行会话 · {0}"
+		},
+		"vs/workbench/contrib/chat/browser/chatDebug/chatDebugOverviewView": {
+			"chatDebug.metric.aiStudioUsage": "AI Studio 用量（AIC）"
+		},
+		"vs/workbench/contrib/chat/browser/chatManagement/chatModelsWidget": {
+			"model.name.hidden": "来自 {1} 的 {0} (已隐藏)",
+			"models.addModel": "添加模型",
+			"models.goToSettings": "在语言模型中打开(JSON)",
+			"models.hideGroup": "隐藏所有模型",
+			"models.hideModel": "隐藏模型",
+			"models.hideModelsPlural": "隐藏模型",
+			"models.longContextCacheCost.plural": "缓存成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextCacheCost.singular": "缓存成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextInputCost.plural": "输入成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextInputCost.singular": "输入成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextOutputCost.plural": "输出成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextOutputCost.singular": "输出成本: 每 100 万个令牌 {0} 额度",
+			"models.longContextPricing": "长上下文定价",
+			"models.renameGroup": "重命名组",
+			"models.showGroup": "显示所有模型",
+			"models.showModel": "显示模型",
+			"models.showModelsPlural": "显示模型",
+			"models.updateApiKey": "更新 API 密钥",
+			"vendor.hidden.ariaLabel": "{0} 个模型(已隐藏)"
+		},
+		"vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions": {
+			"upgradeSuccess": "升级成功",
+			"upgradeSuccessDescription": "请最多等待 10 分钟，以便应用新计划。"
+		},
+		"vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders": {
+			"aiStudioUnavailableWarning": "未收到回复，请重试。",
+			"settingUpAINeeded": "请先配置模型服务和 API 密钥，再开始对话。",
+			"showAIChatDetails": "显示详细信息"
+		},
+		"vs/workbench/contrib/chat/browser/chatStatus/chatStatusDashboard": {
+			"activateDescription": "设置 AI Studio 以使用 AI 功能。",
+			"enableAiStudioButton": "启用 AI 功能",
+			"enableDescription": "启用 AI Studio 以使用 AI 功能。",
+			"quotaLabel": "管理 AI Studio 设置",
+			"quotaTooltip": "管理 AI Studio 设置"
+		},
+		"vs/workbench/contrib/chat/browser/chatStatus/chatStatusEntry": {
+			"aiStudioDisabledStatus": "AI Studio 已停用",
+			"chatStatus": "AI Studio 状态",
+			"chatStatusAria": "AI Studio 状态"
+		},
+		"vs/workbench/contrib/chat/browser/chatTipCatalog": {
+			"tip.agentsWindow": "在 [智能体窗口](命令:{0}“打开智能体窗口”)中一次性跨多个项目工作。"
+		},
+		"vs/workbench/contrib/chat/browser/pluginUrlHandler": {
+			"confirmInstallTargetedPlugin": "是否从“{1}”安装插件“{0}”?"
+		},
+		"vs/workbench/contrib/chat/browser/promptSyntax/hookActions": {
+			"hookSection.aiStudioCliOnly": "AI Studio CLI 智能体"
+		},
+		"vs/workbench/contrib/chat/browser/tools/languageModelToolsService": {
+			"aiStudio.toolSet.agent.description": "将任务分派给其他智能体",
+			"aiStudio.toolSet.execute.description": "在本机运行代码和应用程序",
+			"aiStudio.toolSet.read.description": "读取工作区中的文件",
+			"aiStudio.toolSet.vscode.description": "使用 VS Code 功能"
+		},
+		"vs/workbench/contrib/chat/browser/widget/chatContentParts/chatExternalEditContentPart": {
+			"chat.codeblock.deletions": "{0} 个删除",
+			"chat.codeblock.deletions.one": "1 个删除",
+			"chat.codeblock.edited": "已编辑",
+			"chat.codeblock.insertions": "{0} 个插入",
+			"chat.codeblock.insertions.one": "1 个插入",
+			"chat.externalEdit.created": "已创建",
+			"chat.externalEdit.deleted": "已删除",
+			"chat.externalEdit.renamed": "已重命名",
+			"summary": "已编辑 {0}、{1}、{2}"
+		},
+		"vs/workbench/contrib/chat/browser/widget/chatContentParts/chatQuotaExceededPart": {
+			"manageBudget": "管理预算",
+			"upgradeToAiStudioPro": "升级到 GitHub Copilot Pro"
+		},
+		"vs/workbench/contrib/chat/browser/widget/chatContentParts/chatThinkingContentPart": {
+			"chat.thinking.createdFile": "已创建 {0}",
+			"chat.thinking.deletedFile": "已删除 {0}",
+			"chat.thinking.renamedFile": "已重命名 {0}"
+		},
+		"vs/workbench/contrib/chat/browser/widget/chatWidget": {
+			"codingAgentMessage": "此会话将转交给 {0} [编码智能体]({1})，由它在后台完成工作。"
+		},
+		"vs/workbench/contrib/chat/browser/widget/input/chatModelPicker": {
+			"models.longContextPriceTitle": "长上下文成本(每 100 万个令牌)"
+		},
+		"vs/workbench/contrib/chat/browser/widget/input/editor/chatPasteProviders": {
+			"pasteHtmlAsMarkdown": "粘贴为 Markdown"
+		},
+		"vs/workbench/contrib/chat/browser/widget/input/permissionPickerActionItem": {
+			"permissions.default.subtext": "AI Studio 使用你配置的设置"
+		},
+		"vs/workbench/contrib/chat/common/actions/chatContextKeys": {
+			"chatNonAiStudioModelsAreUserSelectable": "有可供用户选择的第三方对话模型时为真。"
+		},
+		"vs/workbench/contrib/chat/common/chatProgressFormatting": {
+			"minutesSeconds": "{0} 分钟 {1} 秒",
+			"seconds": "{0} 秒"
+		},
+		"vs/workbench/contrib/chat/common/model/chatModel": {
+			"studio.completedWithInput": "已完成，输入为：{0}",
+			"studio.failedWithInput": "失败，输入为：{0}",
+			"studio.ranTerminal": "已运行终端命令"
+		},
+		"vs/workbench/contrib/chat/common/plugins/agentPluginServiceImpl": {
+			"aiStudioCliPlugin.remove.confirm": "此插件由 AI Studio 命令行工具安装。要从磁盘移除吗？",
+			"aiStudioCliPlugin.remove.detail": "插件目录「{0}」将移至回收站。稍后可使用 AI Studio 命令行工具重新安装。",
+			"aiStudioCliPlugin.remove.primary": "移除"
+		},
+		"vs/workbench/contrib/chat/common/promptSyntax/computeAutomaticInstructions": {
+			"debugDetail.noPattern": "未指定 applyTo 匹配模式"
+		},
+		"vs/workbench/contrib/chat/common/promptSyntax/languageProviders/promptFileAttributes": {
+			"aiStudio.agent": "使用子智能体",
+			"aiStudio.edit": "编辑文件",
+			"aiStudio.execute": "执行命令",
+			"aiStudio.read": "读取文件",
+			"aiStudio.search": "搜索文件"
+		},
+		"vs/workbench/contrib/chat/common/promptSyntax/languageProviders/promptHovers": {
+			"promptHeader.agent.handoffs.aiStudio": "目标为 AI Studio 或 Claude 时会忽略此属性。",
+			"promptHeader.agent.model.aiStudio": "目标为 ai-studio 时会忽略此属性。"
+		},
+		"vs/workbench/contrib/chat/common/promptSyntax/languageProviders/promptValidator": {
+			"aiStudio.agent": "使用子智能体",
+			"aiStudio.edit": "编辑文件",
+			"aiStudio.execute": "执行命令",
+			"aiStudio.read": "读取文件",
+			"aiStudio.search": "搜索文件",
+			"promptValidator.hookMissingAiStudioCommand": "钩子命令必须至少指定 bash 或 powershell 中的一项。"
+		},
+		"vs/workbench/contrib/chat/common/promptSyntax/promptTypes": {
+			"source.aiStudioPersonal": "全局（仅供 AI Studio 智能体使用）"
+		},
+		"vs/workbench/contrib/chat/common/tools/builtinTools/resolveDebugEventDetailsTool": {
+			"debugEvent.agentResponse": "智能体响应: {0}",
+			"debugEvent.modelTurn": "模型轮次",
+			"debugEvent.userMessage": "用户消息: {0}",
+			"formatResolvedContent.agentMessage": "智能体消息：{0}",
+			"formatResolvedContent.command": "命令: {0}",
+			"formatResolvedContent.customizationCounts": "自定义配置中有 {0} 条指令、{1} 项技能、{2} 个智能体和 {3} 个钩子，另有 {4} 项已跳过",
+			"formatResolvedContent.customizationDuration": "持续时间: {0} 毫秒",
+			"formatResolvedContent.duration": "持续时间: {0} 毫秒",
+			"formatResolvedContent.error": "错误: {0}",
+			"formatResolvedContent.exitCode": "退出代码: {0}",
+			"formatResolvedContent.fileList": "文件列表（{0}）",
+			"formatResolvedContent.hook": "钩子 · {0}",
+			"formatResolvedContent.hookResult.error": "错误",
+			"formatResolvedContent.hookResult.nonBlockingError": "非阻止错误",
+			"formatResolvedContent.hookResult.success": "成功",
+			"formatResolvedContent.input": "输入:",
+			"formatResolvedContent.loaded": "已加载",
+			"formatResolvedContent.model": "模型: {0}",
+			"formatResolvedContent.modelTurn": "模型轮次 · {0}",
+			"formatResolvedContent.output": "输出:",
+			"formatResolvedContent.resolutionLogs": "解析日志：",
+			"formatResolvedContent.result": "结果: {0}",
+			"formatResolvedContent.skipped": "已跳过",
+			"formatResolvedContent.skippedWithReason": "已跳过（{0}）",
+			"formatResolvedContent.sourceFolder": "  源文件夹：{0}（{1}）",
+			"formatResolvedContent.status": "状态: {0}",
+			"formatResolvedContent.tokens": "词元数：输入 {0}，输出 {1}，缓存 {2}，总计 {3}",
+			"formatResolvedContent.toolCall": "工具调用 · {0}",
+			"formatResolvedContent.userMessage": "用户消息: {0}",
+			"resolveDebugEventDetails.displayName": "解析调试事件详情",
+			"resolveDebugEventDetails.errorEventIdRequired": "缺少必填参数 eventId。",
+			"resolveDebugEventDetails.errorEventNotFound": "当前会话中没有 ID 为「{0}」的事件。",
+			"resolveDebugEventDetails.errorNoDetails": "未找到事件 ID「{0}」的详情。",
+			"resolveDebugEventDetails.errorNoSession": "无法获取当前对话的上下文。",
+			"resolveDebugEventDetails.invocationMessage": "正在读取调试事件详情",
+			"resolveDebugEventDetails.invocationMessageNamed": "正在读取「{0}」的详情",
+			"resolveDebugEventDetails.pastTenseMessage": "已读取调试事件详情",
+			"resolveDebugEventDetails.pastTenseMessageNamed": "已解析「{0}」的详情"
+		},
+		"vs/workbench/contrib/chat/electron-browser/chat.contribution": {
+			"aiStudioWorkspaceTrust": "AI 功能目前仅在受信任的工作区中受支持。"
+		},
+		"vs/workbench/contrib/comments/browser/commentsTreeViewer": {
+			"commentLine": "[第 {0} 行]",
+			"commentRange": "[第 {0}–{1} 行]"
+		},
+		"vs/workbench/contrib/debug/browser/debugActionViewItems": {
+			"debugLaunchConfigurations.search": "搜索配置",
+			"debugLaunchConfigurationsAriaLabel": "调试启动配置: {0}"
+		},
+		"vs/workbench/contrib/debug/browser/debugEditorActions": {
+			"mitogglesource": "切换源文件(&&T)"
+		},
+		"vs/workbench/contrib/debug/browser/watchExpressionsView": {
+			"copyAllWatchExpressions": "全部复制"
+		},
+		"vs/workbench/contrib/debug/common/loadedScriptsPicker": {
+			"moveFocusedView.selectView": "按名称搜索已加载的脚本"
+		},
+		"vs/workbench/contrib/extensions/browser/extensions.contribution": {
+			"extensionInfoId": "标识：{0}"
+		},
+		"vs/workbench/contrib/extensions/browser/extensions.web.contribution": {
+			"runtimeExtension": "正在运行的扩展"
+		},
+		"vs/workbench/contrib/extensions/browser/extensionsViewlet": {
+			"marketplaceConnectionRefused": "扩展市场拒绝了连接。请检查网络连接和系统代理设置。"
+		},
+		"vs/workbench/contrib/extensions/browser/extensionsWorkbenchService": {
+			"disallowed extensions": "当前配置禁止使用部分扩展，这些扩展已被禁用。",
+			"disallowed extensions by policy": "系统管理员禁止使用部分扩展，这些扩展已被禁用。"
+		},
+		"vs/workbench/contrib/extensions/common/installExtensionsTool": {
+			"installExtensionsTool.confirmationMessage": "请查看推荐的扩展，逐个点击所需扩展旁的**安装**按钮。安装完成后，点击**继续**。",
+			"installExtensionsTool.confirmationTitle": "安装扩展",
+			"installExtensionsTool.displayName": "安装扩展",
+			"installExtensionsTool.noResultMessage": "未安装任何扩展。",
+			"installExtensionsTool.resultMessage": "已安装以下扩展：{0}",
+			"installExtensionsTool.userDescription": "扩展安装工具"
+		},
+		"vs/workbench/contrib/issue/browser/issue.contribution": {
+			"statusUnsupported": "浏览器暂不支持 --status 参数。"
+		},
+		"vs/workbench/contrib/issue/browser/issueFormService": {
+			"additionalIssueData": "其他问题数据",
+			"issueData": "问题数据",
+			"issueReporter.attachmentsHeading": "附件",
+			"issueReporter.attachmentsUploadFailed": "上传失败。请手动拖放附件。",
+			"pasteData": "所需的数据太大，无法直接发送。我们已经将其写入剪贴板，请粘贴。"
+		},
+		"vs/workbench/contrib/issue/browser/issueReporterEditorInput": {
+			"discard": "放弃",
+			"discardIssue": "是否放弃报告问题?",
+			"discardIssueDetail": "你的问题报告存在未保存的更改，这些更改将会丢失。",
+			"issueReporterEditorInputName": "报告问题",
+			"issueReporterIcon": "问题报告程序编辑器的图标。"
+		},
+		"vs/workbench/contrib/issue/browser/issueReporterEditorPane": {
+			"noData": "无可用的问题报告程序数据。",
+			"noExperiments": "无当前试验。",
+			"openSystemSettings": "打开系统设置",
+			"recordingTooLarge": "录制已自动停止: 已达到 100 MB 上传限制。",
+			"screenRecordingPermissionDenied": "{0} 需要屏幕录制权限才能录制视频。在系统设置中授予访问权限，然后再次单击“录制”。",
+			"screenRecordingPermissionDeniedGeneric": "屏幕录制权限已被拒绝。允许 {0} 录制屏幕并重试。"
+		},
+		"vs/workbench/contrib/issue/browser/issueReporterOverlay": {
+			"abExperiments": "A/B 试验",
+			"additionalInformation": "其他信息",
+			"additionalPerformanceData": "其他性能数据",
+			"additionalPerformanceDataDescription": "(可选)包含当前运行的进程和工作区元数据，以帮助诊断性能问题。",
+			"attachments": "附件({0})",
+			"back": "返回",
+			"bug": "程序缺陷",
+			"bugGuidance": "描述发生的情况、重现步骤、预期结果以及实际观察到的结果。",
+			"captureOptions": "捕获选项",
+			"category": "类别",
+			"categoryRequired": "选择类别以继续。",
+			"closeTab": "关闭",
+			"composeMessage": "描述",
+			"defaultGuidance": "在上面选择一个类别，然后详细描述你的反馈。",
+			"deleteRecording": "删除录制内容",
+			"deleteScreenshot": "删除屏幕截图",
+			"describeHeading": "描述你的反馈",
+			"description": "说明",
+			"descriptionPlaceholder": "详细描述问题...",
+			"descriptionRequired": "输入描述以继续。",
+			"editScreenshot": "单击编辑屏幕截图",
+			"excludeAllExtraAttachments": "全部排除",
+			"excludeAllExtraAttachmentsAria": "从此问题中排除所有其他问题数据",
+			"expand": "展开",
+			"extension": "扩展",
+			"extensionData": "扩展数据",
+			"extensionExternalIssueUrl": "此扩展使用外部问题报告程序。预览将打开该问题报告程序。",
+			"extensionNoIssueUrl": "此扩展不提供问题报告 URL。",
+			"extensionPlaceholder": "例如，扩展自述文件图像上缺少可选文字",
+			"extensionRequired": "选择扩展以继续。",
+			"extensionSource": "VS Code 扩展",
+			"extensions": "扩展({0})",
+			"featureGuidance": "描述你希望看到的功能、它能解决的问题，以及你考虑过的任何替代方案。",
+			"featureRequest": "功能请求",
+			"feedbackCategory": "类别",
+			"fiveSeconds": "5 秒",
+			"generateTitle": "根据描述生成标题",
+			"generateTitleBtn": "根据描述生成",
+			"generatingTitle": "正在生成...",
+			"hideToolbarInScreenshots": "在屏幕截图中隐藏工具栏",
+			"includeAllExtraAttachments": "全部包含",
+			"includeAllExtraAttachmentsAria": "在此问题中包含所有其他问题数据",
+			"includeInIssue": "包含在问题中",
+			"issueTargetRepo": "将在 {0}/{1} 中创建问题。",
+			"issueTitle": "标题",
+			"issueTitlePlaceholder": "问题简要概述",
+			"loadingDiagnostics": "正在加载诊断...",
+			"loadingExtensionData": "正在加载扩展问题数据...",
+			"loadingProcessInfo": "正在加载当前运行的进程...",
+			"loadingSystemInfo": "正在加载系统信息...",
+			"loadingWorkspaceInfo": "正在加载工作区元数据...",
+			"markdownSupported": "支持 Markdown 格式。",
+			"marketplace": "扩展市场",
+			"marketplacePlaceholder": "例如无法禁用已安装的扩展",
+			"maxAttachmentsReached": "已达到最大附件数量",
+			"minimize": "最小化",
+			"next": "下一步",
+			"noDelay": "无延迟",
+			"noDescription": "(无描述)",
+			"noSimilarIssues": "未找到类似问题。",
+			"noTitle": "(无标题)",
+			"openExternalIssueReporter": "打开外部问题报告器",
+			"or": "或",
+			"perfGuidance": "描述哪里变慢了、何时发生、是持续出现还是间歇出现，以及你注意到的任何模式。",
+			"performanceIssue": "性能问题",
+			"previewOnGitHub": "在 GitHub 中预览",
+			"recordVideo": "录制视频",
+			"recordingActive": "正在录制",
+			"recordingThumbnailAlt": "正在录制 {0}",
+			"refresh": "刷新",
+			"refreshPerformanceData": "重新加载正在运行的进程和工作区元数据",
+			"reportIssue": "报告问题",
+			"reviewSubmit": "审阅并提交",
+			"runningProcesses": "正在运行的进程",
+			"screenshot": "屏幕截图",
+			"screenshotAlt": "屏幕截图 {0}",
+			"screenshots": "附件",
+			"screenshotsHeading": "添加附件以提供更多上下文",
+			"screenshotsSubtitle": "最多可添加 {0} 个屏幕截图或视频。在 VS Code 中操作并选择捕获时机。",
+			"searchingSimilarIssues": "正在搜索类似问题...",
+			"selectExtension": "选择扩展",
+			"settings": "设置",
+			"shortcutHintIntro": "使用浮动捕获栏，或按下",
+			"similarIssues": "类似问题",
+			"similarIssuesNeedsTitle": "请输入标题以搜索类似问题。",
+			"similarIssuesSearchFailed": "无法搜索类似问题。",
+			"skip": "跳过",
+			"stepOf": "第 {0} 步(共 {1} 步)",
+			"stopRecording": "停止录制",
+			"submit": "审阅",
+			"systemInformation": "系统信息",
+			"target": "目标",
+			"targetRequired": "选择目标以继续。",
+			"tenSeconds": "10 秒",
+			"threeSeconds": "3 秒",
+			"titleRequired": "输入标题以继续。",
+			"toCapture": "捕获屏幕截图",
+			"toRecord": "开始或停止录制",
+			"unknown": "未知",
+			"unknownSource": "不知道",
+			"updateAvailable": "{0} 的新版本可用。",
+			"uploading": "正在上传...",
+			"userSettings": "用户设置",
+			"vscode": "Visual Studio Code",
+			"vscodePlaceholder": "例如Workbench 缺少问题面板",
+			"waitingForDiagnostics": "正在等待性能诊断信息加载完成",
+			"workspaceMetadata": "工作区元数据"
+		},
+		"vs/workbench/contrib/issue/browser/screenshotAnnotation": {
+			"annotationHint": "编辑屏幕截图以突出显示问题",
+			"apply": "应用",
+			"arrow": "箭头",
+			"cancel": "取消",
+			"crop": "裁剪",
+			"discard": "放弃",
+			"ellipse": "椭圆形",
+			"eraser": "橡皮擦",
+			"fillColor": "填充颜色",
+			"freehand": "绘制",
+			"opacity": "不透明度",
+			"pan": "平移",
+			"rectangle": "矩形",
+			"redo": "恢复",
+			"save": "保存",
+			"select": "选择/移动",
+			"setFillColor": "设置填充颜色",
+			"setOpacity": "设置不透明度",
+			"setStrokeColor": "设置笔划颜色",
+			"setStrokeWidth": "将笔划宽度设置为 {0} px",
+			"setTextSize": "将文本大小设置为 {0} px",
+			"strokeColor": "笔划颜色",
+			"strokeWidth": "笔划宽度",
+			"text": "文本",
+			"textBackgroundColor": "背景色",
+			"textColor": "文本颜色",
+			"textSize": "文本大小",
+			"toolOptions": "工具选项",
+			"transparentColor": "{0}: 透明",
+			"typeText": "输入文本",
+			"undo": "撤消"
+		},
+		"vs/workbench/contrib/issue/electron-browser/issue.contribution": {
+			"issueReporter.wizard.enabled": "启用新版问题报告程序向导，而非经典问题报告程序。",
+			"issueReporter.wizard.fullWorkspaceScan": "为问题报告程序向导自动收集性能诊断信息时，遍历整个工作区，而非在默认 20,000 文件上限处停止。如果扫描拖慢向导初始呈现，请在超大型工作区中将此项设置为 false。",
+			"issueReporterConfigurationTitle": "问题报告程序",
+			"issueReporterEditorPaneTitle": "问题报告程序"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpCommands": {
+			"mcp.setOAuthClientSecret": "设置 OAuth 客户端密码",
+			"mcp.setOAuthClientSecret.delete": "删除存储的客户端密码",
+			"mcp.setOAuthClientSecret.hide": "隐藏客户端密码",
+			"mcp.setOAuthClientSecret.placeholder.replace": "输入新的客户端密码以替换存储的值",
+			"mcp.setOAuthClientSecret.placeholder.set": "输入客户端密码",
+			"mcp.setOAuthClientSecret.prompt": "输入 OAuth 客户端“{0}”的客户端密码。",
+			"mcp.setOAuthClientSecret.reveal": "显示客户端密码",
+			"mcp.setOAuthClientSecret.title.replace": "替换 {0} 的客户端密码",
+			"mcp.setOAuthClientSecret.title.set": "设置 {0} 的客户端密码"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpCommandsAddConfiguration": {
+			"mcp.serverType.aiStudio": "模型辅助配置"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpElicitationService": {
+			"mcp.elicit.false": "否",
+			"mcp.elicit.true": "是"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpLanguageFeatures": {
+			"mcp.replaceClientSecret": "替换客户端密码",
+			"mcp.setClientSecret": "设置客户端密码"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpResourceQuickAccess": {
+			"mcp.resource.template.empty": "<空>"
+		},
+		"vs/workbench/contrib/mcp/browser/mcpServerEditor": {
+			"url": "网址："
+		},
+		"vs/workbench/contrib/mergeEditor/browser/mergeEditor.contribution": {
+			"diffAlgorithm.advancedExternal": "使用外部 `@vscode/diff` 包提供的高级差异算法(纯 JavaScript)。",
+			"diffAlgorithm.advancedWasm": "使用外部 `@vscode/diff` 包提供的高级差异算法(WebAssembly)。",
+			"studio.showDeletionMarkers": "使用竖线标记基础版本或任一输入版本中删除的内容。"
+		},
+		"vs/workbench/contrib/notebook/browser/notebookExtensionPoint": {
+			"Notebook mimetypes": "MIME 类型"
+		},
+		"vs/workbench/contrib/preferences/browser/keyboardLayoutPicker": {
+			"autoDetect": "自动检测",
+			"configureKeyboardLayout": "配置键盘布局",
+			"displayLanguage": "指定浏览器工作台使用的键盘布局。",
+			"doc": "打开命令面板并运行“开发人员：检查按键映射 (JSON)”。",
+			"fail.createSettings": "无法创建“{0}”({1})。",
+			"keyboard.chooseLayout": "更改键盘布局",
+			"keyboardLayout": "布局：{0}",
+			"layoutPicks": "键盘布局（{0}）",
+			"pickKeyboardLayout": "选择键盘布局",
+			"status.workbench.keyboardLayout": "键盘布局"
+		},
+		"vs/workbench/contrib/processExplorer/browser/processExplorer.web.contribution": {
+			"processExplorer": "进程资源管理器"
+		},
+		"vs/workbench/contrib/processExplorer/browser/processExplorerControl": {
+			"processCpu": "CPU 使用率 (%)"
+		},
+		"vs/workbench/contrib/remote/browser/remoteStartEntry": {
+			"remote.category": "远程",
+			"remote.showWebStartEntryActions": "显示网页版远程启动项"
+		},
+		"vs/workbench/contrib/search/browser/patternInputWidget": {
+			"onlySearchInChangedFiles": "仅在已更改文件中搜索(源代码管理)"
+		},
+		"vs/workbench/contrib/search/browser/replaceService": {
+			"fileReplaceChanges": "{0} ↔ {1}（替换预览）"
+		},
+		"vs/workbench/contrib/tasks/browser/taskService": {
+			"taskService.processTaskSystem": "网页版不支持进程任务。"
+		},
+		"vs/workbench/contrib/terminalContrib/chatAgentTools/browser/tools/task/createAndRunTaskTool": {
+			"aiStudioChat.fetchingTask": "正在解析任务",
+			"aiStudioChat.noTerminal": "任务已启动，但找不到“{0}”的终端",
+			"aiStudioChat.runningTask": "正在运行任务 `{0}`",
+			"aiStudioChat.taskNotFound": "找不到任务:“{0}”"
+		},
+		"vs/workbench/contrib/terminalContrib/chatAgentTools/browser/tools/task/getTaskOutputTool": {
+			"aiStudioChat.checkedTerminalOutput": "已检查任务 `{0}` 的输出",
+			"aiStudioChat.checkingTerminalOutput": "正在检查任务 `{0}` 的输出",
+			"aiStudioChat.taskAlreadyRunning": "任务“{0}”已在运行。",
+			"aiStudioChat.taskNotFound": "找不到任务:“{0}”",
+			"aiStudioChat.terminalNotFound": "找不到任务 `{0}` 的终端"
+		},
+		"vs/workbench/contrib/terminalContrib/chatAgentTools/browser/tools/task/taskHelpers": {
+			"aiStudioChat.taskFailedWithExitCode": "任务 `{0}` 执行失败，退出码为 {1}。"
+		},
+		"vs/workbench/contrib/terminalContrib/chatAgentTools/common/terminalChatAgentToolsConfiguration": {
+			"agentSandbox.windowsEnabledSetting": "控制智能体模式在 Windows 上是否使用沙盒。",
+			"agentSandbox.windowsEnabledSetting.allowNetworkDescription": "在 Windows 上为智能体模式工具启用沙盒，并允许所有网络域。",
+			"agentSandbox.windowsEnabledSetting.offDescription": "在 Windows 上为智能体模式工具禁用沙盒。",
+			"agentSandbox.windowsFileSystemSetting": "注意: 此设置仅在启用 {0} 时生效。控制 Windows 上沙盒中的文件系统访问。路径不支持 glob 模式，仅支持字面路径(例如: C:\\src、C:\\Users\\me.ssh、.env)。",
+			"agentSandbox.windowsFileSystemSetting.allowRead": "允许只读访问的其他路径的数组。优先级高于 denyRead。",
+			"agentSandbox.windowsFileSystemSetting.allowWrite": "允许读/写访问的其他路径的数组。留空则禁止在工作区文件夹和沙盒临时目录之外进行写入。",
+			"agentSandbox.windowsFileSystemSetting.denyRead": "拒绝访问的路径数组。留空则允许读取所有路径。"
+		},
+		"vs/workbench/contrib/terminalContrib/inlineHint/browser/terminal.initialHint.contribution": {
+			"aiStudioCliHint": "输入 [[copilot]] 即可使用 AI Studio 命令行工具。",
+			"aiStudioCliHintAriaLabel": "输入 copilot 即可使用 AI Studio CLI。"
+		},
+		"vs/workbench/contrib/terminalContrib/inlineHint/common/terminalInitialHintConfiguration": {
+			"terminal.integrated.initialHintAiStudioCli": "启用后，终端的初始提示将建议输入 {0} 使用 AI Studio 命令行工具，取代打开 AI Studio 对话的提示。"
+		},
+		"vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent": {
+			"gettingStarted.aiStudioSetup.description": "你可以使用自然语言让 [AI Studio]({0}) 跨文件生成代码、修复错误或回答有关代码的问题。",
+			"gettingStarted.aiStudioSetup.terms": "继续使用 {0} Copilot 即表示你同意 {1} 的[条款]({2})和[隐私声明]({3})",
+			"gettingStarted.aiStudioSetup.title": "免费使用 AI Studio 的 AI 功能",
+			"setupAiStudioButton.chatWithAIStudio": "开始对话",
+			"setupAiStudioButton.setup": "使用 AI 功能"
+		},
+		"vs/workbench/contrib/welcomeOnboarding/browser/onboardingVariationA": {
+			"onboarding.continue": "继续",
+			"onboarding.signIn.disclaimer.aiStudioPrefix": "。{0} AI Studio 可能会显示",
+			"onboarding.signIn.enterprise.continue": "继续",
+			"onboarding.signIn.enterprise.progress": "正在等待 {0} 登录完成...",
+			"onboarding.signIn.signedIn": "你已登录。可以继续执行下一步。"
+		},
+		"vs/workbench/services/dialogs/browser/fileDialogService": {
+			"learnMore": "了解详细信息(&&L)",
+			"openFiles": "打开文件(&&F)...",
+			"openRemote": "打开远程(&&O)...",
+			"pickFolderAndOpen": "无法打开文件夹，请尝试改为将文件夹添加到工作区。",
+			"pickWorkspaceAndOpen": "无法打开工作区，请尝试改为将文件夹添加到工作区。",
+			"unsupportedBrowserDetail": "浏览器不支持打开本地文件夹。\r\n你可以打开单个文件或打开远程存储库。",
+			"unsupportedBrowserMessage": "不支持打开本地文件夹"
+		},
+		"vs/workbench/services/extensionManagement/browser/webExtensionsScannerService": {
+			"not a web extension": "无法添加“{0}”，它不支持在浏览器中运行。",
+			"openInstalledWebExtensionsResource": "打开已安装的 Web 扩展资源"
+		},
+		"vs/workbench/services/extensionManagement/common/extensionManagementServerService": {
+			"browser": "浏览器",
+			"remote": "远程"
+		},
+		"vs/workbench/services/keybinding/browser/keyboardLayoutService": {
+			"keyboard.layout.config": "控制 Web 中使用的键盘布局。",
+			"keyboardConfigurationTitle": "键盘"
+		},
+		"vs/workbench/services/localization/browser/localeService": {
+			"clearDisplayLanguageDetail": "点击“重新加载”以刷新页面并使用浏览器的语言。",
+			"clearDisplayLanguageMessage": "更改显示语言需要重新加载 {0}",
+			"relaunchDisplayLanguageDetail": "点击“重新加载”以刷新页面并将显示语言设为{0}。",
+			"relaunchDisplayLanguageMessage": "更改显示语言需要重新加载 {0}",
+			"reload": "重新加载(&&R)"
+		},
+		"vs/workbench/services/remote/browser/remoteAgentService": {
+			"connectionError": "出现意外错误，需要重新加载此页面。",
+			"connectionErrorDetail": "工作台无法连接到服务器（错误：{0}）。",
+			"reload": "重新加载(&&R)"
+		},
+		"vs/workbench/services/request/browser/requestService": {
+			"network": "网络"
+		},
+		"vs/workbench/services/search/browser/searchService": {
+			"errorSearchFile": "无法使用 Web Worker 搜索文件",
+			"errorSearchText": "无法使用 Web Worker 搜索文本"
+		}
+	}
+}
