@@ -23,6 +23,8 @@ Linux 需要原生构建依赖和可用的显示服务；无桌面环境时使�
 
 报告写入 `.build/ui-redesign/studio-index-runtime-report.json`，记录平台、架构、Electron/Node/模块 ABI、CI commit/run ID、检查结果和耗时。GitHub Actions 为 Ubuntu 22.04、macOS 15、Windows 2022 分别执行完整安装、编译、Electron 准备及该测试，报告分别上传为 `ai-desktop-report-<runner>`。2026-11-09 提交 `8a45038` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)：三平台各 20 项索引检查通过，报告中的提交号、平台和 ABI 已逐份核对；macOS 另通过 10 项技能/MCP 检查。本机存档为 `.build/ai-index-ci/42574093326/`。
 
-索引专项使用 `npm run test:ai:index:unit`（当前 30 项，Windows core 任务执行此套件）；完整 AI 回归使用 `npm run check:ai`（当前 297 项，Ubuntu/macOS core 任务执行），包括类型检查和索引服务测试：事件合并、多根工作区、mtime/hash 跳过、取消/恢复、排除规则、请求限速、错误重试、响应顺序和 IPC 取消。
+索引专项使用 `npm run test:ai:index:unit`（当前 37 项，Windows core 任务执行此套件）；完整 AI 回归使用 `npm run check:ai`（当前 304 项，Ubuntu/macOS core 任务执行），包括类型检查和索引服务测试：事件合并、多根工作区、mtime/hash 跳过、取消/恢复、排除规则、请求限速、错误重试、响应顺序和 IPC 取消。
 
 十万真实文件、1536/3072 维向量的内存、检索与取消压测使用 `npm run test:ai:index:stress`。方法、门槛和按需 CI 参数见 [压力测试说明](stress/README.md)。
+
+2026-11-09 最终验证提交 `1b5f1f8` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42595379893)：三平台各 20 项常规桌面索引检查及四组十万级压测（每平台 32 项检查），macOS 另通过 10 项技能/MCP 检查。Ubuntu/macOS 核心各 304 项 AI 回归、Windows 37 项索引专项通过。完整压测同时核验全文快照搜索、内存预算与释放、查询/扫描/重载取消和取消后的恢复；详细指标见[压测结果](stress/README.md)。

@@ -234,7 +234,7 @@ npm run test:ai:opencode
 |--------|------|
 | 高 | Windows/Linux 发布打包、签名与完整编辑器 UI 验收；索引原生链路和开发版启动已通过托管 CI |
 | 高 | OS 沙箱接入、文件系统竞态防护、命令执行策略收敛 |
-| 中 | 扩大跨平台审查和回滚测试、Windows/Linux 十万文件索引压测与远程文件系统支持 |
+| 中 | 扩大跨平台审查和回滚测试、远程/虚拟文件系统与百万文件规模验证 |
 | 低 | 扩展视图样式适配、错误边界、可访问性 |
 
 ---
@@ -247,14 +247,14 @@ npm run test:ai:opencode
 |--------|------------|
 | 类型检查 | 已完成：`npm run compile-check-ts-native` 从 175 条错误降至 0；未降低严格类型检查要求 |
 | 依赖与构建清理 | 已完成：npm 重新生成锁文件，移除 Copilot SDK/平台包；删除旧 Azure 下载步骤与 macOS 打包例外；保留扩展兼容所需的 `@vscode/copilot-api` |
-| AI 回归 | 本轮 `npm run check:ai` 通过，297 项测试；此前工程基线的 270 项已在全新临时目录离线安装后复跑通过 |
+| AI 回归 | 本轮 `npm run check:ai` 通过，304 项测试；此前工程基线的 270 项已在全新临时目录离线安装后复跑通过 |
 | 桌面集成 | 三平台完整编译与索引回归各 20 项通过；macOS 技能/MCP 回归 10 项通过，干净环境自动创建报告目录 |
 | 索引增量化与性能保护 | 已完成：持久化文件指纹、批量请求与间隔控制、文件上限、监听合并、开关及取消/继续；1000 文件样例为 63 次请求，未变更扫描和重启均为 0 次新增请求 |
-| 十万文件压测 | 已完成：1536/3072 维精确检索、SQLite 内存回收、真实十万长路径文件与 IndexedDB 重载，4 组压测通过 |
+| 十万文件压测 | 已完成：托管三平台各四组、每平台 32 项检查全部通过，覆盖十万条 1536/3072 维向量、SQLite、真实十万文件、全文快照、内存释放与取消 |
 | Windows/Linux 索引回归 | 已完成：托管 Windows 2022 / Ubuntu 22.04 各 20 项真实桌面检查通过，覆盖原生 ABI、监听、路径差异、持久化关闭及取消响应 |
-| CI 接入 | 已完成：提交 `8a45038` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)，三平台报告已核对提交号、ABI 与检查结果 |
+| CI 接入 | 已完成：提交 `1b5f1f8` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42595379893)，包含三平台完整压测；报告已核对提交、ABI、运行标识、源码指纹与检查结果 |
 
-CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由 push、pull request 或手动触发。三平台核心任务使用不执行安装脚本的干净依赖安装，运行依赖边界和类型检查；Ubuntu/macOS 执行完整 AI 回归，Windows 执行 30 项索引专项回归。三平台桌面任务执行完整安装、编译、Electron 准备和真实工作台索引回归；Linux 使用 Xvfb，macOS 另外执行技能/MCP 回归，并按 runner 分别保存报告。手动运行时可启用 `index_stress`，执行十万文件压力测试并上传报告。公网搜索、安装包和 OpenCode SDK 验证仍为独立验收，不计入此工作流的通过范围。
+CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由 push、pull request 或手动触发。三平台核心任务使用不执行安装脚本的干净依赖安装，运行依赖边界和类型检查；Ubuntu/macOS 执行完整 AI 回归，Windows 执行 37 项索引专项回归。三平台桌面任务执行完整安装、编译、Electron 准备和真实工作台索引回归；Linux 使用 Xvfb，macOS 另外执行技能/MCP 回归，并按 runner 分别保存报告。手动运行时可启用 `index_stress`，三平台各执行完整四组十万文件压力测试；`codex/index-stress-*` 验证分支也会触发，并上传分平台报告及指标摘要。公网搜索、安装包和 OpenCode SDK 验证仍为独立验收，不计入此工作流的通过范围。
 
 ### 短期（1-3 个月）：工程稳定性与安全基线
 
@@ -309,7 +309,7 @@ CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由
 - [x] IndexedDB / SQLite 改为每页最多 16 个文件分批加载，移除 SQLite 持久化层保留的整份向量映射；重载支持取消，关闭后释放向量引用。
 - [x] 新增 `ai.index.maxMemoryMB`（默认每目录 256 MiB），在写入及重载时执行预算检查；排除/失效条目先过滤，不挤占有效数据的预算。此预算约束索引条目估算占用，进程 RSS 还包含工作台、加载页和分配器开销。
 - [x] 文件枚举与路径排序分批处理；文件清单独立使用 64 MiB 上限，普通命令仍为 10 MiB，按 UTF-8 字节截断并标记不完整输出。十万长路径文件的 17.2 MiB 清单已完整验证，截断清单不会触发索引清理。
-- [x] 新增 `npm run test:ai:index:stress`，4 组样例串行在独立进程中执行，保留源码指纹、内存、P50/P95 与取消数据；已接入 macOS CI 的手动 `index_stress` 选项。当时的 11 项桌面索引回归复跑通过，现已扩展为每平台 20 项。
+- [x] 新增 `npm run test:ai:index:stress`，4 组样例串行在独立进程中执行，保留源码指纹、内存、P50/P95 与取消数据；已接入三平台 CI 的手动 `index_stress` 选项和验证分支触发。当时的 11 项桌面索引回归复跑通过，现已扩展为每平台 20 项。
 
 2026-11-09 补齐跨平台索引回归入口：
 
@@ -320,7 +320,7 @@ CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由
 - [x] [托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)，代码提交 `8a45038`。Ubuntu/macOS 各通过 297 项 AI 回归，Windows 通过 30 项索引专项；三平台桌面各 20 项，macOS 技能/MCP 另有 10 项。
 - [x] 托管验证发现并修复：大小写敏感文件系统上的 Agent Host 排除规则、测试夹具依赖系统 `rg`、Windows 应用目录末尾反斜杠的启动参数问题、已退役的 macOS 14 runner、重复下载 Electron 与临时网络错误、全新环境的报告目录初始化。下载仍校验 SHA-256，最多重试两次临时网络错误。
 
-最终托管样例使用 1000 个真实文件、本地两维 HTTP Embedding fixture，以及 512 个 3072 维 SQLite 条目；下表是本次运行的单次取消耗时，不是 P95 或公网模型性能：
+上轮常规托管样例使用 1000 个真实文件、本地两维 HTTP Embedding fixture，以及 512 个 3072 维 SQLite 条目；下表是本次运行的单次取消耗时，不是 P95 或公网模型性能：
 
 | 托管平台 | HTTP 请求取消 | 进程树停止 | SQLite 重载取消 |
 |---|---:|---:|---:|
@@ -328,7 +328,24 @@ CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由
 | Ubuntu 22.04 x64 | 22.0 ms | 2.7 ms | 1.5 ms |
 | macOS 15 arm64 | 4.0 ms | 3.0 ms | 1.7 ms |
 
-报告已存档在 `.build/ai-index-ci/42574093326/`；三平台均验证了 SQLite/Parcel/ripgrep 原生加载、增改删/目录删除/大小写重命名、Unicode/空格路径、开关与补偿、取消后恢复和数据库句柄释放。十万文件完整压测仍以本机 macOS 结果为准，Windows/Linux 十万文件压测与托管 `index_stress` 尚未执行。
+报告已存档在 `.build/ai-index-ci/42574093326/`；三平台均验证了 SQLite/Parcel/ripgrep 原生加载、增改删/目录删除/大小写重命名、Unicode/空格路径、开关与补偿、取消后恢复和数据库句柄释放。Windows/Linux 的完整十万文件压测现已通过，见下方本轮验收记录。
+
+**托管十万文件压测（2026-11-09）**
+
+- [x] 提交 `1b5f1f8` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42595379893)：Windows 2022、Ubuntu 22.04、macOS 15 各通过四组完整压测、32 项检查，共 12 组。每组实际使用 100000 文件/条目，覆盖 1536/3072 维精确检索、SQLite、真实长路径工作区、IndexedDB 和取消恢复。
+- [x] 修复完整索引每次关键词查询重新扫描所有文件的问题：持久化完整源文本，包含头部和注释；文本计入预算并随指纹原子更新。旧指纹补齐全文不重复请求向量；不完整索引、超大文件或待处理变更保留实时磁盘搜索。补充旧数据、预算、回退与长文本取消回归，Ubuntu/macOS 各通过 304 项 AI 测试，Windows 通过 37 项索引专项。
+- [x] 修复原生依赖 Release API 未认证请求的 403，补齐超时进程清理、退出诊断、运行来源与源码指纹校验，以及分平台报告和指标摘要。
+- [x] 托管 macOS 曾在 98401/100000 文件时触及固定 10 分钟夹具超时；改为两分钟无进度失败、配置触发的构建阶段 20 分钟、整个工作区 25 分钟的有界等待。检索、内存与取消门槛保持不变，最终三平台全部达标。
+
+以下为真实十万文件、3072 维样例；内存是单个渲染进程峰值，扫描取消包含预定的 100 ms 等待：
+
+| 托管平台 | 峰值内存 | 混合检索 P95 | 查询取消 | 扫描取消 | 重载取消 |
+|---|---:|---:|---:|---:|---:|
+| Windows 2022 x64 | 1861.2 MiB | 679.5 ms | 33.8 ms | 108.4 ms | 0.8 ms |
+| Ubuntu 22.04 x64 | 2249.1 MiB | 417.4 ms | 34.0 ms | 100.8 ms | 0.6 ms |
+| macOS 15 arm64 | 2102.5 MiB | 3888.0 ms | 36.1 ms | 102.3 ms | 0.3 ms |
+
+报告存档在 `.build/ai-index-ci/42595379893/`，已逐份核对提交、平台、ABI、运行标识与源码指纹。三平台均通过 16 MiB 限额、关闭后的缓冲区释放、增量与重载零新增向量请求、七次查询使用完整全文快照及重载后全文可检索的检查。Windows/Linux 为约 16 GiB RAM 的 x64 运行器，macOS 为 7 GiB RAM 的 arm64 运行器；实例性能存在波动。完整 12 组指标、方法和门槛见[压测说明](test/integration/ai-index/stress/README.md)。
 
 此前首次压测样例：本机 macOS arm64 / 16 GiB RAM，使用不共享缓冲区的稠密 Float32 合成向量。全量工作区压测显式设定 `maxFiles=100000`、`maxMemoryMB=2048`，并先用 16 MiB 预算验证能在 1174 个文件处停止新增：
 
@@ -342,7 +359,7 @@ CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由
 
 真实工作区在提高预算后补齐十万文件约 112 秒（16 MiB 限额阶段单独计时），未变更扫描约 14.4 秒，取消后完整重载及增量扫描约 24.1 秒；扫描和重载均无新增 Embedding 请求。扫描在预定第 100 ms 请求取消后总计约 111 ms 结束，重载取消约 0.3 ms。渲染进程关闭索引后 backing storage 回到启动基线范围。数据来自固定本机样例，精确检索取 9 次、混合检索取 7 次（均含冷查询）；不代表公网模型吞吐量或相关性质量。
 
-[压测方法与门槛](test/integration/ai-index/stress/README.md)，报告位于 `.build/ai-index-stress/report.json`。仍待推进：带 `when` 的兄弟文件条件排除、远程/虚拟工作区文件系统、百万级文件/更高维度，以及 Windows/Linux 十万文件压测。当前只为本地 `file` 工作区建立索引，清单超过 64 MiB 时会报错并保留已有索引；GitHub 托管三平台的常规索引回归已通过，压力测试的覆盖范围见上文。
+[压测方法与门槛](test/integration/ai-index/stress/README.md)，报告位于 `.build/ai-index-stress/report.json`。仍待推进：带 `when` 的兄弟文件条件排除、远程/虚拟工作区文件系统、百万级文件/更高维度。当前只为本地 `file` 工作区建立索引，清单超过 64 MiB 时会报错并保留已有索引；GitHub 托管三平台的常规索引回归已通过，压力测试的覆盖范围见上文。
 
 **Agent 结果模型**
 
