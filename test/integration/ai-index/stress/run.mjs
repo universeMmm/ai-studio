@@ -5,10 +5,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { developmentElectronPath } from '../desktop.mjs';
 
-const electron = createRequire(import.meta.url)('electron');
+const electron = await developmentElectronPath();
 const directory = '.build/ai-index-stress';
 await fs.mkdir(directory, { recursive: true });
 const report = { generatedAt: new Date().toISOString(), cases: [], implementation: {} };

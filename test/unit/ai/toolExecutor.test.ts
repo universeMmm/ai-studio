@@ -8,7 +8,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from 'fs/promises';
-import { spawn } from 'child_process';
+import { runAICommand } from '../../../src/vs/platform/ai/node/commandRunner.js';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -376,14 +376,7 @@ suite('ToolExecutor — real filesystem boundaries', () => {
 				ipcRenderer: {
 					invoke(_channel: string, request: (typeof spawned)[number]) {
 						spawned.push(request);
-						return new Promise((resolve, reject) => {
-							const process = spawn(request.command, request.args, { cwd: request.cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-							let stdout = '', stderr = '';
-							process.stdout.on('data', data => { stdout += data; });
-							process.stderr.on('data', data => { stderr += data; });
-							process.on('error', reject);
-							process.on('close', exitCode => resolve({ stdout, stderr, exitCode }));
-						});
+						return runAICommand(request, new AbortController().signal);
 					}
 				}
 			}

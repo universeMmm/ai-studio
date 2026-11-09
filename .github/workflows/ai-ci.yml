@@ -78,6 +78,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential g++ pkg-config python-is-python3 libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev libgtk-3-0 libgbm1 libnss3 libasound2 xvfb xauth
       - name: Install desktop and extension dependencies
+        # npm run electron prepares the development binary used by every test.
+        # Avoid downloading an unused second copy in node_modules/electron.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: npm ci --no-audit --no-fund
       - name: Compile desktop and built-in extensions
         run: npm run compile

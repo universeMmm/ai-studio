@@ -39,6 +39,9 @@
 		"vs/platform/agentHost/**",
 		"vs/**/*agentHost*/**",
 		"vs/**/*agentHost*.ts",
-		"vs/**/*agentHost*.js"
+		"vs/**/*agentHost*.js",
+		"vs/**/*AgentHost*/**",
+		"vs/**/*AgentHost*.ts",
+		"vs/**/*AgentHost*.js"
 	]
 }

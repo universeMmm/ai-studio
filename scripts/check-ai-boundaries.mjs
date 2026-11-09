@@ -32,6 +32,20 @@ function checkBuildFiles(directory) {
 }
 checkBuildFiles('build');
 
+// Match the desktop compiler's case-insensitive Agent Host exclusion on both
+// case-sensitive (Linux) and case-insensitive (Windows/macOS) filesystems.
+const configPath = path.join(root, 'src/tsconfig.json');
+const config = ts.readConfigFile(configPath, ts.sys.readFile);
+assert.equal(config.error, undefined);
+for (const useCaseSensitiveFileNames of [true, false]) {
+	const parsed = ts.parseJsonConfigFileContent(config.config, { ...ts.sys, useCaseSensitiveFileNames }, path.dirname(configPath));
+	assert.equal(parsed.errors.length, 0);
+	assert.ok(parsed.fileNames.length > 1000, 'Typecheck source set unexpectedly empty');
+	for (const name of parsed.fileNames) {
+		assert.ok(!/agentHost/i.test(path.relative(root, name)), `Disabled host included as typecheck root (caseSensitive=${useCaseSensitiveFileNames}): ${name}`);
+	}
+}
+
 // Check the actual static runtime graph, rather than banning protocol names in
 // retained upstream tests or type-only imports. The desktop compiler omits host
 // implementation files; reaching one at runtime would ship a missing JS module.
