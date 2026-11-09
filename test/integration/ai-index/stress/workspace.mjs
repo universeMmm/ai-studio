@@ -16,7 +16,7 @@ const dimensions = Number(process.env.INDEX_STRESS_DIMENSIONS ?? 3072);
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'index-workspace-stress-'));
 const workspace = path.join(tmp, 'workspace'), profile = path.join(tmp, 'profile');
 const report = { kind: 'desktop-workspace', count, dimensions, vectorBytes: count * dimensions * 4, listingBytes: 0, phases: {}, checks: {}, errors: [], environment: environment() };
-let app, page, cdp, sampler, sampling = false, peakRendererBytes = 0, peakAppBytes = 0, stage = 'fixture';
+let app, page, cdp, sampler, sampling = false, peakRendererBytes = 0, peakAppBytes = 0, stage = 'fixture', stderrTail = '', processExit;
 const phase = value => { stage = value; console.log('Index stress: ' + stage); };
 async function sample() {
 	if (sampling || !app) { return; }
@@ -41,6 +41,9 @@ async function idle(expected) {
 }
 async function launch() {
 	app = await launchDesktop(workspace, profile, path.join(tmp, 'extensions'));
+	process.send?.({ type: 'desktop-process', pid: app.process().pid });
+	app.process().stderr?.on('data', data => { stderrTail = (stderrTail + data.toString()).slice(-65536); });
+	app.process().once('exit', (code, signal) => { processExit = { code, signal }; });
 	report.environment.desktop = await app.evaluate(() => ({ platform: process.platform, arch: process.arch, electron: process.versions.electron, modules: process.versions.modules }));
 	page = await app.firstWindow(); page.setDefaultTimeout(600000); await page.locator('.monaco-workbench').waitFor();
 	page.on('console', message => { if (message.type() === 'error' || message.text().includes('[AIIndexService]')) { report.errors.push(message.text()); } });
@@ -154,7 +157,8 @@ try {
 	report.checks.peakMemory = peakRendererBytes > report.vectorBytes && peakRendererBytes < report.phases.before.peakRendererBytes + report.vectorBytes * 1.7 + 512 * 1024 * 1024;
 	assert.ok(report.checks.peakMemory); report.pass = true;
 } catch (error) {
-	report.pass = false; report.failure = { stage, error: error.stack };
+	report.pass = false; report.failure = { stage, error: error.stack, peakRendererBytes, peakAppBytes };
+	report.diagnostics = { processExit, stderrTail };
 	if (page) { report.lastStats = await page.evaluate(() => window.stress?.index.stats).catch(() => null); }
 	process.exitCode = 1;
 } finally {

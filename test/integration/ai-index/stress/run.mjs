@@ -32,16 +32,21 @@ for (const test of cases) {
 	const started = Date.now();
 	const completion = await new Promise(resolve => {
 		const child = spawn(test.binary, [...test.args, path.join('test/integration/ai-index/stress', test.entry)], {
-			stdio: 'inherit', detached: process.platform !== 'win32', env: { ...process.env, INDEX_STRESS_FILES: '100000', INDEX_STRESS_DIMENSIONS: String(test.dimensions), ...test.env },
+			stdio: ['inherit', 'inherit', 'inherit', 'ipc'], detached: process.platform !== 'win32', env: { ...process.env, INDEX_STRESS_FILES: '100000', INDEX_STRESS_DIMENSIONS: String(test.dimensions), ...test.env },
 		});
-		let timedOut = false;
+		let timedOut = false, desktopPid;
+		child.on('message', message => { if (message?.type === 'desktop-process' && Number.isInteger(message.pid) && message.pid > 0) { desktopPid = message.pid; } });
 		const timeout = setTimeout(() => {
 			timedOut = true;
 			// Terminate Electron and file-watcher descendants as well as the harness.
 			if (process.platform === 'win32') {
 				const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'inherit' });
 				killer.once('error', () => child.kill());
-			} else { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } }
+			} else {
+				// Playwright starts Electron in its own process group on POSIX.
+				if (desktopPid) { try { process.kill(-desktopPid, 'SIGKILL'); } catch { /* Already exited. */ } }
+				try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+			}
 		}, (test.entry === 'workspace.mjs' ? 25 : 10) * 60000);
 		child.once('error', error => { clearTimeout(timeout); resolve({ exitCode: null, error: error.message, timedOut }); });
 		child.once('close', (exitCode, signal) => { clearTimeout(timeout); resolve({ exitCode, signal, timedOut }); });

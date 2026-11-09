@@ -86,6 +86,9 @@ jobs:
         # Avoid downloading an unused second copy in node_modules/electron.
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          # ripgrep's installer queries api.github.com; hosted macOS shared IPs
+          # can exhaust the unauthenticated release API quota (HTTP 403).
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm ci --no-audit --no-fund
       - name: Compile desktop and built-in extensions
         run: npm run compile
