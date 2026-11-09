@@ -11,6 +11,7 @@ export interface AIStudioCommandResult {
 	stdout: string;
 	stderr: string;
 	exitCode: number;
+	stdoutTruncated?: boolean;
 }
 
 /** Access the optional bridge supplied by the desktop preload. */

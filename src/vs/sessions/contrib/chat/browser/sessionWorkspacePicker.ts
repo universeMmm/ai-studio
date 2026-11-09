@@ -21,7 +21,10 @@ import { IMenuService, MenuItemAction } from '../../../../platform/actions/commo
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
 // agentHost 剥离：本地桩代码替换原 agentHost 模块引用
-const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
+export interface IRemoteAgentHostService {
+	readonly _serviceBrand: undefined;
+}
+export const IRemoteAgentHostService = createDecorator<IRemoteAgentHostService>('IRemoteAgentHostService');
 const RemoteAgentHostConnectionStatus = {
 	isConnected: (_s: unknown) => false,
 	isDisconnected: (_s: unknown) => false,
@@ -199,7 +202,7 @@ export class WorkspacePicker extends Disposable {
 		@IStorageService private readonly storageService: IStorageService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService protected readonly sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService private readonly remoteAgentHostService: unknown,
+		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,

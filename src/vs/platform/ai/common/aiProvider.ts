@@ -63,7 +63,7 @@ export interface IAIProvider {
 	 * Generate embeddings for the given texts.
 	 * Used by the codebase index.
 	 */
-	embed(texts: string[]): Promise<number[][]>;
+	embed(texts: string[], signal?: AbortSignal): Promise<number[][]>;
 
 	/**
 	 * List available models for this provider.

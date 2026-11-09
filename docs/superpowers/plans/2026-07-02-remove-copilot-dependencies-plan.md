@@ -12,6 +12,22 @@
 
 ---
 
+## Engineering follow-up — 2026-11-09
+
+The current implementation status is tracked in the repository README's development plan. This follow-up completes the engineering baseline, not every historical task or commit checkbox below.
+
+- [x] Regenerate the root npm lockfile and remove Copilot SDK/platform packages without changing retained dependency versions.
+- [x] Remove obsolete Copilot download/stage references from Azure pipeline templates and macOS packaging exceptions.
+- [x] Restore the public protocol snapshot and supporting contracts from repository baseline `499704b`; fix consumer typing while keeping the upstream host disabled and outside the desktop runtime graph.
+- [x] Pass `npm run compile-check-ts-native` (175 errors to zero), `npm run compile`, and `npm run check:ai` (270 tests).
+- [x] Repeat core checks after a clean `npm ci --ignore-scripts --offline` installation; pass the real desktop skills/MCP harness (10 checks).
+- [x] Add `.github/workflows/ai-ci.yml` for dependency/runtime boundaries, type checking, AI regression, desktop compilation and MCP integration.
+- [ ] Observe the first hosted CI run after pushing; validate Windows/Linux desktop builds and startup separately.
+
+`@vscode/copilot-api` and extension API declarations remain deliberate compatibility exceptions. The original full upstream `test-node` and all manual UI checks below are not claimed as completed by this follow-up.
+
+---
+
 ## File Structure
 
 | Layer | Files Modified | Files Deleted |

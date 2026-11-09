@@ -12,6 +12,19 @@ import type { AIMessage } from '../../common/aiTypes.js';
 suite('CustomProvider', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
+	test('batched embeddings respect response indices and reject missing or duplicate vectors', async () => {
+		const fetch = globalThis.fetch;
+		const provider = new CustomProvider('https://example.invalid/v1', 'fixture', 'fixture', new NullLogService());
+		try {
+			globalThis.fetch = async () => Response.json({ data: [{ index: 1, embedding: [0, 1] }, { index: 0, embedding: [1, 0] }] });
+			assert.deepStrictEqual(await provider.embed(['a', 'b']), [[1, 0], [0, 1]]);
+			globalThis.fetch = async () => Response.json({ data: [{ index: 0, embedding: [1] }] });
+			await assert.rejects(provider.embed(['a', 'b']), /length/);
+			globalThis.fetch = async () => Response.json({ data: [{ index: 0, embedding: [1] }, { index: 0, embedding: [2] }] });
+			await assert.rejects(provider.embed(['a', 'b']), /order/);
+		} finally { globalThis.fetch = fetch; provider.dispose(); }
+	});
+
 	test('converts tool result messages to OpenAI chat completion format', () => {
 		const provider = new CustomProvider('https://example.invalid/v1', 'test-key', 'test-model', new NullLogService());
 		const messages: AIMessage[] = [{

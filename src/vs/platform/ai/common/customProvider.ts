@@ -142,10 +142,14 @@ export class CustomProvider extends Disposable implements IAIProvider {
 
 	// ── Embeddings + Models ──────────────────────────────────
 
-	async embed(texts: string[]): Promise<number[][]> {
-		const res = await this._fetch('/embeddings', { model: 'text-embedding-3-small', input: texts }, new AbortController().signal);
-		const json: { data?: { embedding: number[] }[] } = await res.json();
-		if (!json.data?.length) { throw new Error('Empty embedding response'); }
+	async embed(texts: string[], signal: AbortSignal = new AbortController().signal): Promise<number[][]> {
+		const res = await this._fetch('/embeddings', { model: 'text-embedding-3-small', input: texts }, signal);
+		const json: { data?: { index?: number; embedding: number[] }[] } = await res.json();
+		if (json.data?.length !== texts.length) { throw new Error('Invalid embedding response length'); }
+		if (json.data.some(item => item.index !== undefined)) {
+			json.data.sort((a, b) => (a.index ?? -1) - (b.index ?? -1));
+			if (json.data.some((item, index) => item.index !== index)) { throw new Error('Invalid embedding response order'); }
+		}
 		return json.data.map(d => d.embedding);
 	}
 

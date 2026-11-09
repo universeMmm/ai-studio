@@ -134,5 +134,35 @@ export const aiConfigurationNode: IConfigurationNode = {
 			default: true,
 			description: localize("studio.settings.indexEnabled", "为工作区代码建立索引，以便智能体检索项目结构与实现。"),
 		},
+		'ai.index.maxFiles': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'number', default: 10000, minimum: 1, maximum: 100000,
+			description: localize('studio.settings.indexMaxFiles', '每个工作区目录最多索引的文件数。超过上限时按路径排序选取。'),
+		},
+		'ai.index.batchSize': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'number', default: 16, minimum: 1, maximum: 128,
+			description: localize('studio.settings.indexBatchSize', '每次 Embedding 请求最多包含的代码块数。'),
+		},
+		'ai.index.maxMemoryMB': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'number', default: 256, minimum: 16, maximum: 4096,
+			description: localize('studio.settings.indexMaxMemory', '每个目录的索引内存预算（MiB），包括向量、文本和条目开销估算，不代表整个进程内存。达到预算时暂停添加条目；降低预算会裁剪持久化索引，可提高预算后重新生成。'),
+		},
+		'ai.index.requestInterval': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'number', default: 200, minimum: 0, maximum: 60000,
+			description: localize('studio.settings.indexRequestInterval', '同一目录的 Embedding 请求最小间隔，单位毫秒。'),
+		},
+		'ai.index.include': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'array', items: { type: 'string' }, default: ['**/*'],
+			description: localize('studio.settings.indexInclude', '允许索引的相对路径 glob。仍遵循 Git 忽略规则。'),
+		},
+		'ai.index.exclude': {
+			scope: ConfigurationScope.RESOURCE,
+			type: 'array', items: { type: 'string' }, default: [],
+			description: localize('studio.settings.indexExclude', '额外排除的相对路径 glob；同时使用 files.exclude 和 search.exclude 中值为 true 的规则。'),
+		},
 	},
 };

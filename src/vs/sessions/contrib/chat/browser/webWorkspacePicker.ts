@@ -8,10 +8,6 @@ import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-
-// agentHost 剥离：本地桩代码
-const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -24,7 +20,7 @@ import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/b
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { Event } from '../../../../base/common/event.js';
 // agentHost 剥离：IAgentHostFilterService 桩对象
-import { IWorkspacePickerItem, WorkspacePicker } from './sessionWorkspacePicker.js';
+import { IRemoteAgentHostService, IWorkspacePickerItem, WorkspacePicker } from './sessionWorkspacePicker.js';
 import { showMobileWorkspacePickerSheet, shouldUseMobileWorkspacePickerSheet } from './mobile/mobileWorkspacePickerSheet.js';
 import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
 
@@ -53,7 +49,7 @@ export class WebWorkspacePicker extends WorkspacePicker {
 		@IStorageService storageService: IStorageService,
 		@IUriIdentityService uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService remoteAgentHostService: unknown,
+		@IRemoteAgentHostService remoteAgentHostService: IRemoteAgentHostService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@ICommandService commandService: ICommandService,
 		@IWorkspacesService workspacesService: IWorkspacesService,

@@ -287,7 +287,7 @@ export class AIAgentService extends Disposable implements IAIAgentService {
 		// Inject relevant code from index
 		if (this.indexService?.isReady) {
 			try {
-				const snippets = await this.indexService.search(instruction, 5);
+				const snippets = await this.indexService.search(instruction, 5, signal);
 				if (snippets.length) {
 					let codeBlock = '\n\n## Relevant Code\n\n';
 					for (const s of snippets) {
