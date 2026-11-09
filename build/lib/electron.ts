@@ -229,8 +229,21 @@ function getElectron(arch: string): () => NodeJS.ReadWriteStream {
 
 async function main(arch: string = process.arch): Promise<void> {
 	const electronPath = path.join(root, '.build', 'electron');
-	await util.rimraf(electronPath)();
-	await util.streamToPromise(getElectron(arch)());
+	for (let attempt = 1; ; attempt++) {
+		await util.rimraf(electronPath)();
+		try {
+			await util.streamToPromise(getElectron(arch)());
+			return;
+		} catch (error) {
+			const failure = error as { code?: string; response?: { statusCode?: number } };
+			const status = failure.response?.statusCode;
+			const transient = [408, 429, 500, 502, 503, 504].includes(status ?? 0)
+				|| ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(failure.code ?? '');
+			if (!transient || attempt >= 3) { throw error; }
+			console.warn(`Electron download failed (${status ?? failure.code}); retrying ${attempt}/2`);
+			await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+		}
+	}
 }
 
 if (import.meta.main) {
