@@ -36,4 +36,4 @@ Node 使用 `process.memoryUsage()` 和 `resourceUsage().maxRSS`；Electron 使�
 
 ## CI
 
-在 `AI Studio CI` 的手动运行参数中启用 `index_stress`，macOS desktop 任务会在常规索引测试后执行完整压测并上传 JSON。普通 push / pull request 保留常规回归，不自动生成十万文件。托管 runner、Windows/Linux 桌面的实际结果仍需独立验证。
+在 `AI Studio CI` 的手动运行参数中启用 `index_stress`，macOS desktop 任务会在常规索引测试后执行完整压测并上传 JSON。普通 push / pull request 保留常规回归，不自动生成十万文件。[托管三平台常规索引回归已通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)（每平台 1000 文件、20 项检查）；这不代替十万文件压测。本轮十万文件 4 组仍为本机 macOS 结果，托管 `index_stress` 与 Windows/Linux 十万文件压测尚未执行。

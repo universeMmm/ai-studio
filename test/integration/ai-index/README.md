@@ -21,7 +21,7 @@ npm run test:ai:index
 
 Linux 需要原生构建依赖和可用的显示服务；无桌面环境时使用 `xvfb-run -a npm run test:ai:index`。Windows 需要 Visual Studio 2022 C++/Spectre 工具链。原生模块必须使用本仓库 `.npmrc` 的 Electron target 编译，不要复用另一平台或普通 Node ABI 的 `node_modules`。CI 的系统依赖依据 [VS Code 贡献指南](https://github.com/microsoft/vscode/wiki/How-to-Contribute) 和 [Windows runner 镜像清单](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)。
 
-报告写入 `.build/ui-redesign/studio-index-runtime-report.json`，记录平台、架构、Electron/Node/模块 ABI、CI commit/run ID、检查结果和耗时。GitHub Actions 为 Ubuntu 22.04、macOS 15、Windows 2022 分别执行完整安装、编译、Electron 准备及该测试，报告分别上传为 `ai-desktop-report-<runner>`。当前实际通过结果为本机 macOS arm64 的 20 项检查；托管 CI 及 Windows/Linux 运行结果待验证，不能将配置完成视为平台验收通过。
+报告写入 `.build/ui-redesign/studio-index-runtime-report.json`，记录平台、架构、Electron/Node/模块 ABI、CI commit/run ID、检查结果和耗时。GitHub Actions 为 Ubuntu 22.04、macOS 15、Windows 2022 分别执行完整安装、编译、Electron 准备及该测试，报告分别上传为 `ai-desktop-report-<runner>`。2026-11-09 提交 `8a45038` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)：三平台各 20 项索引检查通过，报告中的提交号、平台和 ABI 已逐份核对；macOS 另通过 10 项技能/MCP 检查。本机存档为 `.build/ai-index-ci/42574093326/`。
 
 索引专项使用 `npm run test:ai:index:unit`（当前 30 项，Windows core 任务执行此套件）；完整 AI 回归使用 `npm run check:ai`（当前 297 项，Ubuntu/macOS core 任务执行），包括类型检查和索引服务测试：事件合并、多根工作区、mtime/hash 跳过、取消/恢复、排除规则、请求限速、错误重试、响应顺序和 IPC 取消。
 

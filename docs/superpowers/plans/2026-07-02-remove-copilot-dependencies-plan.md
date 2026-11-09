@@ -22,7 +22,7 @@ The current implementation status is tracked in the repository README's developm
 - [x] Pass `npm run compile-check-ts-native` (175 errors to zero), `npm run compile`, and `npm run check:ai` (270 tests).
 - [x] Repeat core checks after a clean `npm ci --ignore-scripts --offline` installation; pass the real desktop skills/MCP harness (10 checks).
 - [x] Add `.github/workflows/ai-ci.yml` for dependency/runtime boundaries, type checking, AI regression, desktop compilation and MCP integration.
-- [ ] Observe the first hosted CI run after pushing; validate Windows/Linux desktop builds and startup separately.
+- [x] Verify [all six hosted CI jobs](https://github.com/universeMmm/ai-studio/actions/runs/42574093326) at `8a45038`: Ubuntu/macOS pass 297 AI tests, Windows passes 30 index tests; all three desktop builds and 20 index checks per platform pass, plus 10 macOS skills/MCP checks. Validate native SQLite/Parcel/ripgrep, real watchers, cancellation and handle release; full 100k-file stress remains locally verified on macOS.
 
 `@vscode/copilot-api` and extension API declarations remain deliberate compatibility exceptions. The original full upstream `test-node` and all manual UI checks below are not claimed as completed by this follow-up.
 
