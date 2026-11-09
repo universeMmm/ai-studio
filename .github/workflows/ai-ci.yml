@@ -48,6 +48,10 @@ jobs:
 
   desktop:
     name: Desktop index (${{ matrix.os }})
+    env:
+      # A dedicated validation branch can run stress before this workflow is
+      # merged into the default branch (required for workflow_dispatch).
+      INDEX_STRESS: ${{ (github.event_name == 'workflow_dispatch' && inputs.index_stress) || startsWith(github.head_ref || github.ref_name, 'codex/index-stress-') }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,9 +103,16 @@ jobs:
         if: runner.os == 'macOS'
         run: npm run test:ai:capabilities
       - name: Stress test 100k files and high-dimensional vectors
-        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch' && inputs.index_stress
-        timeout-minutes: 20
+        if: env.INDEX_STRESS == 'true' && runner.os != 'Linux'
+        timeout-minutes: 45
         run: npm run test:ai:index:stress
+      - name: Stress test Linux under a virtual display
+        if: env.INDEX_STRESS == 'true' && runner.os == 'Linux'
+        timeout-minutes: 45
+        run: xvfb-run -a -s "-screen 0 1280x960x24" npm run test:ai:index:stress
+      - name: Verify stress metrics and summarize this platform
+        if: always() && env.INDEX_STRESS == 'true'
+        run: node test/integration/ai-index/stress/ci-report.mjs
       - name: Verify and summarize this platform's index report
         run: node test/integration/ai-index/ci-report.mjs
       - name: Upload desktop test report

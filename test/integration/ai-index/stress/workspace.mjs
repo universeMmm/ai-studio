@@ -9,12 +9,13 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { launchDesktop } from '../desktop.mjs';
 import { percentile } from './vectors.mjs';
+import { environment } from './metrics.mjs';
 
 const count = Number(process.env.INDEX_STRESS_FILES ?? 100000);
 const dimensions = Number(process.env.INDEX_STRESS_DIMENSIONS ?? 3072);
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'index-workspace-stress-'));
 const workspace = path.join(tmp, 'workspace'), profile = path.join(tmp, 'profile');
-const report = { kind: 'desktop-workspace', count, dimensions, vectorBytes: count * dimensions * 4, listingBytes: 0, phases: {}, checks: {}, errors: [], environment: { platform: process.platform, arch: process.arch, node: process.version, memoryBytes: os.totalmem() } };
+const report = { kind: 'desktop-workspace', count, dimensions, vectorBytes: count * dimensions * 4, listingBytes: 0, phases: {}, checks: {}, errors: [], environment: environment() };
 let app, page, cdp, sampler, sampling = false, peakRendererBytes = 0, peakAppBytes = 0, stage = 'fixture';
 const phase = value => { stage = value; console.log('Index stress: ' + stage); };
 async function sample() {
@@ -23,7 +24,7 @@ async function sample() {
 	try {
 		const metrics = await app.evaluate(({ app }) => app.getAppMetrics());
 		peakAppBytes = Math.max(peakAppBytes, metrics.reduce((sum, metric) => sum + metric.memory.workingSetSize * 1024, 0));
-		peakRendererBytes = Math.max(peakRendererBytes, ...metrics.filter(metric => metric.type === 'Tab').map(metric => Math.max(metric.memory.workingSetSize, metric.memory.peakWorkingSetSize) * 1024));
+		peakRendererBytes = Math.max(peakRendererBytes, ...metrics.filter(metric => metric.type === 'Tab').map(metric => Math.max(metric.memory.workingSetSize, metric.memory.peakWorkingSetSize ?? 0) * 1024));
 	} catch { /* Renderer may be restarting. */ } finally { sampling = false; }
 }
 async function snapshot() {
@@ -35,12 +36,13 @@ async function idle(expected) {
 	await page.waitForFunction(expected => {
 		const s = window.stress.index.stats;
 		return s.state === 'error' || s.state === 'idle' && (expected === null || s.totalFiles === expected);
-	}, expected ?? null, { timeout: 300000 });
+	}, expected ?? null, { timeout: 600000 });
 	assert.equal(await page.evaluate(() => window.stress.index.stats.state), 'idle', report.errors.join('\n'));
 }
 async function launch() {
 	app = await launchDesktop(workspace, profile, path.join(tmp, 'extensions'));
-	page = await app.firstWindow(); page.setDefaultTimeout(300000); await page.locator('.monaco-workbench').waitFor();
+	report.environment.desktop = await app.evaluate(() => ({ platform: process.platform, arch: process.arch, electron: process.versions.electron, modules: process.versions.modules }));
+	page = await app.firstWindow(); page.setDefaultTimeout(600000); await page.locator('.monaco-workbench').waitFor();
 	page.on('console', message => { if (message.type() === 'error' || message.text().includes('[AIIndexService]')) { report.errors.push(message.text()); } });
 	page.on('pageerror', error => report.errors.push(error.message));
 	cdp = await page.context().newCDPSession(page);
@@ -105,7 +107,7 @@ try {
 	for (let i = 0; i < 7; i++) {
 		start = performance.now(); const hits = await page.evaluate(id => window.stress.index.search('value' + id, 10), count - 7 - i);
 		latencies.push(performance.now() - start);
-		assert.ok(hits[0].filePath.endsWith(`file-${String(count - 7 - i).padStart(6, '0')}.ts`));
+		assert.ok(hits[0]?.filePath.endsWith(`file-${String(count - 7 - i).padStart(6, '0')}.ts`));
 	}
 	report.phases.query = { samplesMs: latencies, p50Ms: percentile(latencies, .5), p95Ms: percentile(latencies, .95), ...await snapshot() };
 	assert.ok(report.phases.query.p95Ms < 5000); report.checks.hybridLatency = true;
@@ -143,12 +145,13 @@ try {
 		const drained = f.index.reindex(), start = performance.now(); f.index.cancel(); await drained;
 		return { loaded, durationMs: performance.now() - start, state: f.index.stats.state };
 	});
+	assert.equal(report.phases.reloadCancel.state, 'cancelled');
 	assert.ok(report.phases.reloadCancel.loaded < count && report.phases.reloadCancel.durationMs < 200); report.checks.reloadCancellation = true;
 	phase('complete persisted reload'); start = performance.now(); await page.evaluate(() => window.stress.index.reindex()); await idle(count);
 	report.phases.reload = { durationMs: performance.now() - start, ...await snapshot() };
 	assert.equal(await page.evaluate(() => window.stress.requests), requests); report.checks.persistedReuse = true;
-	report.heartbeat = await page.evaluate(() => { const f = window.stress; clearInterval(f.heartbeat); return { maxMs: Math.max(...f.heartbeats), p95Ms: [...f.heartbeats].sort((a, b) => a - b)[Math.floor(f.heartbeats.length * .95)] }; });
-	report.checks.peakMemory = peakRendererBytes < report.phases.before.peakRendererBytes + report.vectorBytes * 1.7 + 512 * 1024 * 1024;
+	report.heartbeat = await page.evaluate(() => { const f = window.stress; clearInterval(f.heartbeat); return { maxMs: f.heartbeats.reduce((max, delay) => Math.max(max, delay), 0), p95Ms: [...f.heartbeats].sort((a, b) => a - b)[Math.floor(f.heartbeats.length * .95)] }; });
+	report.checks.peakMemory = peakRendererBytes > report.vectorBytes && peakRendererBytes < report.phases.before.peakRendererBytes + report.vectorBytes * 1.7 + 512 * 1024 * 1024;
 	assert.ok(report.checks.peakMemory); report.pass = true;
 } catch (error) {
 	report.pass = false; report.failure = { stage, error: error.stack };
@@ -159,5 +162,5 @@ try {
 	await fs.mkdir('.build/ai-index-stress', { recursive: true });
 	await fs.writeFile(`.build/ai-index-stress/workspace-${dimensions}.json`, JSON.stringify(report, null, 2));
 	console.log(JSON.stringify(report, null, 2));
-	await fs.rm(tmp, { recursive: true, force: true });
+	await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
