@@ -154,6 +154,8 @@ try {
 finally {
 	if (app) { await app.close().catch(() => { }); }
 	for (const socket of sockets) { socket.destroy(); } proxy.close(); origin.close();
+	await fs.mkdir(path.resolve('.build/ui-redesign'), { recursive: true });
 	await fs.writeFile(path.resolve('.build/ui-redesign/studio-mcp-runtime-report.json'), JSON.stringify(report, null, 2));
 	console.log(JSON.stringify(report, null, 2));
+	await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

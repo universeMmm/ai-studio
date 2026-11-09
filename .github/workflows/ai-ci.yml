@@ -89,15 +89,15 @@ jobs:
         run: npm run electron
       # Uses a temporary profile, synthetic skill and local MCP/model fixtures.
       # Public web search and SDK migration trials remain explicit manual checks.
-      - name: Test skills and MCP through the real workbench
-        if: runner.os == 'macOS'
-        run: npm run test:ai:capabilities
       - name: Test incremental index and native file watching
         if: runner.os != 'Linux'
         run: npm run test:ai:index
       - name: Test Linux index under a virtual display
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1280x960x24" npm run test:ai:index
+      - name: Test skills and MCP through the real workbench
+        if: runner.os == 'macOS'
+        run: npm run test:ai:capabilities
       - name: Stress test 100k files and high-dimensional vectors
         if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch' && inputs.index_stress
         timeout-minutes: 20
