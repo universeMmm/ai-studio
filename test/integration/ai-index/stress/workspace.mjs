@@ -33,11 +33,20 @@ async function snapshot() {
 }
 async function setting(key, value) { await page.evaluate(async ({ key, value }) => { const f = window.stress; await f.config.updateValue(key, value, f.target); }, { key, value }); }
 async function idle(expected) {
-	await page.waitForFunction(expected => {
-		const s = window.stress.index.stats;
-		return s.state === 'error' || s.state === 'idle' && (expected === null || s.totalFiles === expected);
-	}, expected ?? null, { timeout: 600000 });
-	assert.equal(await page.evaluate(() => window.stress.index.stats.state), 'idle', report.errors.join('\n'));
+	// Hosted disks vary substantially for 100k durable per-file commits. Fail on
+	// stalled progress, while leaving query/cancellation/memory limits unchanged.
+	const deadline = performance.now() + 20 * 60000;
+	let previous = '', changedAt = performance.now();
+	while (performance.now() < deadline) {
+		const stats = await page.evaluate(() => window.stress.index.stats);
+		assert.notEqual(stats.state, 'error', report.errors.join('\n'));
+		if (stats.state === 'idle' && (expected === undefined || stats.totalFiles === expected)) { return; }
+		const progress = JSON.stringify([stats.state, stats.totalFiles, stats.processed, stats.total]);
+		if (progress !== previous) { previous = progress; changedAt = performance.now(); }
+		assert.ok(performance.now() - changedAt < 120000, 'Index made no progress for two minutes: ' + JSON.stringify(stats));
+		await new Promise(resolve => setTimeout(resolve, 1000));
+	}
+	throw new Error('Index phase exceeded 20 minutes');
 }
 async function launch() {
 	app = await launchDesktop(workspace, profile, path.join(tmp, 'extensions'));
