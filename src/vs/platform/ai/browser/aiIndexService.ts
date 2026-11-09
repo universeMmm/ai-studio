@@ -219,6 +219,14 @@ export class AIIndexService extends Disposable implements IAIIndexService {
 		const words = query.split(/\s+/).filter(word => word.length > 1);
 		if (!words.length) { return []; }
 		try {
+			const builder = this.indexes.get(root)?.builder;
+			const canUseSnapshot = () => this.enabled && !this.paused && this.state === 'idle' && !this.pending.size && !this.rescan && !this.changesRunning && builder?.isReady() && !builder.progress.limited && !builder.progress.memoryLimited;
+			if (builder && canUseSnapshot()) {
+				const cached = await builder.getStore()?.searchKeywords(words, topK, signal, builder.candidateCount);
+				// A watcher event or concurrent update invalidates the snapshot. Limited,
+				// oversized and legacy indexes keep the live full-tree ripgrep fallback.
+				if (cached !== undefined && canUseSnapshot()) { return cached; }
+			}
 			const options = getIndexOptions(this.configurationService, root);
 			const args = ['--with-filename', '--line-number', '--fixed-strings', '--hidden', '--max-count=' + topK];
 			for (const pattern of options.exclude) { args.push('--glob', '!' + pattern); }

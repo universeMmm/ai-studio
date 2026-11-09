@@ -21,12 +21,14 @@ export interface IndexFileMetadata {
 	size: number;
 	hash: string;
 	embeddingKey: string;
+	/** Complete file text for keyword search; absent in legacy or oversized records. */
+	text?: string;
 }
 
 export function isIndexFileMetadata(value: unknown): value is IndexFileMetadata {
 	if (!value || typeof value !== 'object') { return false; }
 	const stamp = value as IndexFileMetadata;
-	return Number.isFinite(stamp.mtime) && Number.isFinite(stamp.size) && typeof stamp.hash === 'string' && typeof stamp.embeddingKey === 'string';
+	return Number.isFinite(stamp.mtime) && Number.isFinite(stamp.size) && typeof stamp.hash === 'string' && typeof stamp.embeddingKey === 'string' && (stamp.text === undefined || typeof stamp.text === 'string');
 }
 
 export interface IndexFileRecord {
@@ -68,6 +70,7 @@ export class IndexStore {
 	private closed = false;
 	private closing?: Promise<void>;
 	private revision = 0;
+	private textFiles = 0;
 	private neighbors?: { index: NearestNeighbors; entries: IndexedChunk[]; dimension: number };
 
 	constructor(private readonly storage?: IIndexStorage, private Hnsw?: HnswConstructor, private readonly maxBytes = Number.POSITIVE_INFINITY) { }
@@ -135,7 +138,7 @@ export class IndexStore {
 	private estimateBytes(path: string, entries: IndexedChunk[], metadata?: IndexFileMetadata): number {
 		if (!entries.length && !metadata) { return 0; }
 		// Conservative retained-payload accounting, not a claim about total process RSS.
-		let bytes = 256 + path.length * 2 + (metadata ? 128 + (metadata.hash.length + metadata.embeddingKey.length) * 2 : 0);
+		let bytes = 256 + path.length * 2 + (metadata ? 128 + (metadata.hash.length + metadata.embeddingKey.length + (metadata.text?.length ?? 0)) * 2 : 0);
 		for (const { chunk, embedding } of entries) { bytes += embedding.byteLength + 256 + 2 * (chunk.id.length + chunk.content.length + chunk.name.length); }
 		return bytes;
 	}
@@ -145,6 +148,7 @@ export class IndexStore {
 		this.totalChunks += entries.length - (this.files.get(filePath)?.length ?? 0);
 		this.totalBytes += bytes - (this.footprints.get(filePath) ?? 0);
 		if (bytes) { this.footprints.set(filePath, bytes); } else { this.footprints.delete(filePath); }
+		this.textFiles += Number(typeof metadata?.text === 'string') - Number(typeof this.metadata.get(filePath)?.text === 'string');
 		if (metadata) { this.metadata.set(filePath, metadata); } else { this.metadata.delete(filePath); }
 		if (entries.length) {
 			this.files.set(filePath, entries);
@@ -156,6 +160,36 @@ export class IndexStore {
 			}
 		} else { this.files.delete(filePath); }
 		this.neighbors = undefined;
+	}
+
+	/** Undefined means the snapshot is incomplete/changed and the caller must search disk. */
+	async searchKeywords(words: string[], topK: number, signal?: AbortSignal, expectedFiles = this.footprints.size): Promise<CodeSnippet[] | undefined> {
+		signal?.throwIfAborted();
+		if (this.closed || !this.footprints.size || this.textFiles !== this.footprints.size || this.textFiles !== expectedFiles) { return undefined; }
+		if (topK <= 0 || !words.length) { return []; }
+		const revision = this.revision, matches: CodeSnippet[] = [];
+		let visited = 0, deadline = performance.now() + 8;
+		for (const [filePath, metadata] of this.metadata) {
+			if (++visited % 8 === 0 && performance.now() >= deadline) { await yieldIndexTask(signal); deadline = performance.now() + 8; }
+			if (this.closed || revision !== this.revision) { return undefined; }
+			const text = metadata.text!;
+			if (words.some(word => text.includes(word))) {
+				const lines = text.split('\n');
+				for (let line = 0; line < lines.length; line++) {
+					if (line % 128 === 0 && performance.now() >= deadline) {
+						await yieldIndexTask(signal); deadline = performance.now() + 8;
+						if (this.closed || revision !== this.revision) { return undefined; }
+					}
+					if (words.some(word => lines[line].includes(word))) {
+						matches.push({ filePath, startLine: line + 1, endLine: line + 1, content: lines[line].replace(/\r$/, ''), score: 0.4 });
+						if (matches.length >= topK) { break; }
+					}
+				}
+			}
+			if (matches.length >= topK) { break; }
+		}
+		signal?.throwIfAborted();
+		return matches;
 	}
 
 	async searchSemantic(query: Float32Array, topK: number, signal?: AbortSignal): Promise<Hit[]> {
@@ -237,6 +271,7 @@ export class IndexStore {
 			this.metadata.clear();
 			this.totalChunks = 0;
 			this.totalBytes = 0;
+			this.textFiles = 0;
 			this.footprints.clear();
 			this.norms = new WeakMap();
 			this.neighbors = undefined;

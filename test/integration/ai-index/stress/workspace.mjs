@@ -46,6 +46,15 @@ async function launch() {
 	app.process().once('exit', (code, signal) => { processExit = { code, signal }; });
 	report.environment.desktop = await app.evaluate(() => ({ platform: process.platform, arch: process.arch, electron: process.versions.electron, modules: process.versions.modules }));
 	page = await app.firstWindow(); page.setDefaultTimeout(600000); await page.locator('.monaco-workbench').waitFor();
+	await app.evaluate(({ app, BrowserWindow }) => {
+		globalThis.indexStressLifecycle = [];
+		const record = (type, details) => { const events = globalThis.indexStressLifecycle; events.push({ time: Date.now(), type, details }); if (events.length > 20) { events.shift(); } };
+		app.on('before-quit', () => record('before-quit'));
+		for (const window of BrowserWindow.getAllWindows()) {
+			window.on('close', () => record('window-close'));
+			window.webContents.on('render-process-gone', (_event, details) => record('renderer-gone', details));
+		}
+	});
 	page.on('console', message => { if (message.type() === 'error' || message.text().includes('[AIIndexService]')) { report.errors.push(message.text()); } });
 	page.on('pageerror', error => report.errors.push(error.message));
 	cdp = await page.context().newCDPSession(page);
@@ -106,13 +115,25 @@ try {
 	report.phases.build = { durationMs: performance.now() - start, ...await snapshot(), calls: await page.evaluate(() => ({ requests: window.stress.requests, texts: window.stress.texts })) };
 	assert.ok(!report.phases.build.stats.memoryLimited); assert.equal(report.phases.build.stats.totalChunks, count);
 	report.checks.completeIndex = true;
+	await page.evaluate(() => {
+		const f = window.stress;
+		f.queryParts = { semanticMs: [], keywordMs: [], snapshots: 0 };
+		const keyword = f.index.keywordSearch.bind(f.index);
+		f.index.keywordSearch = async (...args) => { const start = performance.now(); try { return await keyword(...args); } finally { f.queryParts.keywordMs.push(performance.now() - start); } };
+		for (const { builder } of f.index.indexes.values()) {
+			const store = builder.getStore(), semantic = store.searchSemantic.bind(store), cached = store.searchKeywords.bind(store);
+			store.searchSemantic = async (...args) => { const start = performance.now(); try { return await semantic(...args); } finally { f.queryParts.semanticMs.push(performance.now() - start); } };
+			store.searchKeywords = async (...args) => { const result = await cached(...args); if (result !== undefined) { f.queryParts.snapshots++; } return result; };
+		}
+	});
 	phase('hybrid search latency'); const latencies = [];
 	for (let i = 0; i < 7; i++) {
 		start = performance.now(); const hits = await page.evaluate(id => window.stress.index.search('value' + id, 10), count - 7 - i);
 		latencies.push(performance.now() - start);
 		assert.ok(hits[0]?.filePath.endsWith(`file-${String(count - 7 - i).padStart(6, '0')}.ts`));
 	}
-	report.phases.query = { samplesMs: latencies, p50Ms: percentile(latencies, .5), p95Ms: percentile(latencies, .95), ...await snapshot() };
+	report.phases.query = { samplesMs: latencies, p50Ms: percentile(latencies, .5), p95Ms: percentile(latencies, .95), components: await page.evaluate(() => window.stress.queryParts), ...await snapshot() };
+	assert.equal(report.phases.query.components.snapshots, 7); report.checks.keywordSnapshot = true;
 	assert.ok(report.phases.query.p95Ms < 5000); report.checks.hybridLatency = true;
 	phase('query cancellation');
 	report.phases.queryCancel = await page.evaluate(async () => {
@@ -153,12 +174,18 @@ try {
 	phase('complete persisted reload'); start = performance.now(); await page.evaluate(() => window.stress.index.reindex()); await idle(count);
 	report.phases.reload = { durationMs: performance.now() - start, ...await snapshot() };
 	assert.equal(await page.evaluate(() => window.stress.requests), requests); report.checks.persistedReuse = true;
+	report.checks.persistedKeywordText = await page.evaluate(async count => {
+		const builder = [...window.stress.index.indexes.values()][0].builder;
+		const matches = await builder.getStore().searchKeywords(['value' + (count - 7)], 10, undefined, builder.candidateCount);
+		return matches?.some(hit => hit.filePath.endsWith(`file-${String(count - 7).padStart(6, '0')}.ts`)) === true;
+	}, count);
+	assert.ok(report.checks.persistedKeywordText);
 	report.heartbeat = await page.evaluate(() => { const f = window.stress; clearInterval(f.heartbeat); return { maxMs: f.heartbeats.reduce((max, delay) => Math.max(max, delay), 0), p95Ms: [...f.heartbeats].sort((a, b) => a - b)[Math.floor(f.heartbeats.length * .95)] }; });
 	report.checks.peakMemory = peakRendererBytes > report.vectorBytes && peakRendererBytes < report.phases.before.peakRendererBytes + report.vectorBytes * 1.7 + 512 * 1024 * 1024;
 	assert.ok(report.checks.peakMemory); report.pass = true;
 } catch (error) {
 	report.pass = false; report.failure = { stage, error: error.stack, peakRendererBytes, peakAppBytes };
-	report.diagnostics = { processExit, stderrTail };
+	report.diagnostics = { processExit, stderrTail, lifecycle: app ? await app.evaluate(() => globalThis.indexStressLifecycle).catch(() => null) : null };
 	if (page) { report.lastStats = await page.evaluate(() => window.stress?.index.stats).catch(() => null); }
 	process.exitCode = 1;
 } finally {

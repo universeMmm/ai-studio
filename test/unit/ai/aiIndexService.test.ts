@@ -68,6 +68,54 @@ suite('AIIndexService', () => {
 	}
 	const vectors = async (texts: string[]) => texts.map(text => text.includes('first') ? [1, 0] : [0, 1]);
 
+	test('complete keyword snapshots avoid disk scans and watcher changes use live fallback', async () => {
+		roots = [first];
+		await writeFile(join(first, 'same.ts'), '// HEADER_ONLY\nexport function first() {}');
+		await start(vectors);
+		const globals = globalThis as typeof globalThis & { vscode?: { ipcRenderer?: AIStudioIpcRenderer } };
+		const previous = globals.vscode; let diskSearches = 0;
+		try {
+			globals.vscode = { ipcRenderer: { invoke: async () => { diskSearches++; return { exitCode: 0, stdout: './same.ts:1:// UPDATED_HEADER\n', stderr: '' } as any; } } };
+			assert.ok((await index.search('HEADER_ONLY', 5)).some(hit => hit.startLine === 1 && hit.content === '// HEADER_ONLY'));
+			assert.equal(diskSearches, 0);
+			await writeFile(join(first, 'same.ts'), '// UPDATED_HEADER\nexport function first() {}');
+			change(join(first, 'same.ts'));
+			assert.ok((await index.search('UPDATED_HEADER', 5)).some(hit => hit.content === '// UPDATED_HEADER'));
+			assert.equal(diskSearches, 1);
+		} finally { globals.vscode = previous; }
+		await index.reindex();
+		assert.ok((await index.search('UPDATED_HEADER', 5)).some(hit => hit.content === '// UPDATED_HEADER'));
+	});
+
+	test('file-limited indexes still find keywords in files outside the vector snapshot', async () => {
+		roots = [first];
+		await writeFile(join(first, 'z.ts'), 'ONLY_UNINDEXED');
+		await set('ai.index.maxFiles', 1); await start(vectors);
+		assert.equal(index.stats.limited, true);
+		assert.ok((await index.search('ONLY_UNINDEXED', 5)).some(hit => hit.filePath === 'z.ts' && hit.content === 'ONLY_UNINDEXED'));
+	});
+
+	test('oversized files keep the live keyword fallback', async () => {
+		roots = [first];
+		await writeFile(join(first, 'large.ts'), 'padding\n'.repeat(20000) + 'ONLY_OVERSIZED\n');
+		await start(vectors);
+		assert.equal(index.stats.totalChunks, 1);
+		assert.ok((await index.search('ONLY_OVERSIZED', 5)).some(hit => hit.filePath === 'large.ts' && hit.content === 'ONLY_OVERSIZED'));
+	});
+
+	test('legacy fingerprints acquire complete text without requesting new embeddings', async () => {
+		roots = [first]; let requests = 0;
+		await start(async texts => { requests++; return vectors(texts); });
+		const store = (index as any).indexes.get(first).builder.getStore();
+		const file = join(first, 'same.ts'), originalRequests = requests;
+		await store.replaceFile(file, store.getChunks(file), { ...store.getMetadata(file), text: undefined });
+		assert.equal(await store.searchKeywords(['SHARED'], 5), undefined);
+		await index.reindex();
+		assert.equal(requests, originalRequests);
+		assert.equal(store.getMetadata(file).text, 'SHARED first');
+		assert.equal((await store.searchKeywords(['SHARED'], 5)).length, 1);
+	});
+
 	test('keyword fallback respects root-anchored includes for native path separators', async () => {
 		roots = [first];
 		await set('ai.index.enabled', false); await set('ai.index.include', ['same.ts']);

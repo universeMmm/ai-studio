@@ -42,6 +42,8 @@ for (const test of report.cases) {
 		positive(reload.afterAbortMs); assert.ok(reload.afterAbortMs < 200);
 	}
 	if (workspace) {
+		assert.equal(r.checks.keywordSnapshot, true); assert.equal(r.checks.persistedKeywordText, true);
+		assert.equal(r.phases.query.components.snapshots, 7);
 		assert.equal(r.environment.desktop.platform, process.platform);
 		assert.ok(r.environment.desktop.electron && r.environment.desktop.modules);
 		assert.equal(r.phases.reload.stats.totalFiles, 100000);

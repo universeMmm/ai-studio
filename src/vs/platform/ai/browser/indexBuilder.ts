@@ -93,6 +93,7 @@ export class IndexBuilder extends Disposable {
 		return !this.contains(file) || isSensitiveFile(name) || this.options.exclude.some(pattern => match(pattern, name) || match(pattern, name + '/__index_child__'));
 	}
 	getStore(): IndexStore | null { return this.store; }
+	get candidateCount(): number { return this.candidates.size; }
 	isReady(): boolean { return this.initialized && !this.disposed && !this.signal.aborted && this.embeddingAvailable; }
 
 	fullIndex(): Promise<void> {
@@ -205,7 +206,7 @@ export class IndexBuilder extends Disposable {
 			signal.throwIfAborted();
 			if (!stat.isFile || stat.isSymbolicLink) { await store.removeFile(file); return; }
 			const previous = store.getMetadata(file);
-			if (!forceRead && previous?.embeddingKey === this.options.embeddingKey && previous.mtime === stat.mtime && previous.size === stat.size) { return; }
+			if (!forceRead && previous?.embeddingKey === this.options.embeddingKey && previous.mtime === stat.mtime && previous.size === stat.size && (previous.text !== undefined || stat.size > MAX_FILE_SIZE)) { return; }
 			const canonical = await abortable(this.fileService.realpath(uri), signal);
 			signal.throwIfAborted();
 			if (canonical && (!isEqualOrParent(canonical.fsPath, this.canonicalRoot, !isLinux) || isSensitiveFile(relative(this.canonicalRoot, canonical.fsPath)))) { await store.removeFile(file); return; }
@@ -214,10 +215,12 @@ export class IndexBuilder extends Disposable {
 			const { value } = await abortable(this.fileService.readFile(uri, { limits: { size: MAX_FILE_SIZE } }, source.token), signal);
 			signal.throwIfAborted();
 			const text = value.toString();
+			// Preserve headers/comments as well as embedding chunks. Legacy records
+			// acquire text on their next scan without another embedding request.
+			if (!text.includes('\0')) { metadata.text = text; }
 			const hash = new StringSHA1(); hash.update(text); metadata.hash = hash.digest();
 			if (previous?.embeddingKey === metadata.embeddingKey && previous.hash === metadata.hash) {
-				await store.replaceFile(file, store.getChunks(file), metadata);
-				return;
+				return { file, metadata, chunks: [], entries: store.getChunks(file) };
 			}
 			const lines = text.split('\n');
 			const valid = value.byteLength <= MAX_FILE_SIZE && !text.includes('\0') && lines.length <= MAX_FILE_LINES && lines.every(line => line.length <= 8000);

@@ -17,6 +17,50 @@ function chunk(content: string): IndexedChunk {
 suite('IndexStore persistence', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
+	test('keyword snapshots include complete text and fall back for incomplete records', async () => {
+		const metadata = { mtime: 1, size: 50, hash: 'text', embeddingKey: 'model', text: '// HEADER_ONLY\r\nexport function example() {}' };
+		const store = new IndexStore({
+			async *scanFiles() { yield { filePath: '/workspace/file.ts', entries: [chunk('export function example() {}')], metadata: JSON.parse(JSON.stringify(metadata)) }; },
+			replaceFile: async () => { }, close() { },
+		});
+		try {
+			await store.initialize();
+			assert.deepStrictEqual(await store.searchKeywords(['HEADER_ONLY'], 5), [{ filePath: '/workspace/file.ts', startLine: 1, endLine: 1, content: '// HEADER_ONLY', score: 0.4 }]);
+			assert.deepStrictEqual(await store.searchKeywords(['absent'], 5), []);
+			assert.deepStrictEqual(await store.searchKeywords(['example'], 0), []);
+			assert.strictEqual(await store.searchKeywords(['example'], 5, undefined, 2), undefined);
+			await store.replaceFile('/workspace/legacy.ts', [chunk('legacy')], { ...metadata, text: undefined });
+			assert.strictEqual(await store.searchKeywords(['HEADER_ONLY'], 5), undefined);
+			await store.removeFile('/workspace/legacy.ts');
+			assert.strictEqual((await store.searchKeywords(['HEADER_ONLY'], 5))?.length, 1);
+			const controller = new AbortController(); controller.abort();
+			await assert.rejects(store.searchKeywords(['HEADER_ONLY'], 5, controller.signal), { name: 'AbortError' });
+		} finally { await store.close(); }
+		assert.strictEqual(await store.searchKeywords(['HEADER_ONLY'], 5), undefined);
+	});
+
+	test('complete keyword text is included in admission accounting', async () => {
+		const store = new IndexStore(undefined, undefined, 2048);
+		const metadata = { mtime: 1, size: 10, hash: 'text', embeddingKey: 'model', text: 'original' };
+		try {
+			await store.replaceFile('/workspace/file.ts', [chunk('body')], metadata);
+			await assert.rejects(store.replaceFile('/workspace/file.ts', [chunk('body')], { ...metadata, text: 'x'.repeat(2048) }), IndexMemoryLimitError);
+			assert.strictEqual((await store.searchKeywords(['original'], 5))?.length, 1);
+			assert.ok(store.memory.bytes <= 2048);
+		} finally { await store.close(); }
+	});
+
+	test('large keyword scans yield so a caller can cancel before scanning all text', async () => {
+		const store = new IndexStore();
+		const metadata = { mtime: 1, size: 100000, hash: 'text', embeddingKey: 'model', text: 'A'.repeat(100000) };
+		const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			for (let i = 0; i < 20000; i++) { await store.replaceFile('/workspace/' + i, [], metadata); }
+			timer = setTimeout(() => controller.abort(), 0);
+			await assert.rejects(store.searchKeywords(['Z'], 10, controller.signal), { name: 'AbortError' });
+		} finally { clearTimeout(timer); await store.close(); }
+	});
+
 	test('memory admission preserves the last committed file and deletion releases its budget', async () => {
 		let writes = 0;
 		const store = new IndexStore({ getFiles: async () => new Map(), replaceFile: async () => { writes++; }, close() { } }, undefined, 8192);
