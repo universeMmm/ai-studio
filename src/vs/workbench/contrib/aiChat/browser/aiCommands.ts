@@ -15,6 +15,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ChatViewContainerId, ChatViewId, IChatWidgetService } from '../../chat/browser/chat.js';
 import { ChatEditorInput } from '../../chat/browser/widgetHosts/editor/chatEditorInput.js';
 import './studioSessions.js';
@@ -53,9 +54,22 @@ registerAction2(class extends Action2 {
 
 registerAction2(class extends Action2 {
 	constructor() {
-		super({ id: 'ai.reindex', title: localize2('studio.index', "重建工作区索引"), f1: true });
+		super({ id: 'ai.reindex', title: localize2('studio.index', "更新或继续工作区索引"), f1: true });
 	}
 	run(accessor: ServicesAccessor) { return accessor.get(IAIIndexService).reindex(); }
+});
+
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'ai.index.cancel', title: localize2('studio.index.cancel', "取消工作区索引"), f1: true }); }
+	run(accessor: ServicesAccessor) { accessor.get(IAIIndexService).cancel(); }
+});
+
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'ai.index.toggle', title: localize2('studio.index.toggle', "切换工作区代码索引"), f1: true }); }
+	run(accessor: ServicesAccessor) {
+		const configuration = accessor.get(IConfigurationService);
+		return configuration.updateValue('ai.index.enabled', configuration.getValue<boolean>('ai.index.enabled') === false);
+	}
 });
 
 registerAction2(class extends Action2 {

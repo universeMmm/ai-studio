@@ -107,6 +107,28 @@ suite('AIModelService initialization', () => {
 		assert.deepStrictEqual(requests, ['https://first.invalid/embeddings']);
 	});
 
+	test('embedding cancellation stops credential waits and forwards cancellation to fetch', async () => {
+		let calls = 0;
+		const dispatched = new DeferredPromise<AbortSignal>();
+		globalThis.fetch = async (_url, opts) => {
+			calls++;
+			void dispatched.complete(opts!.signal!);
+			return new Promise((_resolve, reject) => opts!.signal!.addEventListener('abort', () => reject(opts!.signal!.reason), { once: true }));
+		};
+		const before = new AbortController();
+		const pending = service.embed(['cancelled'], before.signal);
+		before.abort();
+		await assert.rejects(pending, { name: 'AbortError' });
+		await keys[0].complete('fixture');
+		assert.strictEqual(calls, 0);
+		const after = new AbortController();
+		const request = service.embed(['dispatched'], after.signal);
+		const signal = await dispatched.p;
+		after.abort();
+		await assert.rejects(request, { name: 'AbortError' });
+		assert.strictEqual(signal.aborted, true);
+	});
+
 	test('cancel before credentials skips a chat request; cancel after dispatch aborts the completion fetch', async () => {
 		const dispatched = new DeferredPromise<AbortSignal>();
 		let requests = 0;

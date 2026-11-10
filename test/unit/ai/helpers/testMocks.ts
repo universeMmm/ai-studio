@@ -79,7 +79,9 @@ export class MockAIIndexService implements IAIIndexService {
 	isReady = false;
 	private readonly _onDidBecomeReady = new Emitter<void>();
 	onDidBecomeReady = this._onDidBecomeReady.event;
-	stats = { totalFiles: 0, totalChunks: 0, lastIndexedAt: 0, isReady: false };
+	onDidChangeStats = this._onDidBecomeReady.event;
+	stats = { totalFiles: 0, totalChunks: 0, lastIndexedAt: 0, isReady: false, enabled: true, state: 'idle' as const, processed: 0, total: 0, limited: false, memoryBytes: 0, memoryLimitBytes: 0, memoryLimited: false };
+	cancel(): void { }
 
 	async search(_query: string, _topK: number): Promise<CodeSnippet[]> { return []; }
 	async reindex(): Promise<void> { }

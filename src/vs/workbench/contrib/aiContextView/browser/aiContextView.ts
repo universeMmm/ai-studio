@@ -140,7 +140,7 @@ class InspectorContent extends Disposable {
 		this._register(this.agent.onDidChangeStatus(() => this.refresh.schedule()));
 		this._register(this.agent.onDidAddStep(() => this.refresh.schedule()));
 		this._register(this.agent.onDidChangeTasks(() => this.refresh.schedule()));
-		this._register(this.index.onDidBecomeReady(() => this.refresh.schedule()));
+		this._register(this.index.onDidChangeStats(() => this.refresh.schedule()));
 		this._register(this.chats.onDidChangeFocusedSession(() => this.updateSession()));
 		this._register(this.editors.onDidActiveEditorChange(() => this.watchEditor()));
 		this.watchEditor();
@@ -406,9 +406,12 @@ class InspectorContent extends Disposable {
 		if (!touched.size) { append(this.body, $('p.studio-inspector-summary', {}, '本轮尚未读取或编辑文件')); }
 
 		const head = this.section('代码索引');
-		const reindex = this.action(head, '重建索引', () => void this.perform('reindex', () => this.index.reindex()), 'reindex', 'refresh');
-		reindex.disabled = this.busy.has('reindex') || !root;
 		const stats = this.index.stats;
-		append(this.body, $('p.studio-inspector-summary', {}, this.busy.has('reindex') ? '正在建立索引…' : !root ? '请先打开工作区' : stats.isReady ? `${stats.totalFiles} 个文件 · ${stats.totalChunks} 个代码块` : '索引尚未就绪'));
+		this.action(head, stats.enabled ? '关闭索引' : '开启索引', () => void this.perform('toggle-index', () => this.commands.executeCommand('ai.index.toggle')), 'toggle-index');
+		const reindex = this.action(head, stats.state === 'cancelled' ? '继续索引' : '更新索引', () => void this.perform('reindex', () => this.index.reindex()), 'reindex', 'refresh');
+		reindex.disabled = this.busy.has('reindex') || !root || !stats.enabled || stats.state === 'indexing';
+		if (stats.state === 'indexing') { this.action(head, '取消索引', () => this.index.cancel(), 'cancel-index', 'close'); }
+		const status = !root ? '请先打开工作区' : !stats.enabled ? '索引已关闭' : stats.state === 'indexing' ? `正在索引 ${stats.processed} / ${stats.total} 个文件` : stats.state === 'cancelled' ? '索引已暂停，点击继续索引可恢复' : stats.state === 'error' ? '索引更新失败，仍可使用关键词搜索；点击更新索引重试' : `${stats.totalFiles} 个文件 · ${stats.totalChunks} 个代码块`;
+		append(this.body, $('p.studio-inspector-summary', {}, status + (stats.limited ? ' · 已达到文件数上限' : '') + (stats.memoryLimited ? ' · 已达到索引内存预算，可在设置中调整' : '')));
 	}
 }

@@ -70,7 +70,21 @@ AI 行为状态机，实现 `plan → execute → observe → refine` 闭环。�
 
 ### Codebase Index
 
-按工作区目录分别建立代码块索引，合并向量检索和 `rg` 关键词检索结果。桌面渲染进程通过 IndexedDB 保存向量并按余弦相似度检索；在 Node 环境中可使用 SQLite 及可选的 HNSW 加速。
+按工作区目录分别建立代码块索引，合并向量检索和 `rg` 关键词检索结果。桌面渲染进程通过 IndexedDB 保存向量和文件指纹；在 Node 环境中使用 SQLite，小索引可选 HNSW 加速，大索引使用可取消的精确检索。启动时先比较 mtime/size，再按需比较内容 hash，未改变的文件不重新请求 Embedding。文件保存、增删、重命名和忽略规则变化会自动维护索引。
+
+任务详情的「上下文 → 代码索引」提供开启/关闭、取消/继续和进度显示；命令面板也可执行对应操作。关闭索引会停止监听、扫描及 Embedding 请求，已有持久化数据保留；取消后暂停自动维护，点击继续时补齐期间的变更。关键词搜索仍可单独使用。
+
+| 配置项 | 默认值与作用 |
+|--------|------------|
+| `ai.index.enabled` | `true`，控制索引生命周期 |
+| `ai.index.maxFiles` | `10000`，每个目录按路径排序选取的候选文件上限 |
+| `ai.index.maxMemoryMB` | `256`，每个目录索引条目的估算内存预算（MiB），包含向量、文本和对象开销；不是整个进程 RSS 上限 |
+| `ai.index.batchSize` | `16`，单次请求的代码块上限，可跨文件合并 |
+| `ai.index.requestInterval` | `200`，同一目录请求的最小间隔，单位毫秒 |
+| `ai.index.include` | `["**/*"]`，允许索引的相对路径 glob |
+| `ai.index.exclude` | `[]`，额外排除的相对路径 glob |
+
+索引遵循 Git 忽略规则和 `files.exclude` / `search.exclude` 中值为 `true` 的规则，固定排除依赖目录、索引数据库及敏感文件。单文件仍限制为 100 KiB / 1000 行；代码块及请求另设字符上限。达到内存预算时停止新增条目并显示提示；提高预算可补齐，降低预算会裁剪可重建的持久化索引。失败不会提交新的文件指纹，重试可继续处理。
 
 代码路径：`src/vs/platform/ai/browser/aiIndexService.ts`、`indexBuilder.ts`
 
@@ -147,13 +161,13 @@ npm run compile
 scripts\code.bat           # Windows
 ```
 
-运行 AI 模块的离线回归测试可使用 `npm run test:ai`。
+运行 AI 模块的离线回归测试可使用 `npm run test:ai`。提交前运行 `npm run check:ai`，依次检查依赖锁文件与桌面运行时边界、完整 `src` 类型检查和 AI 回归。测试不需要真实模型密钥；模型协议测试会启动仅监听本机的 HTTP 模拟服务。
 
 在 macOS 上运行 `npm run package:mac -- --version=1.122.0-preview.1` 可构建当前处理器架构的应用和 DMG。输出位于 `.build/release/`，包含安装包及 SHA-256 校验文件；磁盘镜像内提供应用与 `Applications` 快捷方式。脚本复用现有生产构建流程和 Electron 签名工具，不包含用户配置或模型密钥。已有完整构建可用 `--skip-build` 只生成磁盘镜像。
 
 构建后可运行 `npm run test:ai:package` 验证正式应用的独立启动、本地模型流式请求、文件工具、模型列表、系统代理及中文缓存。测试使用临时用户配置和本机模拟服务；设置 `STUDIO_TEST_APP` 可指定从 DMG 复制出来的应用可执行文件。
 
-未设置 `CODESIGN_IDENTITY` 时使用临时签名，安装包未经 Apple 公证，macOS 首次运行可能需要在「系统设置 → 隐私与安全性」中允许打开。Developer ID 签名和公证需自行配置 Apple 开发者凭据。预览版仍保留上游 Agent Host 占位模块相关的全量类型检查错误；AI Studio 核心回归与正式构建使用各自独立的检查流程。
+未设置 `CODESIGN_IDENTITY` 时使用临时签名，安装包未经 Apple 公证，macOS 首次运行可能需要在「系统设置 → 隐私与安全性」中允许打开。Developer ID 签名和公证需自行配置 Apple 开发者凭据。Agent Host 公共协议的类型缺失已修复；类型检查、AI 回归与正式应用构建分别验证，安装包验收仍使用 `test:ai:package`。
 
 桌面首次启动默认使用简体中文。核心菜单、编辑器命令、设置说明及内置扩展的译文随项目分发，可断网启动。上游译文来自与编辑器版本匹配的 [Microsoft 简体中文语言包](https://github.com/microsoft/vscode-loc/tree/6328467f46f70a56566410dc5dcce9d6e2fec2f9/i18n/vscode-language-pack-zh-hans)。使用 `./scripts/code.sh --locale=en` 可显式选择英文核心界面。
 
@@ -168,7 +182,7 @@ scripts\code.bat           # Windows
 
 文件可以拖入输入框或通过「+」添加，附件以缩略图卡片展示。macOS/Windows 文档预览复用系统缩略图；不支持的格式或平台显示文件类型卡片。预览不会把文档转成模型输入：文本与图片按已有附件规则发送，PDF、Word 等二进制文件目前仅发送路径引用。点击卡片右上角「×」会从后续请求中移除该附件。
 
-技能与 MCP 的隔离回归可使用 `npm run test:ai:capabilities`，详见 [测试说明](test/integration/ai-capabilities/README.md)。
+技能与 MCP 的隔离回归可使用 `npm run test:ai:capabilities`，详见 [测试说明](test/integration/ai-capabilities/README.md)。索引的真实桌面回归使用 `npm run test:ai:index`，覆盖原生文件监听、重启复用、开关及取消，详见 [索引测试说明](test/integration/ai-index/README.md)。
 
 | 配置项 | 说明 |
 |--------|------|
@@ -218,28 +232,43 @@ npm run test:ai:opencode
 
 | 优先级 | 内容 |
 |--------|------|
-| 高 | 编译稳定性、Windows 原生模块绑定 |
+| 高 | Windows/Linux 发布打包、签名与完整编辑器 UI 验收；索引原生链路和开发版启动已通过托管 CI |
 | 高 | OS 沙箱接入、文件系统竞态防护、命令执行策略收敛 |
-| 中 | 扩大跨平台审查和回滚测试、优化大工作区索引 |
+| 中 | 扩大跨平台审查和回滚测试、远程/虚拟文件系统与百万文件规模验证 |
 | 低 | 扩展视图样式适配、错误边界、可访问性 |
 
 ---
 
 ## 开发计划
 
+2026-11-09 工程基线修复状态（本机 macOS arm64 与 GitHub 托管三平台）：
+
+| 工作项 | 状态与验证 |
+|--------|------------|
+| 类型检查 | 已完成：`npm run compile-check-ts-native` 从 175 条错误降至 0；未降低严格类型检查要求 |
+| 依赖与构建清理 | 已完成：npm 重新生成锁文件，移除 Copilot SDK/平台包；删除旧 Azure 下载步骤与 macOS 打包例外；保留扩展兼容所需的 `@vscode/copilot-api` |
+| AI 回归 | 本轮 `npm run check:ai` 通过，304 项测试；此前工程基线的 270 项已在全新临时目录离线安装后复跑通过 |
+| 桌面集成 | 三平台完整编译与索引回归各 20 项通过；macOS 技能/MCP 回归 10 项通过，干净环境自动创建报告目录 |
+| 索引增量化与性能保护 | 已完成：持久化文件指纹、批量请求与间隔控制、文件上限、监听合并、开关及取消/继续；1000 文件样例为 63 次请求，未变更扫描和重启均为 0 次新增请求 |
+| 十万文件压测 | 已完成：托管三平台各四组、每平台 32 项检查全部通过，覆盖十万条 1536/3072 维向量、SQLite、真实十万文件、全文快照、内存释放与取消 |
+| Windows/Linux 索引回归 | 已完成：托管 Windows 2022 / Ubuntu 22.04 各 20 项真实桌面检查通过，覆盖原生 ABI、监听、路径差异、持久化关闭及取消响应 |
+| CI 接入 | 已完成：提交 `1b5f1f8` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42595379893)，包含三平台完整压测；报告已核对提交、ABI、运行标识、源码指纹与检查结果 |
+
+CI 配置位于 [.github/workflows/ai-ci.yml](.github/workflows/ai-ci.yml)，由 push、pull request 或手动触发。三平台核心任务使用不执行安装脚本的干净依赖安装，运行依赖边界和类型检查；Ubuntu/macOS 执行完整 AI 回归，Windows 执行 37 项索引专项回归。三平台桌面任务执行完整安装、编译、Electron 准备和真实工作台索引回归；Linux 使用 Xvfb，macOS 另外执行技能/MCP 回归，并按 runner 分别保存报告。手动运行时可启用 `index_stress`，三平台各执行完整四组十万文件压力测试；`codex/index-stress-*` 验证分支也会触发，并上传分平台报告及指标摘要。公网搜索、安装包和 OpenCode SDK 验证仍为独立验收，不计入此工作流的通过范围。
+
 ### 短期（1-3 个月）：工程稳定性与安全基线
 
 **构建与环境修复**
 
-macOS arm64 已验证完整编译和桌面启动。Windows 和 Linux 的构建与启动仍需验证，重点检查原生模块绑定与 Electron ABI 是否匹配。
+本机 macOS arm64 及托管 Ubuntu/Windows/macOS 已验证类型检查、完整桌面编译和索引集成。公共类型恢复取自本仓库基线 `499704b`：恢复协议快照和公共辅助代码，不恢复宿主进程实现或注册；Agent Host 启用函数仍固定返回 false。依赖检查还会遍历桌面入口的静态运行时导入，拒绝重新接入被隔离的宿主模块。托管三平台均直接加载并执行 SQLite、Parcel watcher 和内置 ripgrep，使用 Electron 39.8.8 / 原生 ABI 140，未以纯内存回退代替原生验收。
 
 **安全加固**
 
 工具执行器（`toolExecutor.ts`）是所有 AI 行为的边界层，安全投入应优先于功能开发。三项高优先级工作：
 
-1. **路径包容性检查**：`_resolvePath()` 需统一拒绝 `../` 越界路径和非 workspace 绝对路径，仅允许经用户明确授权的外部路径访问。
+1. **路径包容性检查**：已实现工作区边界、真实路径和敏感文件检查；外部路径授权、OS 沙箱与文件系统竞态防护仍待完成。
 2. **命令注入防护**：本地文件搜索通过独立参数启动 `rg`。网页抓取和搜索通过桌面网络栈发起 HTTP 请求。后续新增工具也需验证参数边界和命令审批策略。
-3. **密钥存储迁移**：`ai.apiKey` 应从普通配置项（`aiConfigurationNode`）迁移至 VS Code SecretStorage 或已有的 `AIKeychainService`，避免密钥进入 settings sync、日志或截屏。
+3. **密钥存储迁移**：新模型配置已使用 SecretStorage，按 provider/origin 绑定，并迁移可确定目标的旧用户密钥；旧 `ai.apiKey` 兼容配置仍存在，尚未完全移除普通设置中的密钥入口。
 
 **Diff 引擎修复**
 
@@ -253,7 +282,7 @@ macOS arm64 已验证完整编译和桌面启动。Windows 和 Linux 的构建�
 
 **Copilot / Agent Host 边界决策**
 
-桌面端的 `gulp compile` 过滤了 Agent Host 的实现文件，保留工作台所需的空状态桩。单独对 `src/tsconfig.json` 做类型检查时，TypeScript 仍会通过其他模块的导入加载部分 Agent Host 源文件。
+桌面端的 `gulp compile` 继续过滤 Agent Host 实现。仓库恢复保留的适配器和测试所引用的公共协议类型与辅助代码；工作台继续使用停用宿主后的本地实现。公共协议的恢复不代表该运行时重新启用。
 
 当前策略：保留 agentHost 源码在仓库中（便于后续提取为独立扩展），编译期隔离。所有 AI 运行时链路（Agent Runtime、Tool System、LLM Provider）走自研体系，不依赖 Copilot/AgentHost 基础设施。
 
@@ -263,13 +292,74 @@ macOS arm64 已验证完整编译和桌面启动。Windows 和 Linux 的构建�
 
 **索引架构升级**
 
-当前 `IndexBuilder` 在服务初始化时自动对全工作区执行 `fullIndex`，对于大型仓库无索引状态检查、无进度反馈、无取消机制、无并发限制。需要改造为：
+2026-11-09 已完成本地工作区的增量索引与大工作区性能保护：
 
-- 持久化索引状态，启动时检查增量更新，避免每次都重建
-- 引入 `files.exclude` / `search.exclude` / 自定义 include-exclude 模式
-- 文件数上限、单文件大小上限、API 调用频率限制（rate limiter）
-- 文件变更监听，增量增删索引条目，而非全量重建
-- 取消 token 传递，支持用户中断长时间索引任务
+- [x] IndexedDB / SQLite 原子保存向量和 mtime/size/hash/Embedding 配置指纹；未变更文件跳过读取与请求，仅触碰时间戳时通过 hash 复用向量。旧格式或服务地址变化会使对应缓存失效。
+- [x] 接入 `files.exclude` / `search.exclude` 的无条件排除规则，以及 `ai.index.include` / `ai.index.exclude`；遵循 Git 忽略规则并排除敏感路径与符号链接外逃。
+- [x] 默认每目录最多 10000 个候选文件，跨文件合并每批最多 16 个代码块，单批文本最多 32000 字符；后台任务跨目录串行，同一目录默认请求间隔 200 ms，请求超时 30 秒。
+- [x] 文件服务递归监听、300 ms 事件合并和待处理队列上限；修改与删除按文件更新，新增文件/目录和忽略规则变化触发增量扫描，保持忽略规则与文件上限一致。语义搜索仅保留 top-K 候选，并定期让出事件循环。
+- [x] `ai.index.enabled` 实际控制扫描、监听与请求；取消信号贯通文件读取、ripgrep IPC、模型初始化等待和 Embedding fetch。界面及命令支持开关、取消、继续和数量进度；错误保留已提交版本，手动更新可重试。
+- [x] `npm run check:ai` 的 297 项回归通过；`npm run compile` 零错误；`npm run test:ai:index` 已接入三平台 CI，本机 20 项真实桌面检查通过，报告为 `.build/ui-redesign/studio-index-runtime-report.json`。
+
+本机 macOS arm64 的 1000 文件、本地两维 Embedding 测试样例使用 63 次请求，初次构建约 1.2 秒、未变更扫描约 0.13 秒，重启无新增 Embedding 请求。这些数据用于固定样例回归，不代表公网模型吞吐量。
+
+2026-11-09 补齐十万级压测，并修复压测暴露的问题：
+
+- [x] 检索取消贯通 Agent/工具调用、Embedding、关键词搜索及精确向量扫描；按时间片让出事件循环，使用不受浏览器嵌套定时器 4 ms 限制的任务调度，缓存向量范数。较大的索引不在查询线程同步构建 HNSW 图。
+- [x] IndexedDB / SQLite 改为每页最多 16 个文件分批加载，移除 SQLite 持久化层保留的整份向量映射；重载支持取消，关闭后释放向量引用。
+- [x] 新增 `ai.index.maxMemoryMB`（默认每目录 256 MiB），在写入及重载时执行预算检查；排除/失效条目先过滤，不挤占有效数据的预算。此预算约束索引条目估算占用，进程 RSS 还包含工作台、加载页和分配器开销。
+- [x] 文件枚举与路径排序分批处理；文件清单独立使用 64 MiB 上限，普通命令仍为 10 MiB，按 UTF-8 字节截断并标记不完整输出。十万长路径文件的 17.2 MiB 清单已完整验证，截断清单不会触发索引清理。
+- [x] 新增 `npm run test:ai:index:stress`，4 组样例串行在独立进程中执行，保留源码指纹、内存、P50/P95 与取消数据；已接入三平台 CI 的手动 `index_stress` 选项和验证分支触发。当时的 11 项桌面索引回归复跑通过，现已扩展为每平台 20 项。
+
+2026-11-09 补齐跨平台索引回归入口：
+
+- [x] 测试直接启动各平台 Electron 可执行文件，避免 Windows 调用 `.sh` / `.bat`；Linux CI 安装原生构建依赖并通过 Xvfb 启动。
+- [x] 修复 Windows `.\` 路径前缀在精确 include 匹配中的规范化顺序；增加中文/空格路径和大小写重命名回归。
+- [x] SQLite 关闭返回可等待的 Promise，串行等待写入与句柄释放；增加立即删除数据库目录、原生重载取消/恢复及子进程树实际停止的检查。
+- [x] 本机 macOS：297 项完整 AI 回归、30 项索引专项、20 项真实桌面检查通过，完整编译零错误。HTTP 取消约 23 ms，原生命令进程树停止约 1 ms，SQLite 重载取消约 0.5 ms。关闭机制及启动器修改后，4 组十万文件压测再次全部通过。
+- [x] [托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42574093326)，代码提交 `8a45038`。Ubuntu/macOS 各通过 297 项 AI 回归，Windows 通过 30 项索引专项；三平台桌面各 20 项，macOS 技能/MCP 另有 10 项。
+- [x] 托管验证发现并修复：大小写敏感文件系统上的 Agent Host 排除规则、测试夹具依赖系统 `rg`、Windows 应用目录末尾反斜杠的启动参数问题、已退役的 macOS 14 runner、重复下载 Electron 与临时网络错误、全新环境的报告目录初始化。下载仍校验 SHA-256，最多重试两次临时网络错误。
+
+上轮常规托管样例使用 1000 个真实文件、本地两维 HTTP Embedding fixture，以及 512 个 3072 维 SQLite 条目；下表是本次运行的单次取消耗时，不是 P95 或公网模型性能：
+
+| 托管平台 | HTTP 请求取消 | 进程树停止 | SQLite 重载取消 |
+|---|---:|---:|---:|
+| Windows 2022 x64 | 31.2 ms | 80.4 ms | 1.1 ms |
+| Ubuntu 22.04 x64 | 22.0 ms | 2.7 ms | 1.5 ms |
+| macOS 15 arm64 | 4.0 ms | 3.0 ms | 1.7 ms |
+
+报告已存档在 `.build/ai-index-ci/42574093326/`；三平台均验证了 SQLite/Parcel/ripgrep 原生加载、增改删/目录删除/大小写重命名、Unicode/空格路径、开关与补偿、取消后恢复和数据库句柄释放。Windows/Linux 的完整十万文件压测现已通过，见下方本轮验收记录。
+
+**托管十万文件压测（2026-11-09）**
+
+- [x] 提交 `1b5f1f8` 的[托管 CI 六项任务全部通过](https://github.com/universeMmm/ai-studio/actions/runs/42595379893)：Windows 2022、Ubuntu 22.04、macOS 15 各通过四组完整压测、32 项检查，共 12 组。每组实际使用 100000 文件/条目，覆盖 1536/3072 维精确检索、SQLite、真实长路径工作区、IndexedDB 和取消恢复。
+- [x] 修复完整索引每次关键词查询重新扫描所有文件的问题：持久化完整源文本，包含头部和注释；文本计入预算并随指纹原子更新。旧指纹补齐全文不重复请求向量；不完整索引、超大文件或待处理变更保留实时磁盘搜索。补充旧数据、预算、回退与长文本取消回归，Ubuntu/macOS 各通过 304 项 AI 测试，Windows 通过 37 项索引专项。
+- [x] 修复原生依赖 Release API 未认证请求的 403，补齐超时进程清理、退出诊断、运行来源与源码指纹校验，以及分平台报告和指标摘要。
+- [x] 托管 macOS 曾在 98401/100000 文件时触及固定 10 分钟夹具超时；改为两分钟无进度失败、配置触发的构建阶段 20 分钟、整个工作区 25 分钟的有界等待。检索、内存与取消门槛保持不变，最终三平台全部达标。
+
+以下为真实十万文件、3072 维样例；内存是单个渲染进程峰值，扫描取消包含预定的 100 ms 等待：
+
+| 托管平台 | 峰值内存 | 混合检索 P95 | 查询取消 | 扫描取消 | 重载取消 |
+|---|---:|---:|---:|---:|---:|
+| Windows 2022 x64 | 1861.2 MiB | 679.5 ms | 33.8 ms | 108.4 ms | 0.8 ms |
+| Ubuntu 22.04 x64 | 2249.1 MiB | 417.4 ms | 34.0 ms | 100.8 ms | 0.6 ms |
+| macOS 15 arm64 | 2102.5 MiB | 3888.0 ms | 36.1 ms | 102.3 ms | 0.3 ms |
+
+报告存档在 `.build/ai-index-ci/42595379893/`，已逐份核对提交、平台、ABI、运行标识与源码指纹。三平台均通过 16 MiB 限额、关闭后的缓冲区释放、增量与重载零新增向量请求、七次查询使用完整全文快照及重载后全文可检索的检查。Windows/Linux 为约 16 GiB RAM 的 x64 运行器，macOS 为 7 GiB RAM 的 arm64 运行器；实例性能存在波动。完整 12 组指标、方法和门槛见[压测说明](test/integration/ai-index/stress/README.md)。
+
+此前首次压测样例：本机 macOS arm64 / 16 GiB RAM，使用不共享缓冲区的稠密 Float32 合成向量。全量工作区压测显式设定 `maxFiles=100000`、`maxMemoryMB=2048`，并先用 16 MiB 预算验证能在 1174 个文件处停止新增：
+
+| 场景（每组十万条） | 进程/渲染进程峰值 RSS | 检索 P95 | 查询取消总耗时 |
+|---|---:|---:|---:|
+| 1536 维精确检索 | 799 MiB | 151 ms | 18 ms |
+| 3072 维精确检索 | 1456 MiB | 344 ms | 18 ms |
+| 真实十万长路径文件、3072 维混合检索 | 1925 MiB | 1257 ms | 26 ms |
+
+3072 维精确检索的修复前 P95 为 1175 ms，取消不会中止扫描；修复后 P95 为 344 ms，取消约 18 ms。SQLite 重载的进程峰值从 2396 MiB 降至 1393 MiB；关闭后的 external memory 从约 1174 MiB 降至约 1.9 MiB，修复向量引用滞留。RSS 可能由分配器暂时保留，不等同于仍持有可访问的向量。
+
+真实工作区在提高预算后补齐十万文件约 112 秒（16 MiB 限额阶段单独计时），未变更扫描约 14.4 秒，取消后完整重载及增量扫描约 24.1 秒；扫描和重载均无新增 Embedding 请求。扫描在预定第 100 ms 请求取消后总计约 111 ms 结束，重载取消约 0.3 ms。渲染进程关闭索引后 backing storage 回到启动基线范围。数据来自固定本机样例，精确检索取 9 次、混合检索取 7 次（均含冷查询）；不代表公网模型吞吐量或相关性质量。
+
+[压测方法与门槛](test/integration/ai-index/stress/README.md)，报告位于 `.build/ai-index-stress/report.json`。仍待推进：带 `when` 的兄弟文件条件排除、远程/虚拟工作区文件系统、百万级文件/更高维度。当前只为本地 `file` 工作区建立索引，清单超过 64 MiB 时会报错并保留已有索引；GitHub 托管三平台的常规索引回归已通过，压力测试的覆盖范围见上文。
 
 **Agent 结果模型**
 
@@ -277,12 +367,11 @@ AgentService 当前消息循环将工具结果、过程步骤与最终回复混�
 
 **模型配置体验**
 
-桌面已提供模型配置表单。后续工作包括：
+桌面已提供模型配置表单及 OpenAI/Anthropic 模型列表拉取与选择。后续工作包括：
 
 - 在现有 Provider 类型选择表单中增加连接测试
-- API 端点联通性探测
-- 模型列表拉取与选择（兼容 OpenAI / Anthropic 模型列表 API）
-- 敏感信息（Key）仅通过 SecretStorage 输入，不在 settings UI 中明文展示
+- 对选定模型发起受控推理验证；模型列表可达不等于推理接口可用
+- 移除旧版普通设置密钥入口，完成仅通过 SecretStorage 输入的迁移
 
 ### 长期（6-12 个月）：深度 AI 集成与生态
 
@@ -320,9 +409,9 @@ AgentService 当前消息循环将工具结果、过程步骤与最终回复混�
 |------|------|------|
 | Phase 0 | 技术债务修复：竞态条件、取消传播、ToolExecutor 复用、快照/回滚、索引一致性、多根工作区、usage 提取 | ✅ 完成 |
 | Phase 1 | 基础能力补齐：CLAUDE.md 自动发现、WebFetch+WebSearch、系统提示词重写、图片/PDF 读取、AgentSession 持久化 | ✅ 完成 |
-| Phase 2 | Agent 编排核心：子 Agent 系统、Task 依赖图、SendMessage、验证、用户记忆 | 已接入运行时；跨平台 worktree 流程仍需实测 |
-| Phase 3 | 交互与计划：AskUserQuestion、EnterPlanMode/ExitPlanMode、自定义斜杠命令 | 已接入提问与计划审批；斜杠命令的桌面交互仍待验收 |
-| Phase 4 | 补充完善：Cron、Skill 工具、Workflow 引擎、NotebookEdit、Artifact 系统 | 待实施 |
+| Phase 2 | Agent 编排核心：子 Agent 系统、Task 依赖图、SendMessage、验证、用户记忆 | 已有同步委派与任务跟踪；并行/后台协作、项目记忆写入和跨平台 worktree 验收待完成 |
+| Phase 3 | 交互与计划：AskUserQuestion、EnterPlanMode/ExitPlanMode、自定义斜杠命令 | 提问与计划审批已接入；斜杠命令仅注入提示词，候选与解析未接通 |
+| Phase 4 | 补充完善：Cron、Skill 工具、Workflow 引擎、NotebookEdit、Artifact 系统 | 已有技能管理及会话附件入口；自主 Skill 工具及其他能力待实施 |
 
 ---
 
@@ -338,7 +427,7 @@ AgentService 当前消息循环将工具结果、过程步骤与最终回复混�
 
 1. **增量索引**：当前每次启动全量重建索引，需改为增量更新。利用文件 mtime + hash diff 判断变更，仅重索引实际变更文件。
 2. **Embedding 批量化**：将逐文件 API 调用合并为批量请求，减少 API 往返次数和速率限制触发概率。
-3. **上下文裁剪策略**：Agent 消息窗口随执行步数增长而膨胀。引入滑动窗口 + 摘要压缩机制，在超出 token 限制前自动对历史消息执行摘要归并。
+3. **上下文裁剪策略**：主/子 Agent 已接入预算检查与摘要压缩；后续优化长任务的摘要质量及模型窗口配置体验。
 
 ### 安全层面
 
@@ -355,8 +444,8 @@ AgentService 当前消息循环将工具结果、过程步骤与最终回复混�
 
 ### 工程层面
 
-1. **CI/CD**：为自研 AI 模块建立独立的 CI 流水线，覆盖编译、类型检查、单元测试、集成测试。
-2. **端到端测试**：构建 E2E 测试框架，模拟"用户给定自然语言任务 → Agent 规划 → 执行 → 验证文件系统状态"的完整链路。
+1. **CI/CD**：独立 AI CI 已配置，覆盖依赖边界、类型检查、AI 回归、桌面编译和技能/MCP 集成；三平台核心与桌面索引任务已在同一提交上全部通过。发布与签名仍独立处理。
+2. **端到端测试**：已有桌面和安装包测试；继续扩展多步规划、文件修改/回滚与跨平台真实工作区验收。
 3. **性能基准**：建立 Agent 执行延迟、索引构建耗时、内存占用的回归基准，防止性能退化。
 
 ---

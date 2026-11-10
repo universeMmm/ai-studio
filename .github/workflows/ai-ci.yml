@@ -1,0 +1,131 @@
+name: AI Studio CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      index_stress:
+        description: Run the 100k-file and high-dimensional index stress suite
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: AI checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Core checks use portable JS and local HTTP fixtures. Do not rebuild
+      # Electron native modules or install every extension for this job.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node scripts/check-ai-boundaries.mjs
+      - run: npm run compile-check-ts-native
+      - name: Run full AI regression
+        if: runner.os != 'Windows'
+        run: npm run test:ai
+      - name: Run Windows index regression
+        if: runner.os == 'Windows'
+        run: npm run test:ai:index:unit
+
+  desktop:
+    name: Desktop index (${{ matrix.os }})
+    env:
+      # A dedicated validation branch can run stress before this workflow is
+      # merged into the default branch (required for workflow_dispatch).
+      INDEX_STRESS: ${{ (github.event_name == 'workflow_dispatch' && inputs.index_stress) || startsWith(github.head_ref || github.ref_name, 'codex/index-stress-') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Enable long checkout paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            build/package-lock.json
+            extensions/**/package-lock.json
+            remote/**/package-lock.json
+      # See microsoft/vscode's contribution prerequisites. Native modules are
+      # built for the Electron target in .npmrc; do not reuse a Node ABI cache.
+      - name: Install Linux native build and display prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential g++ pkg-config python-is-python3 libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev libgtk-3-0 libgbm1 libnss3 libasound2 xvfb xauth
+      - name: Install desktop and extension dependencies
+        # npm run electron prepares the development binary used by every test.
+        # Avoid downloading an unused second copy in node_modules/electron.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          # ripgrep's installer queries api.github.com; hosted macOS shared IPs
+          # can exhaust the unauthenticated release API quota (HTTP 403).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm ci --no-audit --no-fund
+      - name: Compile desktop and built-in extensions
+        run: npm run compile
+      - name: Prepare development Electron
+        run: npm run electron
+      # Uses a temporary profile, synthetic skill and local MCP/model fixtures.
+      # Public web search and SDK migration trials remain explicit manual checks.
+      - name: Test incremental index and native file watching
+        if: runner.os != 'Linux'
+        run: npm run test:ai:index
+      - name: Test Linux index under a virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x960x24" npm run test:ai:index
+      - name: Test skills and MCP through the real workbench
+        if: runner.os == 'macOS'
+        run: npm run test:ai:capabilities
+      - name: Stress test 100k files and high-dimensional vectors
+        if: env.INDEX_STRESS == 'true' && runner.os != 'Linux'
+        timeout-minutes: 45
+        run: npm run test:ai:index:stress
+      - name: Stress test Linux under a virtual display
+        if: env.INDEX_STRESS == 'true' && runner.os == 'Linux'
+        timeout-minutes: 45
+        run: xvfb-run -a -s "-screen 0 1280x960x24" npm run test:ai:index:stress
+      - name: Verify stress metrics and summarize this platform
+        if: always() && env.INDEX_STRESS == 'true'
+        run: node test/integration/ai-index/stress/ci-report.mjs
+      - name: Verify and summarize this platform's index report
+        run: node test/integration/ai-index/ci-report.mjs
+      - name: Upload desktop test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-desktop-report-${{ matrix.os }}
+          path: |
+            .build/ui-redesign/studio-mcp-runtime-report.json
+            .build/ui-redesign/studio-index-runtime-report.json
+            .build/ai-index-stress/*.json
+          if-no-files-found: warn
+          retention-days: 7

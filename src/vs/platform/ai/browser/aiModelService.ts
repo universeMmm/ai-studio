@@ -19,6 +19,7 @@ import { IAIKeychainService } from './credentialService.js';
 import type { IAIProvider } from '../common/aiProvider.js';
 import { AnthropicProvider } from '../common/anthropicProvider.js';
 import { CustomProvider } from '../common/customProvider.js';
+import { abortable } from '../common/indexCancellation.js';
 import { getAICredentialTarget, getUserAIConfiguration } from '../common/aiSecurityConfiguration.js';
 import { getAIReasoningEfforts, normalizeAIReasoningEffort } from '../common/aiReasoning.js';
 import type {
@@ -43,7 +44,7 @@ export interface IAIModelService {
 
 	streamChat(messages: AIMessage[], tools: AITool[], options: AIRequestOptions, callbacks: AIStreamCallbacks): AbortController;
 	streamCompletion(prefix: string, suffix: string, fileContext: FileContext, options: AICompletionOptions, callbacks: AICompletionCallbacks): AbortController;
-	embed(texts: string[]): Promise<number[][]>;
+	embed(texts: string[], signal?: AbortSignal): Promise<number[][]>;
 	listModels(): Promise<AIModel[]>;
 }
 
@@ -102,8 +103,8 @@ export class AIModelService extends Disposable implements IAIModelService {
 		return this._startStream(provider => provider.streamCompletion(prefix, suffix, fileContext, options, callbacks), err => callbacks.onError(err));
 	}
 
-	async embed(texts: string[]): Promise<number[][]> {
-		return this._withProvider(provider => provider.embed(texts));
+	async embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
+		return this._withProvider(provider => abortable(provider.embed(texts, signal), signal), signal);
 	}
 
 	async listModels(): Promise<AIModel[]> {
@@ -145,10 +146,11 @@ export class AIModelService extends Disposable implements IAIModelService {
 		}
 	}
 
-	private async _withProvider<T>(action: (provider: IAIProvider) => T | Promise<T>): Promise<T> {
+	private async _withProvider<T>(action: (provider: IAIProvider) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
 		while (this._initializing) {
-			await this._initializing.wait();
+			await abortable(this._initializing.wait(), signal);
 		}
+		signal?.throwIfAborted();
 		if (!this._provider) {
 			throw new ExpectedError(localize('studio.modelNotConfigured', '请打开「模型设置」，填写模型 ID 和 API 密钥后再发送消息。'));
 		}

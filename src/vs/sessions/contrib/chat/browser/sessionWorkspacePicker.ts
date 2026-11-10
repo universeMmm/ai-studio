@@ -18,10 +18,13 @@ import { IActionWidgetService } from '../../../../platform/actionWidget/browser/
 import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
 import { ITabDescriptor, TabbedActionListWidget } from '../../../../platform/actionWidget/browser/tabbedActionListWidget.js';
 import { IMenuService, MenuItemAction } from '../../../../platform/actions/common/actions.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 
 // agentHost 剥离：本地桩代码替换原 agentHost 模块引用
-const IRemoteAgentHostService = createDecorator<Record<string, never>>('IRemoteAgentHostService');
+export interface IRemoteAgentHostService {
+	readonly _serviceBrand: undefined;
+}
+export const IRemoteAgentHostService = createDecorator<IRemoteAgentHostService>('IRemoteAgentHostService');
 const RemoteAgentHostConnectionStatus = {
 	isConnected: (_s: unknown) => false,
 	isDisconnected: (_s: unknown) => false,
@@ -39,15 +42,15 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { ISessionWorkspace, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL, SESSION_WORKSPACE_GROUP_REMOTE } from '../../../services/sessions/common/session.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import type { ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 
 // agentHost 剥离：本地桩代码替换原 agentHost 模块引用
-interface IAgentHostSessionsProvider {
+interface IAgentHostSessionsProvider extends ISessionsProvider {
 	readonly connectionStatus?: { get: () => unknown; read: (r: unknown) => unknown };
 	readonly remoteAddress?: string;
 	readonly label: string;
 }
-function isAgentHostProvider(_p: unknown): _p is any { return false; }
+function isAgentHostProvider(_p: unknown): _p is IAgentHostSessionsProvider { return false; }
 function getStatusLabel(_s: unknown): string { return ''; }
 function getStatusHover(_s: unknown, _addr?: string): string | undefined { return undefined; }
 async function removeRemoteHost(_p: unknown, _svc: unknown): Promise<void> { }
@@ -199,7 +202,7 @@ export class WorkspacePicker extends Disposable {
 		@IStorageService private readonly storageService: IStorageService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ISessionsProvidersService protected readonly sessionsProvidersService: ISessionsProvidersService,
-		@IRemoteAgentHostService private readonly remoteAgentHostService: unknown,
+		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
@@ -749,7 +752,7 @@ export class WorkspacePicker extends Disposable {
 			const { workspace, providerId } = recentWorkspaces[i];
 			const isOwnRecent = i < ownRecentCount;
 			const provider = allProviders.find(p => p.id === providerId);
-			const connectionStatus = provider && isAgentHostProvider(provider) ? (provider as any).connectionStatus?.get() : undefined;
+			const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
 			const isDisconnected = RemoteAgentHostConnectionStatus.isDisconnected(connectionStatus) || RemoteAgentHostConnectionStatus.isIncompatible(connectionStatus);
 			const folderUri = workspace.folders[0]?.root;
 			if (!folderUri) {
@@ -783,7 +786,7 @@ export class WorkspacePicker extends Disposable {
 		// merging is no longer meaningful.
 		allBrowseActions.forEach((action, index) => {
 			const provider = allProviders.find(p => p.id === action.providerId);
-			const connectionStatus = provider && isAgentHostProvider(provider) ? (provider as any).connectionStatus?.get() : undefined;
+			const connectionStatus = provider && isAgentHostProvider(provider) ? provider.connectionStatus?.get() : undefined;
 			const isUnavailable = !!connectionStatus && !RemoteAgentHostConnectionStatus.isConnected(connectionStatus);
 			items.push({
 				kind: ActionListItemKind.Action,
@@ -893,10 +896,10 @@ export class WorkspacePicker extends Disposable {
 	 */
 	protected _isProviderUnavailable(providerId: string): boolean {
 		const provider = this.sessionsProvidersService.getProvider(providerId);
-		if (!provider || !isAgentHostProvider(provider) || !(provider as any).connectionStatus) {
+		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
 			return false;
 		}
-		return !RemoteAgentHostConnectionStatus.isConnected((provider as any).connectionStatus.get());
+		return !RemoteAgentHostConnectionStatus.isConnected(provider.connectionStatus.get());
 	}
 
 	protected _isSelectedFolder(folderUri: URI | undefined): boolean {
@@ -984,10 +987,10 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private _watchForConnectionFailure(resolved: IResolvedFolderWorkspace): void {
 		const provider = this.sessionsProvidersService.getProvider(resolved.providerId);
-		if (!provider || !isAgentHostProvider(provider) || !(provider as any).connectionStatus) {
+		if (!provider || !isAgentHostProvider(provider) || !provider.connectionStatus) {
 			return;
 		}
-		const connStatus = (provider as any).connectionStatus;
+		const connStatus = provider.connectionStatus;
 		if (RemoteAgentHostConnectionStatus.isConnected(connStatus.get())) {
 			return;
 		}

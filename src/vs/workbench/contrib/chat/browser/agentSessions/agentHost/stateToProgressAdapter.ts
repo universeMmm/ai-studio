@@ -23,6 +23,7 @@ import { basename, isEqual } from '../../../../../../base/common/resources.js';
 import { hasKey } from '../../../../../../base/common/types.js';
 import { localize } from '../../../../../../nls.js';
 import type { IRange } from '../../../../../../editor/common/core/range.js';
+import { ConfirmationOptionKind } from '../../../common/confirmationTypes.js';
 
 /**
  * Constructs a terminal tool session ID from a terminal URI and backend session.
@@ -768,7 +769,10 @@ export function toolCallStateToInvocation(tc: ToolCallState, subAgentInvocationI
 			message: stringOrMarkdownToString(tc.invocationMessage, connectionAuthority),
 		};
 		if (tc.options) {
-			confirmationMessages.customOptions = tc.options;
+			confirmationMessages.customOptions = tc.options.map(option => ({
+				...option,
+				kind: option.kind === 'approve' ? ConfirmationOptionKind.Approve : ConfirmationOptionKind.Deny,
+			}));
 		}
 
 		let toolSpecificData: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatModifiedFilesConfirmationData | undefined;

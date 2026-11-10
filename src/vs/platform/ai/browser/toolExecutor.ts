@@ -468,7 +468,7 @@ export class ToolExecutor {
 			return result.stdout;
 		}
 		try {
-			const results = await this.indexService.search(pattern, 10);
+			const results = await this.indexService.search(pattern, 10, this.abortSignal);
 			const safeResults: typeof results = [];
 			for (const result of results) {
 				try { await this._resolvePath(result.filePath); safeResults.push(result); }

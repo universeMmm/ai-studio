@@ -2242,6 +2242,20 @@ export default defineConfig(
 			'local/code-import-patterns': [
 				'warn',
 				{
+					// This boundary test deliberately imports retained contracts to verify
+					// that they cannot activate the isolated upstream host.
+					'target': 'test/unit/ai/agentHostBoundary.test.ts',
+					'restrictions': [
+						'node:assert/strict',
+						'vs/platform/configuration/common/configuration.js',
+						'vs/platform/agentHost/common/agentService.js',
+						'vs/platform/agentHost/common/agentFeedbackAttachments.js',
+						'vs/platform/agentHost/common/state/protocol/state.js',
+						'vs/sessions/browser/openInVSCodeUtils.js',
+						'vs/sessions/services/sessions/browser/sessionsProvidersService.js'
+					]
+				},
+				{
 					'target': 'test/unit/ai/**',
 					'restrictions': [
 						'test/unit/ai/**',

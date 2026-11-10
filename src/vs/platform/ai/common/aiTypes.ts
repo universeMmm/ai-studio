@@ -278,6 +278,14 @@ export interface IndexStats {
 	totalChunks: number;
 	lastIndexedAt: number;
 	isReady: boolean;
+	enabled: boolean;
+	state: 'disabled' | 'idle' | 'indexing' | 'cancelled' | 'error';
+	processed: number;
+	total: number;
+	limited: boolean;
+	memoryBytes: number;
+	memoryLimitBytes: number;
+	memoryLimited: boolean;
 }
 
 /**
