@@ -55,8 +55,6 @@ import { MenuWorkbenchButtonBar } from '../../../../../../platform/actions/brows
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { MenuId, MenuItemAction } from '../../../../../../platform/actions/common/actions.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
-import { IAIKeychainService } from '../../../../../../platform/ai/browser/credentialService.js';
-import { getAICredentialTarget } from '../../../../../../platform/ai/common/aiSecurityConfiguration.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { registerAndCreateHistoryNavigationContext } from '../../../../../../platform/history/browser/contextScopedHistoryWidget.js';
@@ -549,7 +547,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@ILanguageModelsConfigurationService private readonly languageModelsConfigurationService: ILanguageModelsConfigurationService,
-		@IAIKeychainService private readonly keychainService: IAIKeychainService,
 		@ILogService private readonly logService: ILogService,
 		@IFileService private readonly fileService: IFileService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -1290,9 +1287,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					const apiType = (settings['apiType'] as string) || 'openai';
 					const endpoint = (settings['endpoint'] as string) || '';
 					void (async () => {
-						if (settings['apiKey']) {
-							await this.keychainService.setApiKey(settings['apiKey'] as string, getAICredentialTarget(apiType, endpoint));
-						}
 						await this.configurationService.updateValue('ai.apiType', apiType, ConfigurationTarget.USER);
 						await this.configurationService.updateValue('ai.apiBase', endpoint, ConfigurationTarget.USER);
 						await this.configurationService.updateValue('ai.modelId', settings['modelId'] ?? '', ConfigurationTarget.USER);

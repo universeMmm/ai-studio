@@ -43,10 +43,12 @@ export const aiConfigurationNode: IConfigurationNode = {
 			description: localize("studio.settings.modelId", "模型标识符。对话、智能体和行内补全共用此模型。"),
 		},
 		'ai.apiKey': {
+			// Migration-only tombstone: absent from Settings UI and JSON completion.
+			included: false,
 			scope: ConfigurationScope.MACHINE,
 			type: 'string',
 			default: '',
-			description: localize("studio.settings.apiKey", "兼容旧版设置的 API 密钥。建议将密钥保存到 AI Studio 的安全凭据中。"),
+			description: localize("studio.settings.apiKey", "此设置已停用。请在模型配置表单中保存安全凭据。"),
 			restricted: true,
 			ignoreSync: true,
 		},
@@ -123,6 +125,15 @@ export const aiConfigurationNode: IConfigurationNode = {
 				localize("studio.settings.approveUnsafe", "自动放行已识别的只读命令，其他命令需要批准"),
 				localize("studio.settings.approveNone", "自动运行允许执行的命令"),
 			],
+		},
+		'ai.commandSandbox': {
+			scope: ConfigurationScope.MACHINE,
+			restricted: true,
+			type: 'string',
+			enum: ['required', 'off'],
+			default: 'required',
+			enumItemLabels: [localize('studio.settings.sandboxRequired', '要求隔离执行'), localize('studio.settings.sandboxOff', '关闭隔离，逐条审批')],
+			description: localize('studio.settings.commandSandbox', '在操作系统沙箱中运行智能体命令，限制写入范围并默认阻止网络。沙箱不可用时阻止执行；关闭隔离后每条命令都需要批准。'),
 		},
 		'ai.slashCommands': {
 			type: 'object',

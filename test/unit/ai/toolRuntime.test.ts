@@ -30,6 +30,8 @@ type ModelTurn = (cb: AIStreamCallbacks, messages: AIMessage[], tools: AITool[])
 
 function scripted(...turns: ModelTurn[]) {
 	const deps = createAgentDeps();
+	// These tests exercise approvals; native sandbox enforcement has a separate suite.
+	(deps.configurationService as unknown as MockConfigurationService).setValue('ai.commandSandbox', 'off');
 	const invoked: AIMessage[][] = [];
 	deps.aiModelService.streamChat = (messages, tools, _options, cb) => {
 		const handler = turns[invoked.length];

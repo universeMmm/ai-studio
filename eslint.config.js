@@ -2256,6 +2256,18 @@ export default defineConfig(
 					]
 				},
 				{
+					// Exercise the real settings-sync pipeline for retired credential settings.
+					'target': 'test/unit/ai/securityConfiguration.test.ts',
+					'restrictions': [
+						'node:assert/strict',
+						'vs/platform/registry/common/platform.js',
+						'vs/platform/configuration/common/configurationRegistry.js',
+						'vs/platform/configuration/test/common/testConfigurationService.js',
+						'vs/platform/userDataSync/common/userDataSync.js',
+						'vs/platform/userDataSync/common/settingsMerge.js'
+					]
+				},
+				{
 					'target': 'test/unit/ai/**',
 					'restrictions': [
 						'test/unit/ai/**',

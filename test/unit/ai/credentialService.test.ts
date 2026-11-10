@@ -11,7 +11,7 @@ import { ConfigurationScope } from '../../../src/vs/platform/configuration/commo
 import { ConfigurationTarget, type IConfigurationValue } from '../../../src/vs/platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../src/vs/platform/configuration/test/common/testConfigurationService.js';
 import { NullLogService } from '../../../src/vs/platform/log/common/log.js';
-import { Event } from '../../../src/vs/base/common/event.js';
+import { Emitter } from '../../../src/vs/base/common/event.js';
 
 class ScopedConfiguration extends TestConfigurationService {
 	readonly workspace: Record<string, unknown> = {};
@@ -33,9 +33,11 @@ suite('AI credentials and configuration trust', () => {
 	let secrets: Map<string, string>;
 	let service: AIKeychainService;
 	let failWrite: boolean;
+	let storageType: 'persisted' | 'in-memory';
+	let changed: Emitter<string>;
 	function start(configuration = config) {
 		const created = new AIKeychainService({
-			_serviceBrand: undefined, type: 'in-memory', onDidChangeSecret: Event.None,
+			_serviceBrand: undefined, get type() { return storageType; }, onDidChangeSecret: changed.event,
 			get: async key => secrets.get(key),
 			set: async (key, value) => { if (failWrite) { throw new Error('store unavailable'); } secrets.set(key, value); },
 			delete: async key => { secrets.delete(key); },
@@ -45,12 +47,12 @@ suite('AI credentials and configuration trust', () => {
 	}
 	setup(() => {
 		config = new ScopedConfiguration({ 'ai.apiType': 'openai', 'ai.apiBase': first.origin });
-		secrets = new Map(); failWrite = false;
+		secrets = new Map(); failWrite = false; storageType = 'persisted'; changed = new Emitter();
 	});
-	teardown(() => { service?.dispose(); config.onDidChangeConfigurationEmitter.dispose(); });
+	teardown(() => { service?.dispose(); changed.dispose(); config.onDidChangeConfigurationEmitter.dispose(); });
 
 	test('sensitive configuration is user-only, even in a trusted workspace', () => {
-		for (const key of ['ai.apiType', 'ai.apiBase', 'ai.apiKey', 'ai.commandApproval']) {
+		for (const key of ['ai.apiType', 'ai.apiBase', 'ai.apiKey', 'ai.commandApproval', 'ai.commandSandbox']) {
 			assert.strictEqual(aiConfigurationNode.properties![key].scope, ConfigurationScope.MACHINE);
 			assert.strictEqual(aiConfigurationNode.properties![key].restricted, true);
 		}
@@ -73,7 +75,7 @@ suite('AI credentials and configuration trust', () => {
 		config.workspace['ai.apiKey'] = 'repository-secret';
 		start();
 		assert.strictEqual(await service.getApiKey(first), 'legacy-setting');
-		assert.deepStrictEqual(config.updates, [['ai.apiKey', undefined, ConfigurationTarget.USER]]);
+		assert.deepStrictEqual(config.updates, [['ai.apiKey', undefined, ConfigurationTarget.USER_LOCAL]]);
 		assert.strictEqual(await service.getApiKey(second), undefined);
 	});
 
@@ -125,5 +127,53 @@ suite('AI credentials and configuration trust', () => {
 	test('rejects embedded URL credentials and non-HTTP endpoints', () => {
 		assert.throws(() => getAICredentialTarget('openai', 'https://user:pass@first.invalid'), /without embedded/);
 		assert.throws(() => getAICredentialTarget('openai', 'file:///tmp/model'), /HTTP/);
+	});
+
+	test('legacy key entry is hidden and cannot opt into settings sync', () => {
+		const legacy = aiConfigurationNode.properties!['ai.apiKey'];
+		assert.equal(legacy.included, false);
+		assert.equal(legacy.ignoreSync, true);
+	});
+
+	test('ephemeral storage never removes the only persisted legacy key', async () => {
+		storageType = 'in-memory';
+		await config.setUserConfiguration('ai.apiKey', 'recoverable'); start();
+		assert.equal(await service.getApiKey(first), undefined);
+		assert.equal(config.inspect('ai.apiKey').userLocalValue, 'recoverable');
+		assert.deepEqual(config.updates, []);
+	});
+
+	test('failed secure migration preserves plaintext without using it for requests', async () => {
+		failWrite = true;
+		await config.setUserConfiguration('ai.apiKey', 'recoverable'); start();
+		assert.equal(await service.getApiKey(first), undefined);
+		assert.equal(config.inspect('ai.apiKey').userLocalValue, 'recoverable');
+	});
+
+	test('replacing a plaintext model key requires verified persistent storage', async () => {
+		start(); storageType = 'in-memory';
+		await assert.rejects(service.setApiKey('replacement', first, { requirePersisted: true }), /Persistent secret storage/);
+		assert.equal(secrets.size, 0);
+		storageType = 'persisted';
+		await service.setApiKey('replacement', first, { requirePersisted: true });
+		assert.equal(await service.getApiKey(first), 'replacement');
+	});
+
+	test('migration does not overwrite an existing key or discard a conflicting legacy value', async () => {
+		secrets.set('ai-studio.apiKey.v2:openai:' + encodeURIComponent(first.origin), 'current');
+		await config.setUserConfiguration('ai.apiKey', 'recoverable'); start();
+		assert.equal(await service.getApiKey(first), 'current');
+		assert.equal(config.inspect('ai.apiKey').userLocalValue, 'recoverable');
+	});
+
+	test('changes from another window invalidate consumers and empty saves are rejected', async () => {
+		start(); let events = 0;
+		const listener = service.onDidChangeApiKey(() => events++);
+		try {
+			changed.fire('unrelated'); assert.equal(events, 0);
+			changed.fire('ai-studio.apiKey.v2:openai:' + encodeURIComponent(first.origin)); assert.equal(events, 1);
+			await assert.rejects(service.setApiKey('   ', first), /empty/);
+			assert.equal(secrets.size, 0);
+		} finally { listener.dispose(); }
 	});
 });

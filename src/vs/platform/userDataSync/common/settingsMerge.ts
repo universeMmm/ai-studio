@@ -11,7 +11,7 @@ import { Edit, FormattingOptions, getEOL } from '../../../base/common/jsonFormat
 import * as objects from '../../../base/common/objects.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import * as contentUtil from './content.js';
-import { getDisallowedIgnoredSettings, IConflictSetting } from './userDataSync.js';
+import { getDisallowedIgnoredSettings, getExcludedIgnoredSettings, IConflictSetting } from './userDataSync.js';
 
 export interface IMergeResult {
 	localContent: string | null;
@@ -37,7 +37,7 @@ export function getIgnoredSettings(defaultIgnoredSettings: string[], configurati
 			}
 		}
 	}
-	return distinct([...defaultIgnoredSettings, ...added,].filter(setting => !removed.includes(setting)));
+	return distinct([...defaultIgnoredSettings, ...added].filter(setting => !removed.includes(setting)).concat(getExcludedIgnoredSettings()));
 }
 
 function getIgnoredSettingsFromConfig(configurationService: IConfigurationService): ReadonlyArray<string> {

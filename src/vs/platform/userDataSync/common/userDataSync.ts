@@ -32,8 +32,16 @@ export function getDisallowedIgnoredSettings(): string[] {
 	return Object.keys(allSettings).filter(setting => !!allSettings[setting].disallowSyncIgnore);
 }
 
+/** Retired secret-bearing settings must not be re-enabled through a sync override. */
+export function getExcludedIgnoredSettings(): string[] {
+	const excluded = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).getExcludedConfigurationProperties();
+	return Object.keys(excluded).filter(key => excluded[key].ignoreSync === true);
+}
+
 export function getDefaultIgnoredSettings(excludeExtensions: boolean = false): string[] {
-	const allSettings = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).getConfigurationProperties();
+	const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
+	// Hidden legacy settings can still contain credentials in existing profiles.
+	const allSettings = { ...registry.getExcludedConfigurationProperties(), ...registry.getConfigurationProperties() };
 	const ignoredSettings = getIgnoredSettings(allSettings, excludeExtensions);
 	const disallowedSettings = getDisallowedIgnoredSettings();
 	return distinct([...ignoredSettings, ...disallowedSettings]);

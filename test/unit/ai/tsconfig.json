@@ -9,6 +9,7 @@
 		"outDir": "../../../.build/test-ai"
 	},
 	"include": [
+		"../../../src/vs/platform/ai/node/commandSandbox.ts",
 		"*.test.ts",
 		"../../smoke/ai-smoke.test.ts",
 		"../../../src/vs/platform/ai/test/**/*.test.ts",

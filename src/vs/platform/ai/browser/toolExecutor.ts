@@ -37,18 +37,17 @@ import type { CommandApprovalHandler, ToolOutcome } from '../common/toolRuntime.
 import { IUserMemoryStore } from '../common/userMemoryStore.js';
 import { getAIStudioIpcRenderer } from '../common/desktopIpc.js';
 import { isSensitiveFile, SENSITIVE_FILE_GLOBS } from '../common/sensitiveFiles.js';
+import { withAICommandSandbox } from './commandSandbox.js';
 
 class ToolFailure extends Error {
 	constructor(message: string, readonly outcome: ToolOutcome = 'error') { super(message); }
 }
 
-// Auto-approval accepts a single read-only invocation with known options. Anything
-// requiring shell expansion, redirection, or an unfamiliar flag goes to approval.
+// Only fixed shell builtins can auto-run. External executables, repository config,
+// filters and credential-bearing configuration output require explicit approval.
 const SAFE_COMMAND_PATTERNS = [
-	/^(?:git (?:status|log|show|diff|ls-files|describe|rev-parse|shortlog)|rg|grep|findstr)(?: (?:[\w./~@][\w./~@-]*|--|-[inrsl]+|-\d+|--(?:short|oneline|stat|name-only|name-status|color|all|tags|heads|pretty=oneline)))*$/u,
-	/^(?:git (?:branch(?: (?:-a|-r|--all|--remotes|--show-current|--list))?|stash list|remote -v|config --list|tag -l)|npm (?:list|ls|outdated|audit|config list))$/u,
-	/^(?:node|python|python3) --version$/u,
-	/^(?:dir|ls|pwd|cat|type|echo|where|which|whereis|wc|head|tail|du|diff)(?: (?:[\w./~@][\w./~@-]*|--|-[alhnr]+|-\d+))*$/u,
+	/^pwd$/u,
+	/^echo(?: [\w./@-]+)*$/u,
 ];
 
 export function isCommandSafe(command: string): boolean {
@@ -192,6 +191,8 @@ function parseSimpleArgs(input: string): string[] | null {
  * direct access to child_process.
  */
 export class ToolExecutor {
+	private rootUris: readonly URI[] | undefined;
+	private canonicalRoots: Promise<URI[]> | undefined;
 	constructor(
 		@IFileService private readonly fileService: IFileService,
 		@ILogService private readonly logService: ILogService,
@@ -274,7 +275,7 @@ export class ToolExecutor {
 	 * @throws If no workspace is open, or if the path escapes the workspace.
 	 */
 	private _roots(): readonly URI[] {
-		return this.cwdOverride ? [URI.file(this.cwdOverride)] : this.workspaceContextService.getWorkspace().folders.map(folder => folder.uri);
+		return this.rootUris ??= this.cwdOverride ? [URI.file(this.cwdOverride)] : this.workspaceContextService.getWorkspace().folders.map(folder => folder.uri);
 	}
 
 	private _contains(root: URI, filePath: string): boolean {
@@ -319,7 +320,7 @@ export class ToolExecutor {
 			throw new Error('Path is outside the workspace: ' + filePath);
 		}
 		if (isSensitiveFile(resolved)) { throw new ToolFailure('Error: cannot access sensitive file: ' + filePath, 'denied'); }
-		const canonicalRoots = await Promise.all(roots.map(root => this._canonicalPath(root)));
+		const canonicalRoots = await this._verifiedRoots();
 		const canonical = await this._canonicalPath(URI.file(resolved), allowMissing);
 		if (!canonicalRoots.some(root => this._contains(root, canonical.fsPath))) {
 			throw new ToolFailure('Error: real path is outside the workspace: ' + filePath, 'denied');
@@ -328,6 +329,31 @@ export class ToolExecutor {
 		return canonical.fsPath;
 	}
 
+	private async _assertCurrentPath(uri: URI, allowMissing = false): Promise<void> {
+		const roots = await this._verifiedRoots();
+		const current = await this._canonicalPath(uri, allowMissing);
+		if (!extUri.isEqual(current, uri) || !roots.some(root => this._contains(root, current.fsPath)) || isSensitiveFile(current.fsPath)) {
+			throw new ToolFailure('Error: file path changed during this operation.', 'denied');
+		}
+	}
+
+	private async _verifiedRoots(): Promise<URI[]> {
+		const roots = this._roots();
+		const expected = await (this.canonicalRoots ??= Promise.all(roots.map(root => this._canonicalPath(root))));
+		const current = await Promise.all(roots.map(root => this._canonicalPath(root)));
+		if (current.some((root, index) => !extUri.isEqual(root, expected[index]))) {
+			throw new ToolFailure('Error: workspace root changed during this turn.', 'denied');
+		}
+		return expected;
+	}
+
+	private async _readChecked(uri: URI): Promise<IFileContent> {
+		await this._assertCurrentPath(uri);
+		const result = await this.fileService.readFile(uri);
+		await this._assertCurrentPath(uri);
+		this.abortSignal?.throwIfAborted();
+		return result;
+	}
 	private _getCwd(): string {
 		if (this.cwdOverride) { return this.cwdOverride; }
 		return this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || '.';
@@ -340,7 +366,7 @@ export class ToolExecutor {
 
 		// Handle image files — read as binary, base64-encode, return structured result
 		if (isImageFile(fp)) {
-			const content = await this.fileService.readFile(URI.file(fp));
+			const content = await this._readChecked(URI.file(fp));
 			const mimeType = getImageMimeType(fp);
 			const base64Data = encodeBase64(content.value);
 			const size = content.value.byteLength;
@@ -354,7 +380,7 @@ export class ToolExecutor {
 
 		// Handle PDF files — read as binary, indicate limited text extraction capability
 		if (isPdfFile(fp)) {
-			const content = await this.fileService.readFile(URI.file(fp));
+			const content = await this._readChecked(URI.file(fp));
 			const size = content.value.byteLength;
 			return `[PDF: ${input.path} | ${size} bytes | PDF text extraction requires the main-process PDF handler]`;
 		}
@@ -362,7 +388,7 @@ export class ToolExecutor {
 		if (isBinaryFile(fp)) { throw new ToolFailure('Error: cannot read binary file: ' + (input.path as string)); }
 		const offset = (input.offset as number) || 0;
 		const limit = (input.limit as number) || undefined;
-		const content = await this.fileService.readFile(URI.file(fp));
+		const content = await this._readChecked(URI.file(fp));
 		const lines = content.value.toString().split('\n');
 		const start = offset > 0 ? offset - 1 : 0;
 		const end = limit ? start + limit : lines.length;
@@ -372,9 +398,9 @@ export class ToolExecutor {
 	private async _writeFile(input: Record<string, unknown>): Promise<string> {
 		const uri = URI.file(await this._resolvePath(input.path as string, true));
 		let original: IFileContent | undefined;
-		try { original = await this.fileService.readFile(uri); }
+		try { original = await this._readChecked(uri); }
 		catch (err) {
-			if (toFileOperationResult(err) !== FileOperationResult.FILE_NOT_FOUND) { throw err; }
+			if (!isFileNotFound(err)) { throw err; }
 		}
 		const before = original?.value.toString() ?? '';
 		const after = input.content as string;
@@ -394,7 +420,7 @@ export class ToolExecutor {
 		const newStr = input.new_string as string;
 		if (!oldStr) { throw new ToolFailure('Error: old_string must not be empty'); }
 
-		const original = await this.fileService.readFile(uri);
+		const original = await this._readChecked(uri);
 		const text = original.value.toString();
 		const index = text.indexOf(oldStr);
 		if (index < 0) { throw new ToolFailure('Error: old_string not found in ' + input.path); }
@@ -419,6 +445,7 @@ export class ToolExecutor {
 
 	private async _applyFileChange(uri: URI, original: IFileContent | undefined, text: string, hunk: DiffHunk): Promise<void> {
 		this.abortSignal?.throwIfAborted();
+		await this._assertCurrentPath(uri, !original);
 		const updated = VSBuffer.fromString(text);
 		if (original) {
 			await this.fileService.writeFile(uri, updated, { etag: original.etag, mtime: original.mtime });
@@ -580,34 +607,34 @@ export class ToolExecutor {
 			throw new ToolFailure('[BLOCKED] Command contains potentially unsafe shell constructs: ' + cmd.slice(0, 80), 'denied');
 		}
 		const timeout = (input.timeout as number) || 120_000;
-		const cwd = this._getCwd();
+		const cwd = await this._resolvePath(this._getCwd());
+		const sandbox = getUserAIConfiguration<string>(this.configurationService, 'ai.commandSandbox', 'required');
 
 		// Check approval policy
 		const approval = getUserAIConfiguration<string>(this.configurationService, 'ai.commandApproval', 'unsafe');
+		let approved = false;
 		const checkApproval = async () => {
+			if (approved) { return; }
 			if (!approve) { throw new ToolFailure('[REQUIRES_APPROVAL] Command: ' + cmd, 'denied'); }
 			const allowed = await approve(cmd, cwd, this.abortSignal);
 			this.abortSignal?.throwIfAborted();
 			if (!allowed) { throw new ToolFailure('Command declined by user.', 'denied'); }
+			approved = true;
 		};
 		const safe = isCommandSafe(cmd);
-		if (approval !== 'none' && (approval !== 'unsafe' || !safe)) { await checkApproval(); }
+		if (sandbox === 'off' || approval !== 'none' && (approval !== 'unsafe' || !safe)) { await checkApproval(); }
+		// Approval can remain open while the filesystem changes. Revalidate its target.
+		if (await this._resolvePath(this._getCwd()) !== cwd) { throw new ToolFailure('Command directory changed while awaiting approval.', 'denied'); }
 
 		try {
-			let result;
-			if (approval === 'unsafe' && safe && /^git\s/.test(cmd.trim())) {
-				const [subcommand, ...args] = cmd.trim().split(/\s+/).slice(1);
-				const gitOptions = ['--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
-				if (['status', 'log', 'show', 'diff'].includes(subcommand)) {
-					// Inspect only config names: clean/process filters may run even on read-only Git operations.
-					const filters = await this._spawn('git', [...gitOptions, 'config', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$'], cwd, timeout, 4096);
-					if (filters.exitCode !== 1) { await checkApproval(); }
-				}
-				if (['log', 'show', 'diff'].includes(subcommand)) { args.unshift('--no-ext-diff', '--no-textconv'); }
-				result = await this._spawn('git', [...gitOptions, subcommand, ...args], cwd, timeout, 10 * 1024 * 1024);
-			} else {
-				result = await this._spawn(cmd, [], cwd, timeout, 10 * 1024 * 1024, true);
+			if (sandbox !== 'off') {
+				const roots = await Promise.all(this._roots().map(async root => URI.file(await this._resolvePath(root.fsPath))));
+				const result = await withAICommandSandbox(cmd, cwd, roots, this.fileService, this.logService, this.abortSignal, approval === 'unsafe' && safe,
+					(executable, args, sandboxConfig) => this._spawn(executable, args, cwd, timeout, 10 * 1024 * 1024, false, sandboxConfig));
+				if (result.exitCode !== 0) { throw new ToolFailure('Sandboxed command failed (exit ' + result.exitCode + '): ' + (result.stderr || result.stdout || 'unknown error')); }
+				return result.stdout || '(no output)';
 			}
+			const result = await this._spawn(cmd, [], cwd, timeout, 10 * 1024 * 1024, true);
 			if (result.exitCode === 0) {
 				return result.stdout || '(no output)';
 			}
@@ -621,6 +648,7 @@ export class ToolExecutor {
 	private async _listDirectory(input: Record<string, unknown>): Promise<string> {
 		const fp = await this._resolvePath(input.path as string);
 		const stat = await this.fileService.resolve(URI.file(fp));
+		await this._assertCurrentPath(URI.file(fp));
 		if (!stat.children) { return '(empty) ' + (input.path as string); }
 		return stat.children.map(c => (c.isDirectory ? '[DIR] ' : '[FILE] ') + c.name).join('\n');
 	}
@@ -688,8 +716,8 @@ export class ToolExecutor {
 
 	// -- Subprocess execution (IPC via vscode sandbox globals) -----------------
 
-	private async _spawn(command: string, args: string[], cwd: string, timeout: number, maxBuffer: number, shell = false): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-		return this._invokeCancellable('vscode:ai-studio:exec', { command, args, cwd, timeout, maxBuffer, shell });
+	private async _spawn(command: string, args: string[], cwd: string, timeout: number, maxBuffer: number, shell = false, sandboxConfig?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+		return this._invokeCancellable('vscode:ai-studio:exec', { command, args, cwd, timeout, maxBuffer, shell, sandboxConfig });
 	}
 
 	private async _invokeCancellable<T>(channel: string, options: Record<string, unknown>): Promise<T> {
@@ -842,7 +870,7 @@ export class ToolExecutor {
 				let content = typeof input.content === 'string' ? input.content.trim() : '';
 				if (!content && planFile) {
 					const path = await this._resolvePath(planFile);
-					content = (await this.fileService.readFile(URI.file(path))).value.toString();
+					content = (await this._readChecked(URI.file(path))).value.toString();
 				}
 				if (!content) { throw new ToolFailure('Error: a nonempty plan is required'); }
 				this.onExitPlanMode?.(planFile ?? '', content);

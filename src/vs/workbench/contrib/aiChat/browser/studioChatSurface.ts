@@ -51,14 +51,14 @@ export class StudioChatSurface extends Disposable {
 		dom.append(approval, renderIcon(Codicon.shield));
 		const policy = dom.append(approval, $('span'));
 		const updatePolicy = () => {
-			const mode = getUserAIConfiguration<string>(configuration, 'ai.commandApproval', 'unsafe');
+			const mode = getUserAIConfiguration<string>(configuration, 'ai.commandSandbox', 'required') === 'off' ? 'all' : getUserAIConfiguration<string>(configuration, 'ai.commandApproval', 'unsafe');
 			policy.textContent = mode === 'all' ? localize('studio.approveAll', "逐条审批")
 				: mode === 'none' ? localize('studio.approvalOff', "自动执行") : localize('studio.approveUnsafe', "按需审批");
 			approval.title = localize('studio.approvalSettings', "{0} · 更改审批设置", policy.textContent);
 			approval.setAttribute('aria-label', approval.title);
 		};
 		updatePolicy();
-		this._register(configuration.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ai.commandApproval')) { updatePolicy(); } }));
+		this._register(configuration.onDidChangeConfiguration(e => { if (e.affectsConfiguration('ai.commandApproval') || e.affectsConfiguration('ai.commandSandbox')) { updatePolicy(); } }));
 		this._register(dom.addDisposableListener(approval, 'click', event => {
 			event.stopPropagation();
 			void commands.executeCommand('aiStudio.settings.open', 'approval').catch(onUnexpectedError);

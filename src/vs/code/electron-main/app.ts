@@ -31,6 +31,7 @@ import { fetchWebPage } from '../../platform/ai/electron-main/webFetch.js';
 import { searchWeb } from '../../platform/ai/node/webSearch.js';
 import { restoreRollbackFile } from '../../platform/ai/node/restoreRollbackFile.js';
 import { AICommandOptions, runAICommand } from '../../platform/ai/node/commandRunner.js';
+import { createAICommandSandboxContext } from '../../platform/ai/node/commandSandbox.js';
 import { IBackupMainService } from '../../platform/backup/electron-main/backup.js';
 import { BackupMainService } from '../../platform/backup/electron-main/backupMainService.js';
 import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
@@ -638,6 +639,8 @@ export class CodeApplication extends Disposable {
 		};
 		validatedIpcMain.handle('vscode:ai-studio:exec', (event, opts: AICommandOptions) =>
 			withCancellation(event.sender, opts.requestId ?? generateUuid(), signal => runAICommand(opts, signal)));
+		validatedIpcMain.handle('vscode:ai-studio:sandboxContext', () => createAICommandSandboxContext(
+			this.environmentMainService.appRoot, this.environmentMainService.userHome.fsPath, this.environmentMainService.tmpDir.fsPath));
 		validatedIpcMain.handle('vscode:ai-studio:webFetch', (event, opts: { requestId: string; url: unknown }) =>
 			withCancellation(event.sender, opts.requestId, signal => fetchWebPage(opts.url, options => net.request(options), signal)));
 		validatedIpcMain.handle('vscode:ai-studio:webSearch', (event, opts: { requestId: string; query: unknown; num_results?: unknown }) =>

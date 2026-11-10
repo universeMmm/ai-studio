@@ -20,6 +20,8 @@
     "test:ai:index:unit": "tsgo --project test/unit/ai/tsconfig.json && mocha --ui tdd --timeout 20000 --require ./test/unit/ai/bootstrap.mjs \".build/test-ai/test/unit/ai/{aiIndexService,indexRipgrep,commandOutput}.test.js\" .build/test-ai/src/vs/platform/ai/test/common/indexStore.test.js",
     "test:ai:index": "node test/integration/ai-index/run.mjs",
     "test:ai:index:stress": "tsgo --project test/unit/ai/tsconfig.json && node test/integration/ai-index/stress/run.mjs",
+    "test:ai:security": "tsgo --project test/unit/ai/tsconfig.json && node test/integration/ai-security/run.mjs",
+    "test:ai:security:desktop": "node test/integration/ai-security/desktop.mjs",
     "test:ai:opencode": "node test/integration/ai-opencode/run.mjs",
     "test-browser": "npx playwright install && node test/unit/browser/index.js",
     "test-browser-no-install": "node test/unit/browser/index.js",

@@ -255,7 +255,7 @@ export class TerminalSandboxEngine extends Disposable {
 		// TMPDIR must be set as environment variable before the command
 		// Quote shell arguments so the wrapped command cannot break out of the outer shell.
 		const commandToRunInSandbox = this._getSandboxCommandWithPreservedCwd(command, cwd);
-		const sandboxRuntimeCommand = `PATH="$PATH:${this._pathDirname(this._rgPath)}" TMPDIR="${this._tempDir.path}" CLAUDE_TMPDIR="${this._tempDir.path}" "${this._execPath}" "${this._srtPath}" --settings "${this._sandboxConfigPath}" -c ${this._quoteShellArgument(commandToRunInSandbox)}`;
+		const sandboxRuntimeCommand = `PATH="$PATH":${this._quoteShellArgument(this._pathDirname(this._rgPath))} TMPDIR=${this._quoteShellArgument(this._tempDir.path)} CLAUDE_TMPDIR=${this._quoteShellArgument(this._tempDir.path)} ${this._quoteShellArgument(this._execPath)} ${this._quoteShellArgument(this._srtPath)} --settings ${this._quoteShellArgument(this._sandboxConfigPath)} -c ${this._quoteShellArgument(commandToRunInSandbox)}`;
 		const wrappedCommand = this._os === OperatingSystem.Linux && cwd?.path && cwd.path !== this._tempDir.path
 			? `cd ${this._quoteShellArgument(this._tempDir.path)}; ${sandboxRuntimeCommand}`
 			: sandboxRuntimeCommand;

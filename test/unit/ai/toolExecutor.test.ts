@@ -7,7 +7,7 @@
  *  AI Studio - Tool Executor Tests (Safety + Dispatch)
  *--------------------------------------------------------------------------------------------*/
 
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, unlink, writeFile } from 'fs/promises';
 import { runAICommand } from '../../../src/vs/platform/ai/node/commandRunner.js';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -30,48 +30,48 @@ import { ToolExecutor, isCommandSafe } from '../../../src/vs/platform/ai/browser
 
 suite('ToolExecutor — Command Safety', () => {
 
-	test('dir command is safe', () => {
-		assert.strictEqual(isCommandSafe('dir'), true);
+	test('dir command requires approval', () => {
+		assert.strictEqual(isCommandSafe('dir'), false);
 	});
 
-	test('ls -la is safe', () => {
-		assert.strictEqual(isCommandSafe('ls -la'), true);
+	test('ls -la requires approval', () => {
+		assert.strictEqual(isCommandSafe('ls -la'), false);
 	});
 
-	test('git status is safe', () => {
-		assert.strictEqual(isCommandSafe('git status'), true);
+	test('git status requires approval', () => {
+		assert.strictEqual(isCommandSafe('git status'), false);
 	});
 
-	test('git log --oneline is safe', () => {
-		assert.strictEqual(isCommandSafe('git log --oneline'), true);
+	test('git log --oneline requires approval', () => {
+		assert.strictEqual(isCommandSafe('git log --oneline'), false);
 	});
 
-	test('git diff HEAD~1 is safe', () => {
-		assert.strictEqual(isCommandSafe('git diff HEAD~1'), true);
+	test('git diff HEAD~1 requires approval', () => {
+		assert.strictEqual(isCommandSafe('git diff HEAD~1'), false);
 	});
 
-	test('cat package.json is safe', () => {
-		assert.strictEqual(isCommandSafe('cat package.json'), true);
+	test('cat package.json requires approval', () => {
+		assert.strictEqual(isCommandSafe('cat package.json'), false);
 	});
 
 	test('echo hello is safe', () => {
 		assert.strictEqual(isCommandSafe('echo hello'), true);
 	});
 
-	test('npm list is safe', () => {
-		assert.strictEqual(isCommandSafe('npm list'), true);
+	test('npm list requires approval', () => {
+		assert.strictEqual(isCommandSafe('npm list'), false);
 	});
 
-	test('node --version is safe', () => {
-		assert.strictEqual(isCommandSafe('node --version'), true);
+	test('node --version requires approval', () => {
+		assert.strictEqual(isCommandSafe('node --version'), false);
 	});
 
-	test('rg pattern is safe', () => {
-		assert.strictEqual(isCommandSafe('rg foo src/'), true);
+	test('rg pattern requires approval', () => {
+		assert.strictEqual(isCommandSafe('rg foo src/'), false);
 	});
 
-	test('head file.txt is safe', () => {
-		assert.strictEqual(isCommandSafe('head file.txt'), true);
+	test('head file.txt requires approval', () => {
+		assert.strictEqual(isCommandSafe('head file.txt'), false);
 	});
 
 	test('rm -rf / is NOT safe', () => {
@@ -98,8 +98,8 @@ suite('ToolExecutor — Command Safety', () => {
 		assert.strictEqual(isCommandSafe('chmod 777 /'), false);
 	});
 
-	test('whitespace before safe command is still safe', () => {
-		assert.strictEqual(isCommandSafe('  git status'), true);
+	test('leading whitespace does not bypass approval', () => {
+		assert.strictEqual(isCommandSafe('  git status'), false);
 	});
 
 	test('git branch -D is NOT in the safe list', () => {
@@ -109,7 +109,7 @@ suite('ToolExecutor — Command Safety', () => {
 	for (const command of ['cat .env', 'cat ~/.ssh/id_rsa', 'cat /tmp/outside.txt', 'cat public/../../outside', 'cat .git/config', 'git branch new-branch', 'git branch -M old new', 'git status; echo second', 'ls && echo next', 'git log --output=file', 'rg --pre=sh search', 'npm audit fix', 'echo ok\nwhoami']) {
 		test(`requires approval for ${command}`, () => assert.strictEqual(isCommandSafe(command), false));
 	}
-	test('git branch listing is safe', () => assert.strictEqual(isCommandSafe('git branch --list'), true));
+	test('git branch listing requires approval', () => assert.strictEqual(isCommandSafe('git branch --list'), false));
 
 	test('empty string is NOT safe', () => {
 		assert.strictEqual(isCommandSafe(''), false);
@@ -237,6 +237,14 @@ suite('ToolExecutor — file and network tools', () => {
 		assert.match(result.text, /declined/);
 	});
 
+	test('disabling sandbox requires approval even when command approval is set to none', async () => {
+		const guarded = new ToolExecutor(files, log, upcastPartial({}), upcastPartial({}), upcastPartial({}),
+			upcastDeepPartial({ getWorkspace: () => ({ folders: roots.map(uri => ({ uri })) }) }),
+			upcastPartial({ inspect: (key: string) => ({ userValue: key === 'ai.commandSandbox' ? 'off' : 'none' }) }));
+		const denied = await guarded.executeCall('run_command', { command: 'echo hello' });
+		assert.equal(denied.outcome, 'denied'); assert.match(denied.text, /REQUIRES_APPROVAL/);
+	});
+
 	test('searches both roots while keeping dangerous-looking pattern values literal', async () => {
 		const calls: { command: string; args: string[]; cwd: string }[] = [];
 		const original = Object.getOwnPropertyDescriptor(globalThis, 'vscode');
@@ -342,7 +350,7 @@ suite('ToolExecutor — real filesystem boundaries', () => {
 	let originalVscode: PropertyDescriptor | undefined;
 
 	setup(async () => {
-		directory = await mkdtemp(join(tmpdir(), 'ai-path-boundaries-'));
+		directory = await realpath(await mkdtemp(join(tmpdir(), 'ai-path-boundaries-')));
 		roots = [URI.file(join(directory, 'one')), URI.file(join(directory, 'two'))];
 		outside = join(directory, 'outside');
 		await Promise.all([...roots.map(root => root.fsPath), outside].map(path => mkdir(path)));
@@ -411,6 +419,47 @@ suite('ToolExecutor — real filesystem boundaries', () => {
 		assert.strictEqual(await readFile(external, 'utf8'), 'external needle');
 		await assert.rejects(stat(join(outside, 'new')), { code: 'ENOENT' });
 		assert.strictEqual(spawned.length, 0);
+	});
+
+	test('does not expose bytes when a file is swapped to an outside symlink during read', async () => {
+		const target = URI.joinPath(roots[0], 'victim.txt');
+		const external = join(outside, 'private.txt');
+		await writeFile(target.fsPath, 'inside'); await writeFile(external, 'outside-fixture');
+		const read = files.readFile.bind(files); let swapped = false;
+		files.readFile = async (uri, options, token) => {
+			if (uri.toString() === target.toString() && !swapped) {
+				swapped = true; await unlink(target.fsPath); await symlink(external, target.fsPath, 'file');
+			}
+			return read(uri, options, token);
+		};
+		const result = await tool.executeCall('read_file', { path: 'victim.txt' });
+		assert.equal(result.outcome, 'denied'); assert.ok(!result.text.includes('outside-fixture'));
+	});
+
+	test('a workspace root cannot be redirected after the turn first resolves it', async () => {
+		await writeFile(join(roots[0].fsPath, 'file.txt'), 'inside');
+		await writeFile(join(outside, 'file.txt'), 'outside-fixture');
+		assert.match(await tool.execute('read_file', { path: 'file.txt' }), /inside/);
+		await rename(roots[0].fsPath, roots[0].fsPath + '-saved');
+		await symlink(outside, roots[0].fsPath, 'junction');
+		const result = await tool.executeCall('read_file', { path: 'file.txt' });
+		assert.equal(result.outcome, 'denied'); assert.match(result.text, /root changed/);
+	});
+
+	test('rejects a swapped edit target before modifying the outside file', async () => {
+		const target = URI.joinPath(roots[0], 'victim.txt');
+		const external = join(outside, 'private.txt');
+		await writeFile(target.fsPath, 'original'); await writeFile(external, 'original');
+		const read = files.readFile.bind(files); let swapped = false;
+		files.readFile = async (uri, options, token) => {
+			const result = await read(uri, options, token);
+			if (uri.toString() === target.toString() && !swapped) {
+				swapped = true; await unlink(target.fsPath); await symlink(external, target.fsPath, 'file');
+			}
+			return result;
+		};
+		const result = await tool.executeCall('edit_file', { path: 'victim.txt', old_string: 'original', new_string: 'changed' });
+		assert.equal(result.outcome, 'denied'); assert.equal(await readFile(external, 'utf8'), 'original');
 	});
 
 	test('allows new nested paths and symlinks into another explicitly opened workspace root', async () => {

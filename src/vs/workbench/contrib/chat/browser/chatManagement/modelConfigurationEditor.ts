@@ -229,8 +229,11 @@ export class ModelConfigurationEditor extends EditorPane {
 		DOM.append(connSection, $('.model-configuration-form-section-title')).textContent =
 			localize('connectionInfo', "连接配置");
 
-		const apiKeyInput = this.createFormField(connSection, localize('studio.model.keyLabel', "API 密钥"), 'password', (settings['apiKey'] as string) ?? '');
+		const apiKeyInput = this.createFormField(connSection, localize('studio.model.keyLabel', "API 密钥"), 'password', '');
 		apiKeyInput.placeholder = isNew ? localize('studio.model.enterKey', '输入模型服务的密钥') : localize('studio.model.keepKey', '留空以保留当前密钥');
+		if (settings['apiKey']) {
+			DOM.append(connSection, $('p')).textContent = localize('studio.model.legacyKey', '旧版明文密钥已停止自动使用，请重新输入密钥后保存。');
+		}
 
 		// Provider selector
 		const storedEndpoint = (settings['endpoint'] as string) ?? '';
@@ -410,6 +413,15 @@ export class ModelConfigurationEditor extends EditorPane {
 		};
 
 		try {
+			const hasLegacyKey = !!originalGroup.settings?.[originalGroup.name]?.['apiKey'];
+			if (hasLegacyKey && !data.apiKey) {
+				this.notificationService.warn(localize('studio.model.legacyKey', '旧版明文密钥已停止自动使用，请重新输入密钥后保存。'));
+				return;
+			}
+			// Do not publish a model selection if storing its new credential fails.
+			if (data.apiKey) {
+				await this.keychainService.setApiKey(data.apiKey, getAICredentialTarget(data.apiType, data.endpoint), { requirePersisted: hasLegacyKey });
+			}
 			if (!originalGroup.name) {
 				await this.languageModelsConfigurationService.addLanguageModelsProviderGroup(updatedGroup);
 			} else {
@@ -423,9 +435,6 @@ export class ModelConfigurationEditor extends EditorPane {
 			this.renderForm();
 
 			// Sync to ai.* settings so the chat agent host can use this model
-			if (data.apiKey) {
-				await this.keychainService.setApiKey(data.apiKey, getAICredentialTarget(data.apiType, data.endpoint));
-			}
 			await this.configurationService.updateValue('ai.apiType', data.apiType, ConfigurationTarget.USER);
 			await this.configurationService.updateValue('ai.apiBase', data.endpoint, ConfigurationTarget.USER);
 			await this.configurationService.updateValue('ai.modelId', data.modelId, ConfigurationTarget.USER);

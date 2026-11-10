@@ -65,7 +65,6 @@ export class AIModelService extends Disposable implements IAIModelService {
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('ai.apiType') ||
-				e.affectsConfiguration('ai.apiKey') ||
 				e.affectsConfiguration('ai.apiBase') ||
 				e.affectsConfiguration('ai.modelId')) {
 				void this._initProvider();

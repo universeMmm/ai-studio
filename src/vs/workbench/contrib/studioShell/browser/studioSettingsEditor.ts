@@ -38,7 +38,7 @@ export interface IStudioSettingsOptions extends IEditorOptions { readonly sectio
 const approvalModes = ['unsafe', 'all', 'none'] as const;
 const approvalLabels = [localize('studio.settings.approval.unsafe', '按需审批'), localize('studio.settings.approval.all', '逐条审批'), localize('studio.settings.approval.none', '自动执行')];
 const approvalDescriptions = [
-	localize('studio.settings.approval.unsafeDescription', '已识别的只读命令自动运行，其他命令先征求你的同意。'),
+	localize('studio.settings.approval.unsafeDescription', '仅 pwd 和简单 echo 在只读沙箱中自动运行；Git、包管理器等外部命令先征求你的同意。'),
 	localize('studio.settings.approval.allDescription', '运行每条命令前，都先征求你的同意。'),
 	localize('studio.settings.approval.noneDescription', '自动运行允许执行的命令，适合你信任的项目。'),
 ];
@@ -51,6 +51,7 @@ export class StudioSettingsEditor extends EditorPane {
 	private modelName: HTMLElement | undefined;
 	private projectName: HTMLElement | undefined;
 	private approvalDescription: HTMLElement | undefined;
+	private sandboxDescription: HTMLElement | undefined;
 	private approvalSelect: SelectBox | undefined;
 	private approvalContext: IOpenContextView | undefined;
 	private approvalAnchor: DOMRect | undefined;
@@ -75,7 +76,7 @@ export class StudioSettingsEditor extends EditorPane {
 	) {
 		super(STUDIO_SETTINGS_EDITOR_ID, group, telemetryService, themeService, storageService);
 		this._register(configuration.onDidChangeConfiguration(event => {
-			if (['ai.modelName', 'ai.modelId', 'ai.commandApproval', STUDIO_ADVANCED_MODE_CONFIG].some(key => event.affectsConfiguration(key))) { this.update(); }
+			if (['ai.modelName', 'ai.modelId', 'ai.commandApproval', 'ai.commandSandbox', STUDIO_ADVANCED_MODE_CONFIG].some(key => event.affectsConfiguration(key))) { this.update(); }
 		}));
 		this._register(themeService.onDidColorThemeChange(() => this.update()));
 		this._register(workspace.onDidChangeWorkspaceFolders(() => this.update()));
@@ -115,6 +116,10 @@ export class StudioSettingsEditor extends EditorPane {
 			void this.configuration.updateValue('ai.commandApproval', approvalModes[index], ConfigurationTarget.USER)
 				.catch(error => this.notifications.error(error)).finally(() => { this.savingApproval = false; this.update(); });
 		}));
+
+		const sandbox = this.section(content, 'sandbox', Codicon.shield, localize('studio.settings.sandbox', '命令隔离'), '');
+		this.sandboxDescription = sandbox.description;
+		this.action(sandbox.actions, localize('studio.settings.configureSandbox', '配置隔离方式'), 'workbench.action.openSettings', 'ai.commandSandbox');
 
 		const project = this.section(content, 'project', Codicon.folderOpened, localize('studio.settings.project', '项目文件夹'), '');
 		this.projectName = project.description;
@@ -190,10 +195,16 @@ export class StudioSettingsEditor extends EditorPane {
 		const mode = getUserAIConfiguration<string>(this.configuration, 'ai.commandApproval', 'unsafe');
 		const approvalIndex = Math.max(0, approvalModes.findIndex(value => value === mode));
 		// Unknown legacy values are treated conservatively by the command executor.
-		const effectiveIndex = approvalModes.includes(mode as typeof approvalModes[number]) ? approvalIndex : 1;
+		const sandboxOff = getUserAIConfiguration<string>(this.configuration, 'ai.commandSandbox', 'required') === 'off';
+		const effectiveIndex = !sandboxOff && approvalModes.includes(mode as typeof approvalModes[number]) ? approvalIndex : 1;
 		const approvalManaged = this.configuration.inspect('ai.commandApproval').policyValue !== undefined;
 		this.approvalSelect?.select(effectiveIndex);
-		this.approvalSelect?.setEnabled(!approvalManaged);
+		this.approvalSelect?.setEnabled(!approvalManaged && !sandboxOff);
+		if (this.sandboxDescription) {
+			this.sandboxDescription.textContent = sandboxOff
+				? localize('studio.settings.sandboxDisabled', '隔离已关闭，每条命令都需要批准。')
+				: localize('studio.settings.sandboxEnabled', '限制命令写入项目目录并默认阻止网络。隔离不可用时，命令不会执行。');
+		}
 		if (this.approvalDescription) { this.approvalDescription.textContent = approvalManaged ? localize('studio.settings.managedApproval', '{0} 此设置由管理员管理。', approvalDescriptions[effectiveIndex]) : approvalDescriptions[effectiveIndex]; }
 		const advanced = isStudioAdvancedMode(this.configuration);
 		if (this.advancedButton) {
